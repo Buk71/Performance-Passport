@@ -1,12 +1,19 @@
-# Python cache
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 
-# Database
-database/*.db
+# Virtual environment
+.venv/
 
 # macOS
 .DS_Store
 
-# VS Code settings
+# VS Code
 .vscode/
+
+# Local database
+database/performance_passport.db
+
+# SQLite
+*.sqlite3
