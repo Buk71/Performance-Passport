@@ -5,6 +5,23 @@ from config import APP_NAME, APP_SUBTITLE
 from core.database import get_connection
 
 
+SPORT_MAP = {
+    "965611": ("🏃", "Running"),
+    "965617": ("🚶", "Walking"),
+    "965613": ("🚴", "Cycling"),
+    "965619": ("🚴", "Indoor Cycling"),
+    "965612": ("🏊", "Swimming"),
+    "965614": ("🏋️", "Strength / Mobility"),
+    "965615": ("🏋️", "Strength"),
+    "965616": ("🏋️", "Other / Gym"),
+    "965630": ("🧘", "Yoga / Stretching"),
+    "965632": ("🥾", "Hiking"),
+    "965621": ("🚵", "Mountain / Gravel Bike"),
+    "1742104": ("⛳", "Golf"),
+    "1637482": ("🧘", "Pilates"),
+}
+
+
 def athlete_full_name(first_name, last_name):
     return f"{first_name or ''} {last_name or ''}".strip()
 
@@ -12,7 +29,6 @@ def athlete_full_name(first_name, last_name):
 def get_athletes():
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         """
         SELECT id, first_name, last_name
@@ -20,64 +36,55 @@ def get_athletes():
         ORDER BY first_name, last_name
         """
     )
-
     athletes = cursor.fetchall()
     conn.close()
-
     return athletes
 
 
 def get_lifetime_summary(athlete_id):
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         """
         SELECT
-            COUNT(*) AS activities,
-            COALESCE(SUM(distance_m), 0) AS distance_m,
-            COALESCE(SUM(moving_time_s), 0) AS moving_time_s,
-            COALESCE(SUM(elevation_up_m), 0) AS elevation_up_m
+            COUNT(*),
+            COALESCE(SUM(distance_m), 0),
+            COALESCE(SUM(moving_time_s), 0),
+            COALESCE(SUM(elevation_up_m), 0)
         FROM activities
         WHERE athlete_id = ?
         """,
         (athlete_id,),
     )
-
     row = cursor.fetchone()
     conn.close()
-
     return row
 
 
 def get_year_summary(athlete_id, year):
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         """
         SELECT
-            COUNT(*) AS activities,
-            COALESCE(SUM(distance_m), 0) AS distance_m,
-            COALESCE(SUM(moving_time_s), 0) AS moving_time_s,
-            COALESCE(SUM(elevation_up_m), 0) AS elevation_up_m
+            COUNT(*),
+            COALESCE(SUM(distance_m), 0),
+            COALESCE(SUM(moving_time_s), 0),
+            COALESCE(SUM(elevation_up_m), 0)
         FROM activities
         WHERE athlete_id = ?
           AND substr(activity_date, 1, 4) = ?
         """,
         (athlete_id, str(year)),
     )
-
     row = cursor.fetchone()
     conn.close()
-
     return row
 
 
 def get_recent_activities(athlete_id, limit=5):
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         """
         SELECT
@@ -94,38 +101,81 @@ def get_recent_activities(athlete_id, limit=5):
         """,
         (athlete_id, limit),
     )
-
     rows = cursor.fetchall()
     conn.close()
-
     return rows
 
 
 def format_distance(distance_km):
-    if distance_km is None:
-        return "0.0 km"
-
-    return f"{distance_km:,.1f} km"
+    return f"{distance_km or 0:,.1f} km"
 
 
 def format_hours(seconds):
-    return f"{seconds / 3600:,.1f} hrs"
+    return f"{(seconds or 0) / 3600:,.1f} hrs"
+
+
+def format_duration(seconds):
+    if not seconds:
+        return "--"
+
+    seconds = int(seconds)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    remaining_seconds = seconds % 60
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{remaining_seconds:02d}"
+
+    return f"{minutes}:{remaining_seconds:02d}"
 
 
 def format_elevation(elevation_m):
-    return f"{elevation_m:,.0f} m"
+    return f"{elevation_m or 0:,.0f} m"
 
 
-def format_pace(distance_m, moving_time_s):
-    if not distance_m or not moving_time_s:
+def format_pace(distance_km, moving_time_s):
+    if not distance_km or not moving_time_s:
         return "--"
 
-    km = distance_m / 1000
-    pace_seconds = moving_time_s / km
+    pace_seconds = moving_time_s / distance_km
     minutes = int(pace_seconds // 60)
     seconds = int(round(pace_seconds % 60))
 
+    if seconds == 60:
+        minutes += 1
+        seconds = 0
+
     return f"{minutes}:{seconds:02d}/km"
+
+
+def format_date(date_text):
+    try:
+        parsed_date = datetime.date.fromisoformat(date_text)
+        return parsed_date.strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return date_text or "Unknown date"
+
+
+def get_sport_display(sport_id):
+    sport_key = str(sport_id or "")
+    return SPORT_MAP.get(sport_key, ("❓", f"Unknown sport {sport_key}"))
+
+
+def render_activity_card(activity):
+    activity_date, title, distance_km, moving_time_s, avg_hr, sport_id = activity
+
+    icon, sport_name = get_sport_display(sport_id)
+
+    with st.container(border=True):
+        st.write(f"{icon} **{title or sport_name}**")
+        st.caption(f"{format_date(activity_date)} • {sport_name}")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Distance", format_distance(distance_km))
+        col2.metric("Pace", format_pace(distance_km, moving_time_s))
+        col3.metric("Duration", format_duration(moving_time_s))
+        col4.metric("Avg HR", f"{avg_hr:.0f}" if avg_hr else "--")
 
 
 def show_dashboard():
@@ -158,14 +208,14 @@ def show_dashboard():
 
     st.subheader(f"{selected_athlete_name} — Lifetime Summary")
 
-    activities, distance_m, moving_time_s, elevation_up_m = get_lifetime_summary(
+    activities, distance_km, moving_time_s, elevation_up_m = get_lifetime_summary(
         selected_athlete_id
     )
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Activities", f"{activities:,}")
-    col2.metric("Distance", format_distance(distance_m))
+    col2.metric("Distance", format_distance(distance_km))
     col3.metric("Moving Time", format_hours(moving_time_s))
     col4.metric("Elevation", format_elevation(elevation_up_m))
 
@@ -176,22 +226,22 @@ def show_dashboard():
 
     (
         year_activities,
-        year_distance_m,
+        year_distance_km,
         year_moving_time_s,
         year_elevation_up_m,
     ) = get_year_summary(selected_athlete_id, current_year)
 
     weeks_elapsed = datetime.date.today().isocalendar().week
-    average_weekly_distance_m = (
-        year_distance_m / weeks_elapsed if weeks_elapsed else 0
+    average_weekly_distance_km = (
+        year_distance_km / weeks_elapsed if weeks_elapsed else 0
     )
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Activities", f"{year_activities:,}")
-    col2.metric("Distance", format_distance(year_distance_m))
+    col2.metric("Distance", format_distance(year_distance_km))
     col3.metric("Moving Time", format_hours(year_moving_time_s))
-    col4.metric("Average Week", format_distance(average_weekly_distance_m))
+    col4.metric("Average Week", format_distance(average_weekly_distance_km))
 
     st.divider()
 
@@ -203,29 +253,14 @@ def show_dashboard():
         st.info("No recent activities found.")
     else:
         for activity in recent_activities:
-            (
-                activity_date,
-                title,
-                activity_distance_m,
-                activity_moving_time_s,
-                avg_hr,
-                sport_id,
-            ) = activity
-
-            pace = format_pace(activity_distance_m, activity_moving_time_s)
-
-            st.write(
-                f"**{activity_date}** — {title or 'Untitled activity'}  \n"
-                f"{format_distance(activity_distance_m)} • {pace} • "
-                f"Avg HR {avg_hr or '--'} • Sport {sport_id or '--'}"
-            )
+            render_activity_card(activity)
 
     st.divider()
 
-    st.subheader("Passport Insights")
+    st.subheader("Coming Next")
 
     st.info(
-        "Sprint 3.0 creates the live dashboard foundation. "
-        "Future sprints will add heat-adjusted performance, best ever easy run, "
-        "durability, fatigue, race readiness and Passport Score."
+        "Next sprint adds the first Passport Insight. Future sprints will add "
+        "heat-adjusted performance, Best Ever Easy Run, durability, fatigue, "
+        "race readiness and Passport Score."
     )
