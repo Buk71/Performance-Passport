@@ -8,9 +8,32 @@ def athlete_full_name(first_name, last_name):
     return f"{first_name or ''} {last_name or ''}".strip()
 
 
+def parse_date(value):
+    try:
+        return datetime.date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return datetime.date(1971, 12, 11)
+
+
+def display_measurement(value, unit):
+    if value is None or value == 0:
+        return "Not set"
+    return f"{value:g} {unit}"
+
+
+def display_number(value):
+    if value is None or value == 0:
+        return "Not set"
+    return value
+
+
 def add_athlete(first_name, last_name, date_of_birth, sex):
     conn = get_connection()
     cursor = conn.cursor()
+
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    full_name = athlete_full_name(first_name, last_name)
 
     cursor.execute(
         """
@@ -19,7 +42,7 @@ def add_athlete(first_name, last_name, date_of_birth, sex):
         WHERE lower(first_name) = lower(?)
           AND lower(coalesce(last_name, '')) = lower(?)
         """,
-        (first_name.strip(), last_name.strip()),
+        (first_name, last_name),
     )
 
     existing = cursor.fetchone()
@@ -38,8 +61,24 @@ def add_athlete(first_name, last_name, date_of_birth, sex):
         )
         VALUES (?, ?, ?, ?)
         """,
-        (first_name.strip(), last_name.strip(), str(date_of_birth), sex),
+        (first_name, last_name, str(date_of_birth), sex),
     )
+
+    athlete_id = cursor.lastrowid
+
+    if full_name:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO athlete_identities (
+                athlete_id,
+                source,
+                external_name,
+                is_primary
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (athlete_id, "manual", full_name, 1),
+        )
 
     conn.commit()
     conn.close()
@@ -106,6 +145,29 @@ def delete_athlete(athlete_id):
 
     cursor.execute(
         """
+        SELECT COUNT(*)
+        FROM activities
+        WHERE athlete_id = ?
+        """,
+        (athlete_id,),
+    )
+
+    linked_activities = cursor.fetchone()[0]
+
+    if linked_activities > 0:
+        conn.close()
+        return False
+
+    cursor.execute(
+        """
+        DELETE FROM athlete_identities
+        WHERE athlete_id = ?
+        """,
+        (athlete_id,),
+    )
+
+    cursor.execute(
+        """
         DELETE FROM athletes
         WHERE id = ?
         """,
@@ -114,6 +176,7 @@ def delete_athlete(athlete_id):
 
     conn.commit()
     conn.close()
+    return True
 
 
 def get_athletes():
@@ -146,38 +209,91 @@ def get_athletes():
     return athletes
 
 
-def get_activity_counts_by_athlete():
+def get_activity_counts_by_athlete_id():
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         """
         SELECT
-            athlete_name,
+            athlete_id,
             COUNT(*) AS activity_count
         FROM activities
-        GROUP BY athlete_name
+        WHERE athlete_id IS NOT NULL
+        GROUP BY athlete_id
         """
     )
 
     rows = cursor.fetchall()
     conn.close()
 
-    return {name: count for name, count in rows}
+    return {athlete_id: count for athlete_id, count in rows}
 
 
-def parse_date(value):
-    try:
-        return datetime.date.fromisoformat(value)
-    except (TypeError, ValueError):
-        return datetime.date(1971, 12, 11)
+def get_athlete_identities():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            athlete_id,
+            source,
+            external_name,
+            external_id,
+            is_primary
+        FROM athlete_identities
+        ORDER BY athlete_id, is_primary DESC, source, external_name
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    identities = {}
+
+    for athlete_id, source, external_name, external_id, is_primary in rows:
+        identities.setdefault(athlete_id, []).append(
+            {
+                "source": source,
+                "external_name": external_name,
+                "external_id": external_id,
+                "is_primary": is_primary,
+            }
+        )
+
+    return identities
+
+
+def get_detected_activity_names():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            source,
+            athlete_name,
+            athlete_id,
+            COUNT(*) AS activity_count
+        FROM activities
+        GROUP BY source, athlete_name, athlete_id
+        ORDER BY source, athlete_name
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return rows
 
 
 def show_athletes_page():
     st.title("Athletes")
     st.write("Manage athlete profiles for Performance Passport.")
 
-    activity_counts = get_activity_counts_by_athlete()
+    activity_counts = get_activity_counts_by_athlete_id()
+    athlete_identities = get_athlete_identities()
 
     st.subheader("Registered athletes")
 
@@ -203,10 +319,10 @@ def show_athletes_page():
             ) = athlete
 
             full_name = athlete_full_name(first_name, last_name)
-            activity_count = activity_counts.get(full_name, 0)
+            activity_count = activity_counts.get(athlete_id, 0)
 
             with st.expander(f"{full_name} — {activity_count:,} activities"):
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
 
                 with col1:
                     st.metric("Activities", f"{activity_count:,}")
@@ -216,6 +332,54 @@ def show_athletes_page():
 
                 with col3:
                     st.metric("DOB", dob or "Not set")
+
+                with col4:
+                    st.metric("Athlete ID", athlete_id)
+
+                st.divider()
+
+                profile_col1, profile_col2, profile_col3 = st.columns(3)
+
+                with profile_col1:
+                    st.write("**Body**")
+                    st.write(f"Height: {display_measurement(height_cm, 'cm')}")
+                    st.write(f"Weight: {display_measurement(weight_kg, 'kg')}")
+
+                with profile_col2:
+                    st.write("**Heart rate**")
+                    st.write(f"Resting HR: {display_number(resting_hr)}")
+                    st.write(f"Max HR: {display_number(max_hr)}")
+
+                with profile_col3:
+                    st.write("**Thresholds**")
+                    st.write(f"LT1 HR: {display_number(lt1_hr)}")
+                    st.write(f"LT2 HR: {display_number(lt2_hr)}")
+
+                st.divider()
+
+                st.write("**Known identities**")
+
+                identities = athlete_identities.get(athlete_id, [])
+
+                if not identities:
+                    st.info("No identities recorded yet.")
+                else:
+                    for identity in identities:
+                        label = "⭐ Primary identity" if identity["is_primary"] else "Alias"
+                        external_id = (
+                            f" — ID: {identity['external_id']}"
+                            if identity["external_id"]
+                            else ""
+                        )
+
+                        st.write(label)
+                        st.write(
+                            f"`{identity['source']}` → "
+                            f"**{identity['external_name']}**"
+                            f"{external_id}"
+                        )
+
+                st.divider()
 
                 with st.form(f"edit_athlete_{athlete_id}"):
                     edit_col1, edit_col2 = st.columns(2)
@@ -329,29 +493,43 @@ def show_athletes_page():
                                 new_lt2_hr or None,
                                 new_notes,
                             )
-                            st.success(f"Updated {new_first_name} {new_last_name}")
+                            st.success(
+                                f"Updated {new_first_name.strip()} "
+                                f"{new_last_name.strip()}"
+                            )
                             st.rerun()
                         else:
                             st.error("First name is required.")
 
-                st.warning(
-                    "Deleting an athlete removes the registered profile only. "
-                    "Imported activities are not deleted."
-                )
+                if activity_count == 0:
+                    st.warning(
+                        "Deleting an athlete removes the registered profile and identities."
+                    )
 
-                confirm_delete = st.checkbox(
-                    f"Confirm delete {full_name}",
-                    key=f"confirm_delete_{athlete_id}",
-                )
+                    confirm_delete = st.checkbox(
+                        f"Confirm delete {full_name}",
+                        key=f"confirm_delete_{athlete_id}",
+                    )
 
-                if st.button(
-                    f"Delete {full_name}",
-                    key=f"delete_{athlete_id}",
-                    disabled=not confirm_delete,
-                ):
-                    delete_athlete(athlete_id)
-                    st.success(f"Deleted {full_name}")
-                    st.rerun()
+                    if st.button(
+                        f"Delete {full_name}",
+                        key=f"delete_{athlete_id}",
+                        disabled=not confirm_delete,
+                    ):
+                        deleted = delete_athlete(athlete_id)
+
+                        if deleted:
+                            st.success(f"Deleted {full_name}")
+                            st.rerun()
+                        else:
+                            st.error(
+                                "This athlete has linked activities and cannot be deleted."
+                            )
+                else:
+                    st.info(
+                        "This athlete has linked activities, so the profile cannot "
+                        "be deleted without first reassigning or unlinking those activities."
+                    )
 
     st.divider()
 
@@ -391,10 +569,22 @@ def show_athletes_page():
 
     st.divider()
 
-    st.subheader("Athletes detected from imported activities")
+    st.subheader("Detected activity identities")
 
-    if not activity_counts:
-        st.info("No imported activity athletes found yet.")
+    detected_names = get_detected_activity_names()
+
+    if not detected_names:
+        st.info("No imported activity identities found yet.")
     else:
-        for athlete_name, activity_count in sorted(activity_counts.items()):
-            st.write(f"**{athlete_name}** — {activity_count:,} activities")
+        for source, athlete_name, linked_athlete_id, activity_count in detected_names:
+            if linked_athlete_id:
+                st.write(
+                    f"✓ `{source}` → **{athlete_name}** "
+                    f"linked to athlete_id `{linked_athlete_id}` "
+                    f"({activity_count:,} activities)"
+                )
+            else:
+                st.warning(
+                    f"`{source}` → **{athlete_name}** is not linked "
+                    f"({activity_count:,} activities)"
+                )
