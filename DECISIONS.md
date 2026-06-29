@@ -1,103 +1,153 @@
 # Performance Passport Decisions Log
 
-This document records significant technical and project decisions.
+This document records major technical and project decisions.
 
-It is intentionally brief.
-
-Routine feature work belongs in ROADMAP.md.
+Routine development belongs in ROADMAP.md.
 
 Architecture belongs in ARCHITECTURE.md.
 
 ---
 
-## Decision 001
+# Decision 001
 
-**Date:** 28 June 2026
+**Date**
+28 June 2026
 
-### Architecture Freeze
+## Architecture Freeze
 
-**Decision**
+### Decision
 
 The project architecture is frozen following Sprint 2.1.
 
-Current structure:
-
-```text
+```
 Performance-Passport/
-│
-├── app.py
-├── config.py
-├── core/
-├── ui/
-├── database/
-├── uploads/
-├── assets/
-└── tests/
+
+app.py
+config.py
+
+core/
+ui/
+database/
+uploads/
+assets/
+tests/
 ```
 
-No new folders or architectural changes will be introduced unless agreed as part of a dedicated refactoring sprint.
+No new folders or architectural changes will be introduced without an explicit refactoring sprint.
 
-**Reason**
+### Reason
 
-Maintain stability and avoid architecture drift.
+Maintain stability.
+
+Avoid architecture drift.
+
+Git should always provide a clean recovery point.
 
 ---
 
-## Decision 002
+# Decision 002
 
-**Date:** 28 June 2026
+**Date**
+28 June 2026
 
-### Development Workflow
+## Development Workflow
 
-**Decision**
+### Decision
 
 Every sprint will:
 
-- Start from a clean Git status.
 - Have a version number.
-- List all changed files.
+- Start from a clean Git status.
+- List changed files.
 - Provide complete replacement files whenever practical.
-- Build one feature to completion.
-- Be tested before committing.
-- Recommend a Git commit only after testing passes.
+- Explain architectural decisions.
+- Test before committing.
+- Recommend a Git commit after testing.
 
-**Reason**
+### Reason
 
-Keep development predictable and easy to maintain.
-
----
-
-## Decision 003
-
-**Date:** 28 June 2026
-
-### Athlete Management First
-
-**Decision**
-
-Athlete management will be completed before developing the main dashboard.
-
-**Reason**
-
-The dashboard depends on reliable athlete data and profiles.
+Maintain consistency and minimise mistakes.
 
 ---
 
-## Proposed Decisions
+# Decision 003
 
-These are agreed in principle but not yet implemented.
+**Date**
+28 June 2026
 
-### Decision 004 (Proposed)
+## Athlete Management Before Dashboard
 
-Activities should ultimately be linked to athletes using `athlete_id` rather than `athlete_name`.
+### Decision
 
-**Reason**
+Athlete management will be completed before dashboard development.
 
-This will:
+### Reason
 
-- Support multiple athletes reliably.
-- Eliminate issues caused by name differences.
-- Simplify database queries.
-- Support multiple import sources.
+Most future functionality depends upon reliable athlete profiles.
 
-Status: Proposed
+Completing athlete management first provides a stronger foundation.
+
+---
+
+# Decision 004
+
+**Date**
+28 June 2026
+
+## Activities Will Link Using athlete_id
+
+### Status
+
+Accepted
+
+### Decision
+
+Activities will ultimately reference athletes using:
+
+```
+athlete_id
+```
+
+rather than
+
+```
+athlete_name
+```
+
+### Reason
+
+Benefits include:
+
+- Reliable multi-athlete support.
+- Multiple import sources.
+- Simpler database queries.
+- No problems caused by name changes.
+- Cleaner dashboard implementation.
+
+Implementation will take place during Sprint 2.3.
+
+---
+
+# Decision 005
+
+**Date**
+28 June 2026
+
+## Documentation Is Part Of The Project
+
+### Decision
+
+The repository documentation is considered part of the software.
+
+Current project documentation consists of:
+
+- ARCHITECTURE.md
+- ROADMAP.md
+- DECISIONS.md
+- README.md
+
+### Reason
+
+Project decisions should not depend upon conversation history.
+
+Documentation becomes the long-term source of truth.

@@ -1,19 +1,17 @@
-# Performance Passport Roadmap
-
 ---
 
-## Project Status
+# Current Status
 
-Current Version: v0.2.1
+Current Release: **v0.2.3**
+
+Current Sprint: **Sprint 2.2 – Athlete Management**
 
 Architecture Status:
-Frozen
+**Frozen**
 
-Current Sprint:
-Sprint 2.2
+Overall Progress
 
-Overall Progress:
-🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜
+🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜
 
 ---
 
@@ -21,21 +19,23 @@ Overall Progress:
 
 Performance Passport is a personal sports performance platform.
 
-The objective is not to replicate Garmin Connect, Strava or Runalyze.
+The objective is **not** to replicate Garmin Connect, Strava or Runalyze.
 
-Instead, it should generate unique insights unavailable elsewhere.
+Instead it should provide unique analysis unavailable elsewhere.
 
-Core areas include:
+Examples include:
 
 - Heat-adjusted performance
-- Surface-adjusted performance
-- Best ever easy run
+- Trail and surface adjusted performance
+- Best Ever Easy Run
 - Benchmark workout tracking
 - Durability analysis
-- Fatigue & freshness
-- Race readiness
-- Shoe performance
-- Personal Performance Passport Score
+- Fatigue & Freshness
+- Race Readiness
+- Shoe Performance
+- Performance Passport Score
+
+Every new feature should provide insight unavailable in existing platforms.
 
 ---
 
@@ -43,76 +43,77 @@ Core areas include:
 
 ## Sprint 1
 
-✅ GitHub repository created
-
-✅ Streamlit application created
-
-✅ SQLite database created
-
-✅ Athletes table
-
-✅ Activities table
-
-✅ Derived metrics table
-
-✅ Benchmarks table
+- ✅ GitHub repository
+- ✅ Streamlit application
+- ✅ SQLite database
+- ✅ Database schema
 
 ---
 
 ## Sprint 2.1
 
-✅ Runalyze CSV importer
-
-✅ Duplicate detection
-
-✅ Raw JSON storage
-
-✅ Multi-athlete support
-
-✅ Imported 3,703 Runalyze activities
+- ✅ Multi-athlete database
+- ✅ Runalyze CSV importer
+- ✅ Duplicate detection
+- ✅ Raw JSON storage
+- ✅ 3,703 activities imported
 
 ---
 
-# Current Sprint
-
 ## Sprint 2.2
 
-Goal:
+### Athlete Management
 
-Build the first database-powered dashboard using the existing architecture.
-
-Success criteria:
-
-- Dashboard displays live statistics.
-- Athlete summary works.
-- Activities page works.
-- Database queries cleaned up.
-- No architectural changes.
+- ✅ Add athlete
+- ✅ Edit athlete
+- ✅ Delete athlete
+- ✅ Duplicate prevention
+- ✅ Athlete profile fields
+- ✅ Athlete management page
+- ✅ Architecture documented
+- ✅ Roadmap documented
+- ✅ Decisions log introduced
 
 ---
 
 # Next Sprint
 
-## Sprint 2.3
+## Sprint 2.3 – Athlete Linking
 
-Planned:
+Goal:
 
-- FIT file importer
-- Merge FIT activities into activities table
-- Duplicate detection across FIT + Runalyze
-- Activity detail view
+Replace text-based athlete matching with proper database relationships.
+
+Objectives:
+
+- Add athlete_id to activities
+- Link imported activities to registered athletes
+- Preserve existing imported data
+- Support multiple import sources
+- Eliminate name matching issues
 
 ---
 
-# Future Backlog
+# Future Roadmap
 
 ## Dashboard
 
+- Athlete summary
+- Total activities
+- Distance
+- Time
 - Weekly mileage
 - Monthly mileage
-- Training load
-- Longest streak
-- Running consistency
+- Training consistency
+
+---
+
+## Activity Analysis
+
+- Activity explorer
+- Filters
+- Workout types
+- Route analysis
 
 ---
 
@@ -128,33 +129,33 @@ Planned:
 
 ## Training Intelligence
 
-- Best easy run
+- Best Ever Easy Run
 - Benchmark workouts
-- Fitness trend
-- Fatigue trend
-- Freshness score
+- Durability
+- Fatigue
+- Freshness
 - Race readiness
 
 ---
 
 ## Equipment
 
+- Shoe management
 - Shoe mileage
-- Shoe wear prediction
-- Best shoe by workout
 - Cost per mile
+- Shoe recommendations
 
 ---
 
-## Passport Score
+## Performance Passport
 
-- Endurance
-- Speed
-- Durability
-- Consistency
-- Efficiency
+- Endurance Score
+- Speed Score
+- Durability Score
+- Consistency Score
+- Efficiency Score
 
-Combined into a single Performance Passport Score.
+Combined into one overall Performance Passport Score.
 
 ---
 
@@ -162,16 +163,11 @@ Combined into a single Performance Passport Score.
 
 Every sprint must:
 
-- Start from a clean Git commit.
+- Start from a clean Git status.
+- Use the agreed architecture.
 - Build one feature.
 - Finish one feature.
-- Test completely.
-- Commit to Git.
+- Test thoroughly.
+- Commit only after testing.
 
-No architecture changes without an explicit refactoring sprint.
-
----
-
-# Ideas Parking Lot
-
-Anything that is a good idea but not currently a sprint should be placed here instead of changing the roadmap.
+Architecture changes require a dedicated refactoring sprint.
