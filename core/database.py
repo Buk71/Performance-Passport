@@ -3,12 +3,77 @@ from pathlib import Path
 
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
+CURRENT_SCHEMA_VERSION = 2
 
 
 def get_connection():
     """Return a connection to the SQLite database."""
     DATABASE_PATH.parent.mkdir(exist_ok=True)
     return sqlite3.connect(DATABASE_PATH)
+
+
+def get_table_columns(cursor, table_name):
+    """Return a list of column names for a table."""
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    return [row[1] for row in cursor.fetchall()]
+
+
+def ensure_column(cursor, table_name, column_name, column_definition):
+    """Add a column if it does not already exist."""
+    columns = get_table_columns(cursor, table_name)
+
+    if column_name not in columns:
+        cursor.execute(
+            f"""
+            ALTER TABLE {table_name}
+            ADD COLUMN {column_name} {column_definition}
+            """
+        )
+
+
+def create_schema_version_table(cursor):
+    """Create schema version tracking table."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL,
+            applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def get_schema_version(cursor):
+    """Return current schema version."""
+    create_schema_version_table(cursor)
+
+    cursor.execute("SELECT version FROM schema_version WHERE id = 1")
+    row = cursor.fetchone()
+
+    if row is None:
+        cursor.execute(
+            """
+            INSERT INTO schema_version (id, version)
+            VALUES (1, 1)
+            """
+        )
+        return 1
+
+    return row[0]
+
+
+def set_schema_version(cursor, version):
+    """Set database schema version."""
+    cursor.execute(
+        """
+        UPDATE schema_version
+        SET version = ?,
+            applied_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+        """,
+        (version,),
+    )
 
 
 def get_activity_count():
@@ -23,11 +88,8 @@ def get_activity_count():
     return count
 
 
-def initialise_database():
-    """Create all database tables."""
-
-    conn = get_connection()
-    cursor = conn.cursor()
+def create_base_tables(cursor):
+    """Create all base schema v1 tables."""
 
     cursor.execute(
         """
@@ -53,6 +115,7 @@ def initialise_database():
         CREATE TABLE IF NOT EXISTS activities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             athlete_name TEXT NOT NULL,
+            athlete_id INTEGER,
             source TEXT NOT NULL,
             source_activity_id TEXT NOT NULL,
             activity_hash TEXT,
@@ -79,7 +142,8 @@ def initialise_database():
             original_file TEXT,
             raw_json TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(athlete_name, source, source_activity_id)
+            UNIQUE(athlete_name, source, source_activity_id),
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
         )
         """
     )
@@ -117,6 +181,115 @@ def initialise_database():
         )
         """
     )
+
+
+def create_athlete_identities_table(cursor):
+    """Create athlete identities table for external source names."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_identities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            external_name TEXT NOT NULL,
+            external_id TEXT,
+            is_primary INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id),
+            UNIQUE(source, external_name)
+        )
+        """
+    )
+
+
+def migrate_to_schema_v2(cursor):
+    """
+    Migrate database to schema v2.
+
+    Adds:
+    - activities.athlete_id
+    - athlete_identities table
+    - safe backfill for existing activities
+    """
+
+    ensure_column(
+        cursor,
+        "activities",
+        "athlete_id",
+        "INTEGER REFERENCES athletes(id)",
+    )
+
+    create_athlete_identities_table(cursor)
+
+    cursor.execute(
+        """
+        SELECT id, first_name, last_name
+        FROM athletes
+        ORDER BY id
+        """
+    )
+    athletes = cursor.fetchall()
+
+    for athlete_id, first_name, last_name in athletes:
+        full_name = f"{first_name or ''} {last_name or ''}".strip()
+
+        possible_names = set()
+
+        if first_name:
+            possible_names.add(first_name.strip())
+
+        if full_name:
+            possible_names.add(full_name)
+
+        for external_name in possible_names:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO athlete_identities (
+                    athlete_id,
+                    source,
+                    external_name,
+                    is_primary
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    athlete_id,
+                    "runalyze_csv",
+                    external_name,
+                    1 if external_name == full_name else 0,
+                ),
+            )
+
+    cursor.execute(
+        """
+        UPDATE activities
+        SET athlete_id = (
+            SELECT ai.athlete_id
+            FROM athlete_identities ai
+            WHERE ai.source = activities.source
+              AND lower(ai.external_name) = lower(activities.athlete_name)
+            LIMIT 1
+        )
+        WHERE athlete_id IS NULL
+        """
+    )
+
+    set_schema_version(cursor, 2)
+
+
+def initialise_database():
+    """Create and migrate all database tables."""
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    create_base_tables(cursor)
+    create_schema_version_table(cursor)
+
+    schema_version = get_schema_version(cursor)
+
+    if schema_version < 2:
+        migrate_to_schema_v2(cursor)
 
     conn.commit()
     conn.close()
