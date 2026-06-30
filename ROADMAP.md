@@ -1,15 +1,15 @@
 # Current Status
 
-Current Release: **v0.3.2**
+Current Release: **v0.3.3**
 
-Current Sprint: **Sprint 3.2 – Coaching Engine Foundation**
+Current Sprint: **Sprint 3.4 – Athlete Baseline Foundation**
 
 Architecture Status:
 **Frozen**
 
 Overall Progress
 
-🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜
+🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜
 
 ---
 
@@ -21,11 +21,7 @@ The objective is **not** to replicate Garmin Connect, Strava or Runalyze.
 
 Instead it should answer:
 
-**"How good was this run, really?"**
-
-rather than simply:
-
-**"How fast was it?"**
+**"How good was this run, really... compared with my other similar runs?"**
 
 Every feature should help the runner understand their training better.
 
@@ -125,22 +121,34 @@ Examples include:
 
 ---
 
+## Sprint 3.3 – Training Session Classification
+
+- ✅ Introduced `RunProfile` dataclass
+- ✅ Added reusable training session classification engine
+- ✅ Implemented deterministic classification rules
+- ✅ Dashboard now displays run classifications
+- ✅ Maintained backwards compatibility with Sprint 3.2
+- ✅ No database changes
+- ✅ No architecture changes
+
+---
+
 # Current Focus
 
-## Sprint 3.3 – Aerobic Efficiency Foundation
+## Sprint 3.4 – Athlete Baseline Foundation
 
 Goal:
 
-Introduce the first genuine coaching insight by calculating a simple, transparent aerobic efficiency measure from existing activity data.
+Teach Performance Passport what is "normal" for each athlete by building historical performance baselines.
 
 Objectives:
 
-- Build on `core/coaching.py`
-- Keep calculations deterministic and explainable
-- Avoid database schema changes unless clearly required
-- Avoid architecture changes
-- Display the result in a way that feels like coaching insight rather than raw statistics
-- Prepare the foundation for Best Ever Easy Run
+- Build athlete baseline calculations.
+- Compare each run against the athlete's own history.
+- Prepare percentile-based coaching insights.
+- Build the foundation for Best Ever Easy Run.
+- Avoid database schema changes.
+- Avoid architecture changes.
 
 ---
 
@@ -152,10 +160,13 @@ This is the first major flagship feature.
 
 Goal:
 
-Identify when an easy run was unusually good after considering context, not just pace.
+Identify when an easy run was unusually good after comparing it with similar runs from the same athlete.
 
 Future inputs may include:
 
+- Session classification
+- Athlete baseline
+- Percentile ranking
 - Pace
 - Heart rate
 - Distance
@@ -216,19 +227,25 @@ AI should explain the result, not invent it.
 
 ## Training Intelligence
 
+- Run Classification
+- Athlete Baselines
+- Percentile Rankings
 - Best Ever Easy Run
-- Benchmark workouts
+- Benchmark Workouts
 - Durability
 - Fatigue
 - Freshness
-- Race readiness
-- Coaching insights
-- Training trend explanations
+- Race Readiness
+- Coaching Insights
+- Training Trend Explanations
 
 ---
 
 ## Coaching Engine
 
+- Run Classification
+- Athlete Baselines
+- Percentile Engine
 - Aerobic Efficiency
 - Running Economy
 - Heat Adjustment

@@ -3,7 +3,7 @@ import streamlit as st
 
 from config import APP_NAME, APP_SUBTITLE
 from core.database import get_connection
-from core.coaching import pace_per_km, pace_per_mile
+from core.coaching import RunProfile, classify_run, pace_per_km, pace_per_mile
 
 
 SPORT_MAP = {
@@ -164,8 +164,21 @@ def render_activity_card(activity):
 
     icon, sport_name = get_sport_display(sport_id)
 
+    run_profile = RunProfile(
+        title=title,
+        sport_id=sport_id,
+        distance_km=distance_km,
+        moving_time_seconds=moving_time_s,
+        avg_hr=avg_hr,
+    )
+    run_classification = classify_run(run_profile)
+
     with st.container(border=True):
         st.write(f"{icon} **{title or sport_name}**")
+
+        if run_classification:
+            st.write(f"**{run_classification}**")
+
         st.caption(f"{format_date(activity_date)} • {sport_name}")
 
         col1, col2, col3, col4 = st.columns(4)

@@ -124,7 +124,7 @@ Benefits include:
 - No problems caused by name changes.
 - Cleaner dashboard implementation.
 
-Implementation will take place during Sprint 2.3.
+Implementation took place during Sprint 2.3.
 
 ---
 
@@ -150,7 +150,9 @@ Current project documentation consists of:
 
 Project decisions should not depend upon conversation history.
 
-Documentation becomes the long-term source of truth.---
+Documentation becomes the long-term source of truth.
+
+---
 
 # Decision 006
 
@@ -181,7 +183,9 @@ The initial implementation includes:
 - Pace calculations
 - Pace formatting
 - Support for both metric and imperial units
-- A placeholder for future Aerobic Efficiency calculations
+- RunProfile dataclass
+- Training session classification
+- Placeholder for future Aerobic Efficiency calculations
 
 ### Reason
 
@@ -203,3 +207,98 @@ Building this foundation now avoids duplicated logic throughout the application 
 No database changes were required.
 
 No architecture changes were required.
+
+---
+
+# Decision 007
+
+**Date**
+30 June 2026
+
+## Coaching Pipeline
+
+### Status
+
+Accepted
+
+### Decision
+
+Performance Passport will evaluate activities using a layered coaching pipeline rather than calculating a single score directly.
+
+The coaching pipeline is:
+
+```
+Activity
+    ↓
+Run Profile
+    ↓
+Training Session Classification
+    ↓
+Athlete Baseline
+    ↓
+Percentile Ranking
+    ↓
+Context Adjustments
+        • Heat
+        • Elevation
+        • Terrain
+        • Fatigue
+        • Durability
+    ↓
+Passport Insight
+```
+
+Best Ever Easy Run will be built on top of this coaching pipeline rather than using a standalone algorithm.
+
+### Reason
+
+Coaches do not compare every run against every other run.
+
+They first identify the type of session, then compare it against similar sessions performed by the same athlete.
+
+This approach allows Performance Passport to explain:
+
+- How good a run was.
+- Why it was good.
+- How it compares with the athlete's own historical performances.
+
+The percentile ranking engine will become the foundation for future coaching features including:
+
+- Best Ever Easy Run
+- Benchmark Workouts
+- Heat-adjusted performance
+- Durability
+- Fatigue
+- Race Readiness
+- Passport Score
+
+This creates a transparent, deterministic and explainable coaching model while remaining simple to extend as additional data becomes available from FIT file imports.
+
+---
+
+# Decision 008
+
+**Date**
+30 June 2026
+
+## Build Coaching Before AI
+
+### Status
+
+Accepted
+
+### Decision
+
+All coaching intelligence will be implemented as deterministic, explainable calculations before any AI-generated coaching commentary is introduced.
+
+AI will never invent scores or training conclusions.
+
+Its role will be to explain the outputs of the coaching engine in natural language.
+
+### Reason
+
+The credibility of Performance Passport depends on runners understanding why a run has been assessed in a particular way.
+
+Transparent calculations are easier to test, validate and improve over time.
+
+This approach also ensures that future AI explanations remain grounded in measurable evidence rather than subjective interpretation.
