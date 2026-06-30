@@ -150,4 +150,56 @@ Current project documentation consists of:
 
 Project decisions should not depend upon conversation history.
 
-Documentation becomes the long-term source of truth.
+Documentation becomes the long-term source of truth.---
+
+# Decision 006
+
+**Date**
+30 June 2026
+
+## Coaching Engine Foundation
+
+### Status
+
+Accepted
+
+### Decision
+
+Introduce a dedicated coaching calculation module:
+
+```
+core/coaching.py
+```
+
+This module will become the single location for deterministic coaching calculations.
+
+Dashboard pages and future features should consume these reusable functions rather than implementing calculations directly.
+
+The initial implementation includes:
+
+- Distance conversion helpers
+- Pace calculations
+- Pace formatting
+- Support for both metric and imperial units
+- A placeholder for future Aerobic Efficiency calculations
+
+### Reason
+
+Performance Passport is intended to become a coaching platform rather than a statistics dashboard.
+
+Future features including:
+
+- Best Ever Easy Run
+- Heat Adjustment
+- Durability
+- Fatigue
+- Race Readiness
+- Passport Score
+
+all require a common, reusable calculation layer.
+
+Building this foundation now avoids duplicated logic throughout the application while preserving the existing architecture.
+
+No database changes were required.
+
+No architecture changes were required.

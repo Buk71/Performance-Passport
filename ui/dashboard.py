@@ -3,6 +3,7 @@ import streamlit as st
 
 from config import APP_NAME, APP_SUBTITLE
 from core.database import get_connection
+from core.coaching import pace_per_km, pace_per_mile
 
 
 SPORT_MAP = {
@@ -137,15 +138,12 @@ def format_pace(distance_km, moving_time_s):
     if not distance_km or not moving_time_s:
         return "--"
 
-    pace_seconds = moving_time_s / distance_km
-    minutes = int(pace_seconds // 60)
-    seconds = int(round(pace_seconds % 60))
+    distance_metres = distance_km * 1000
 
-    if seconds == 60:
-        minutes += 1
-        seconds = 0
+    mile_pace = pace_per_mile(distance_metres, moving_time_s)
+    km_pace = pace_per_km(distance_metres, moving_time_s)
 
-    return f"{minutes}:{seconds:02d}/km"
+    return f"{mile_pace}/mi • {km_pace}/km"
 
 
 def format_date(date_text):

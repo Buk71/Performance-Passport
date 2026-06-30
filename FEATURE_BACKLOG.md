@@ -62,6 +62,21 @@ Ideas
 
 ---
 
+## Coaching Engine
+
+Planned additions:
+
+- Aerobic Efficiency
+- Heat Adjustment
+- Terrain Adjustment
+- Fatigue Score
+- Durability Score
+- Running Economy
+- Best Ever Easy Run
+- Passport Score
+
+---
+
 # Performance Intelligence
 
 Priority: Very High

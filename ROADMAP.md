@@ -1,27 +1,33 @@
----
-
 # Current Status
 
-Current Release: **v0.2.3**
+Current Release: **v0.3.2**
 
-Current Sprint: **Sprint 2.2 – Athlete Management**
+Current Sprint: **Sprint 3.2 – Coaching Engine Foundation**
 
 Architecture Status:
 **Frozen**
 
 Overall Progress
 
-🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜
+🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜
 
 ---
 
 # Project Vision
 
-Performance Passport is a personal sports performance platform.
+Performance Passport is a coaching-focused running analysis platform.
 
 The objective is **not** to replicate Garmin Connect, Strava or Runalyze.
 
-Instead it should provide unique analysis unavailable elsewhere.
+Instead it should answer:
+
+**"How good was this run, really?"**
+
+rather than simply:
+
+**"How fast was it?"**
+
+Every feature should help the runner understand their training better.
 
 Examples include:
 
@@ -34,23 +40,23 @@ Examples include:
 - Race Readiness
 - Shoe Performance
 - Performance Passport Score
-
-Every new feature should provide insight unavailable in existing platforms.
+- AI-generated coaching insights based on deterministic calculations
 
 ---
 
 # Completed
 
-## Sprint 1
+## Sprint 1 – FIT and Runalyze Import
 
 - ✅ GitHub repository
 - ✅ Streamlit application
 - ✅ SQLite database
 - ✅ Database schema
+- ✅ Initial import foundation
 
 ---
 
-## Sprint 2.1
+## Sprint 2.1 – Multi-Athlete Database and Runalyze Import
 
 - ✅ Multi-athlete database
 - ✅ Runalyze CSV importer
@@ -60,9 +66,7 @@ Every new feature should provide insight unavailable in existing platforms.
 
 ---
 
-## Sprint 2.2
-
-### Athlete Management
+## Sprint 2.2 – Athlete Management
 
 - ✅ Add athlete
 - ✅ Edit athlete
@@ -76,21 +80,98 @@ Every new feature should provide insight unavailable in existing platforms.
 
 ---
 
-# Next Sprint
-
 ## Sprint 2.3 – Athlete Linking
+
+- ✅ Added athlete_id to activities
+- ✅ Linked imported activities to registered athletes
+- ✅ Preserved existing imported data
+- ✅ Supported multiple import sources
+- ✅ Eliminated text-based athlete matching issues
+
+---
+
+## Sprint 3.0 – Live Dashboard Foundation
+
+- ✅ Added working dashboard view
+- ✅ Athlete selector
+- ✅ Lifetime summary
+- ✅ Current year summary
+- ✅ Recent activities list
+- ✅ Sport type display foundation
+
+---
+
+## Sprint 3.1 – Dashboard Presentation Improvements
+
+- ✅ Improved dashboard presentation
+- ✅ Added activity cards
+- ✅ Added sport icons and readable sport names
+- ✅ Improved date, duration, distance, elevation and heart-rate formatting
+- ✅ Improved "Coming Next" product messaging
+
+---
+
+## Sprint 3.2 – Coaching Engine Foundation
+
+- ✅ Added `core/coaching.py`
+- ✅ Created reusable deterministic coaching calculation foundation
+- ✅ Added distance conversion helpers
+- ✅ Added pace formatting helpers
+- ✅ Added min/mile and min/km pace support
+- ✅ Dashboard now consumes coaching calculations instead of calculating pace directly
+- ✅ Added placeholder for future aerobic efficiency calculation
+- ✅ No database changes
+- ✅ No architecture changes
+
+---
+
+# Current Focus
+
+## Sprint 3.3 – Aerobic Efficiency Foundation
 
 Goal:
 
-Replace text-based athlete matching with proper database relationships.
+Introduce the first genuine coaching insight by calculating a simple, transparent aerobic efficiency measure from existing activity data.
 
 Objectives:
 
-- Add athlete_id to activities
-- Link imported activities to registered athletes
-- Preserve existing imported data
-- Support multiple import sources
-- Eliminate name matching issues
+- Build on `core/coaching.py`
+- Keep calculations deterministic and explainable
+- Avoid database schema changes unless clearly required
+- Avoid architecture changes
+- Display the result in a way that feels like coaching insight rather than raw statistics
+- Prepare the foundation for Best Ever Easy Run
+
+---
+
+# Flagship Milestone
+
+## Best Ever Easy Run
+
+This is the first major flagship feature.
+
+Goal:
+
+Identify when an easy run was unusually good after considering context, not just pace.
+
+Future inputs may include:
+
+- Pace
+- Heart rate
+- Distance
+- Duration
+- Elevation
+- Terrain
+- Heat
+- Humidity
+- Fatigue
+- Recent training load
+- Athlete history
+
+Principle:
+
+Build transparent deterministic calculations first.  
+AI should explain the result, not invent it.
 
 ---
 
@@ -105,6 +186,9 @@ Objectives:
 - Weekly mileage
 - Monthly mileage
 - Training consistency
+- Coaching highlights
+- Best recent run
+- Best ever easy run
 
 ---
 
@@ -114,6 +198,8 @@ Objectives:
 - Filters
 - Workout types
 - Route analysis
+- Activity detail view
+- Session classification
 
 ---
 
@@ -124,6 +210,7 @@ Objectives:
 - Wind adjustment
 - Altitude adjustment
 - Grade adjustment
+- Surface adjustment
 
 ---
 
@@ -135,6 +222,22 @@ Objectives:
 - Fatigue
 - Freshness
 - Race readiness
+- Coaching insights
+- Training trend explanations
+
+---
+
+## Coaching Engine
+
+- Aerobic Efficiency
+- Running Economy
+- Heat Adjustment
+- Terrain Adjustment
+- Elevation Adjustment
+- Durability Score
+- Fatigue Score
+- Race Readiness
+- Passport Score
 
 ---
 
@@ -144,6 +247,7 @@ Objectives:
 - Shoe mileage
 - Cost per mile
 - Shoe recommendations
+- Shoe performance comparison
 
 ---
 
@@ -154,6 +258,7 @@ Objectives:
 - Durability Score
 - Consistency Score
 - Efficiency Score
+- Race Readiness Score
 
 Combined into one overall Performance Passport Score.
 
@@ -167,7 +272,11 @@ Every sprint must:
 - Use the agreed architecture.
 - Build one feature.
 - Finish one feature.
+- Keep changes small and testable.
+- Explain why each change is being made.
 - Test thoroughly.
-- Commit only after testing.
+- Commit only after successful testing.
 
 Architecture changes require a dedicated refactoring sprint.
+
+When in doubt, optimise for correctness, maintainability and coaching value rather than speed of implementation. Small, well-tested improvements are preferred over large speculative changes.
