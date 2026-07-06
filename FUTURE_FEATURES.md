@@ -214,6 +214,25 @@ Reasons
 
 ---
 
+# Canonical Activity Model
+
+Performance Passport should combine information from multiple sources.
+
+Potential sources
+
+- FIT files
+- Runalyze
+- Garmin
+- Strava
+- Weather APIs
+- Race database
+
+Each source contributes the information it knows best.
+
+The coaching engine analyses one unified activity model rather than relying on any single platform.
+
+---
+
 # Guiding Principle
 
 Future features should only be promoted into active development when they answer a clear coaching question and fit the Performance Passport coaching pipeline.
