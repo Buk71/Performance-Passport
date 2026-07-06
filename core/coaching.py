@@ -1,20 +1,16 @@
 """
 Performance Passport Coaching Engine
 
-Reusable coaching calculations.
+Reusable deterministic coaching calculations.
 
-These functions are deterministic and contain no database or UI logic.
-They provide the foundation for future coaching features including:
-
-- Best Ever Easy Run
-- Heat adjustment
-- Fatigue
-- Durability
-- Passport Score
+No database logic.
+No Streamlit logic.
+No UI formatting beyond simple pace display helpers.
 """
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 
 
@@ -23,34 +19,35 @@ METRES_PER_MILE = 1609.344
 
 @dataclass(frozen=True)
 class RunProfile:
-    """
-    Lightweight coaching profile for an activity.
-
-    This is not a database model.
-    It is a simple object used by the coaching engine.
-    """
-
     title: str | None
     sport_id: str | int | None
     distance_km: float | None
     moving_time_seconds: float | None
     avg_hr: float | None = None
+    activity_date: str | None = None
+    elevation_m: float | None = None
+
+
+@dataclass(frozen=True)
+class AthleteBaseline:
+    run_type: str
+    baseline_name: str
+    run_count: int
+    avg_distance_km: float
+    avg_pace_seconds_per_km: float
+    avg_hr: float
+    avg_elevation_m: float
 
 
 def metres_to_miles(metres: float) -> float:
-    """Convert metres to miles."""
     return metres / METRES_PER_MILE
 
 
 def metres_to_km(metres: float) -> float:
-    """Convert metres to kilometres."""
     return metres / 1000
 
 
 def seconds_to_pace(seconds_per_unit: float) -> str:
-    """
-    Convert seconds per mile/km into mm:ss pace.
-    """
     minutes = int(seconds_per_unit // 60)
     seconds = int(round(seconds_per_unit % 60))
 
@@ -61,8 +58,20 @@ def seconds_to_pace(seconds_per_unit: float) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
+def pace_seconds_per_km(
+    distance_km: float | None,
+    moving_time_seconds: float | None,
+) -> float | None:
+    if not distance_km or not moving_time_seconds:
+        return None
+
+    if distance_km <= 0 or moving_time_seconds <= 0:
+        return None
+
+    return moving_time_seconds / distance_km
+
+
 def pace_per_mile(distance_metres: float, moving_time_seconds: float) -> str:
-    """Return pace formatted as min/mile."""
     miles = metres_to_miles(distance_metres)
 
     if miles <= 0:
@@ -72,7 +81,6 @@ def pace_per_mile(distance_metres: float, moving_time_seconds: float) -> str:
 
 
 def pace_per_km(distance_metres: float, moving_time_seconds: float) -> str:
-    """Return pace formatted as min/km."""
     km = metres_to_km(distance_metres)
 
     if km <= 0:
@@ -81,28 +89,24 @@ def pace_per_km(distance_metres: float, moving_time_seconds: float) -> str:
     return seconds_to_pace(moving_time_seconds / km)
 
 
-def classify_run(run: RunProfile) -> str | None:
-    """
-    Classify a running activity using simple deterministic rules.
+def parse_activity_date(activity_date: str | None) -> datetime.date | None:
+    if not activity_date:
+        return None
 
-    This is intentionally conservative.
-    It avoids calling something an Easy Run until we have stronger evidence.
-    """
+    try:
+        return datetime.date.fromisoformat(activity_date[:10])
+    except ValueError:
+        return None
+
+
+def classify_run(run: RunProfile) -> str | None:
     title = (run.title or "").lower()
     sport_id = str(run.sport_id or "")
 
     if sport_id != "965611":
         return None
 
-    race_keywords = [
-        "race",
-        "parkrun",
-        "5k",
-        "10k",
-        "half",
-        "marathon",
-    ]
-
+    race_keywords = ["race", "parkrun", "5k", "10k", "half", "marathon"]
     interval_keywords = [
         "interval",
         "intervals",
@@ -128,11 +132,85 @@ def classify_run(run: RunProfile) -> str | None:
     return "🟢 Run"
 
 
-def aerobic_efficiency(avg_hr: float | None, pace_seconds_per_mile: float | None):
+def build_baseline(
+    runs: list[RunProfile],
+    run_type: str,
+    baseline_name: str | None = None,
+    period_days: int | None = None,
+    period: str | None = None,
+) -> AthleteBaseline | None:
     """
-    Placeholder for the future Aerobic Efficiency calculation.
+    Build a baseline for one training session type.
 
-    Sprint 3.2 intentionally returns None until we design the
-    complete coaching model in a later sprint.
+    period_days:
+    - None = all time
+    - 365 = last 12 months
+    - 90 = last 90 days
+
+    The optional period argument is kept temporarily for backwards
+    compatibility with the existing dashboard.
     """
+    name = baseline_name or period or "All Time"
+
+    cutoff_date = None
+    if period_days is not None:
+        cutoff_date = datetime.date.today() - datetime.timedelta(days=period_days)
+
+    matching_runs = []
+
+    for run in runs:
+        if classify_run(run) != run_type:
+            continue
+
+        if cutoff_date is not None:
+            activity_date = parse_activity_date(run.activity_date)
+            if activity_date is None or activity_date < cutoff_date:
+                continue
+
+        pace = pace_seconds_per_km(
+            run.distance_km,
+            run.moving_time_seconds,
+        )
+
+        if pace is None:
+            continue
+
+        if run.avg_hr is None:
+            continue
+
+        matching_runs.append((run, pace))
+
+    if not matching_runs:
+        return None
+
+    run_count = len(matching_runs)
+
+    avg_distance_km = sum(
+        run.distance_km or 0 for run, _pace in matching_runs
+    ) / run_count
+
+    avg_pace_seconds_per_km = sum(
+        pace for _run, pace in matching_runs
+    ) / run_count
+
+    avg_hr = sum(
+        run.avg_hr or 0 for run, _pace in matching_runs
+    ) / run_count
+
+    avg_elevation_m = sum(
+        run.elevation_m or 0 for run, _pace in matching_runs
+    ) / run_count
+
+    return AthleteBaseline(
+        run_type=run_type,
+        baseline_name=name,
+        run_count=run_count,
+        avg_distance_km=avg_distance_km,
+        avg_pace_seconds_per_km=avg_pace_seconds_per_km,
+        avg_hr=avg_hr,
+        avg_elevation_m=avg_elevation_m,
+    )
+
+
+def aerobic_efficiency(avg_hr: float | None, pace_seconds_per_mile: float | None):
     return None

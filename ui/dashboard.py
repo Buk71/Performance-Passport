@@ -3,7 +3,15 @@ import streamlit as st
 
 from config import APP_NAME, APP_SUBTITLE
 from core.database import get_connection
-from core.coaching import RunProfile, classify_run, pace_per_km, pace_per_mile
+from core.coaching import (
+    METRES_PER_MILE,
+    RunProfile,
+    build_baseline,
+    classify_run,
+    pace_per_km,
+    pace_per_mile,
+    seconds_to_pace,
+)
 
 
 SPORT_MAP = {
@@ -107,8 +115,57 @@ def get_recent_activities(athlete_id, limit=5):
     return rows
 
 
+def get_run_profiles(athlete_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            activity_date,
+            title,
+            distance_m,
+            moving_time_s,
+            avg_hr,
+            sport_id,
+            elevation_up_m
+        FROM activities
+        WHERE athlete_id = ?
+        ORDER BY activity_datetime DESC
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        RunProfile(
+            activity_date=activity_date,
+            title=title,
+            distance_km=distance_km,
+            moving_time_seconds=moving_time_s,
+            avg_hr=avg_hr,
+            sport_id=sport_id,
+            elevation_m=elevation_m,
+        )
+        for (
+            activity_date,
+            title,
+            distance_km,
+            moving_time_s,
+            avg_hr,
+            sport_id,
+            elevation_m,
+        ) in rows
+    ]
+
+
 def format_distance(distance_km):
     return f"{distance_km or 0:,.1f} km"
+
+
+def format_distance_dual(distance_km):
+    miles = (distance_km or 0) / (METRES_PER_MILE / 1000)
+    return f"{miles:,.1f} mi • {distance_km or 0:,.1f} km"
 
 
 def format_hours(seconds):
@@ -146,6 +203,18 @@ def format_pace(distance_km, moving_time_s):
     return f"{mile_pace}/mi • {km_pace}/km"
 
 
+def format_baseline_pace(avg_pace_seconds_per_km):
+    if not avg_pace_seconds_per_km:
+        return "--"
+
+    seconds_per_mile = avg_pace_seconds_per_km * (METRES_PER_MILE / 1000)
+
+    mile_pace = seconds_to_pace(seconds_per_mile)
+    km_pace = seconds_to_pace(avg_pace_seconds_per_km)
+
+    return f"{mile_pace}/mi • {km_pace}/km"
+
+
 def format_date(date_text):
     try:
         parsed_date = datetime.date.fromisoformat(date_text)
@@ -159,6 +228,12 @@ def get_sport_display(sport_id):
     return SPORT_MAP.get(sport_key, ("❓", f"Unknown sport {sport_key}"))
 
 
+def baseline_value(baseline, formatter):
+    if baseline is None:
+        return "--"
+    return formatter(baseline)
+
+
 def render_activity_card(activity):
     activity_date, title, distance_km, moving_time_s, avg_hr, sport_id = activity
 
@@ -170,6 +245,7 @@ def render_activity_card(activity):
         distance_km=distance_km,
         moving_time_seconds=moving_time_s,
         avg_hr=avg_hr,
+        activity_date=activity_date,
     )
     run_classification = classify_run(run_profile)
 
@@ -187,6 +263,125 @@ def render_activity_card(activity):
         col2.metric("Pace", format_pace(distance_km, moving_time_s))
         col3.metric("Duration", format_duration(moving_time_s))
         col4.metric("Avg HR", f"{avg_hr:.0f}" if avg_hr else "--")
+
+
+def render_baseline_insight(current, all_time):
+    if current is None or all_time is None:
+        return
+
+    pace_diff_seconds_per_mile = (
+        all_time.avg_pace_seconds_per_km - current.avg_pace_seconds_per_km
+    ) * (METRES_PER_MILE / 1000)
+
+    hr_diff = all_time.avg_hr - current.avg_hr
+
+    if pace_diff_seconds_per_mile > 0 and hr_diff > 0:
+        st.success(
+            "Passport Insight: Your current running baseline is faster and at a "
+            "lower heart rate than your all-time baseline, suggesting improved "
+            "aerobic fitness."
+        )
+    elif pace_diff_seconds_per_mile > 0:
+        st.info(
+            "Passport Insight: Your current running baseline is faster than your "
+            "all-time baseline."
+        )
+    elif hr_diff > 0:
+        st.info(
+            "Passport Insight: Your current running baseline is at a lower heart "
+            "rate than your all-time baseline."
+        )
+    else:
+        st.info(
+            "Passport Insight: Your current baseline is broadly similar to your "
+            "all-time running baseline."
+        )
+
+
+def render_typical_run_section(athlete_id):
+    run_profiles = get_run_profiles(athlete_id)
+
+    current = build_baseline(
+        runs=run_profiles,
+        run_type="🟢 Run",
+        baseline_name="Current",
+        period_days=90,
+    )
+
+    season = build_baseline(
+        runs=run_profiles,
+        run_type="🟢 Run",
+        baseline_name="Season",
+        period_days=365,
+    )
+
+    all_time = build_baseline(
+        runs=run_profiles,
+        run_type="🟢 Run",
+        baseline_name="All Time",
+        period_days=None,
+    )
+
+    st.subheader("Typical Run")
+    st.caption("Baselines for activities classified as 🟢 Run")
+
+    if current is None and season is None and all_time is None:
+        st.info("Not enough running data yet to calculate a typical run.")
+        return
+
+    baseline_table = [
+        {
+            "Metric": "Runs analysed",
+            "Current": baseline_value(current, lambda b: f"{b.run_count:,}"),
+            "Season": baseline_value(season, lambda b: f"{b.run_count:,}"),
+            "All Time": baseline_value(all_time, lambda b: f"{b.run_count:,}"),
+        },
+        {
+            "Metric": "Typical pace",
+            "Current": baseline_value(
+                current, lambda b: format_baseline_pace(b.avg_pace_seconds_per_km)
+            ),
+            "Season": baseline_value(
+                season, lambda b: format_baseline_pace(b.avg_pace_seconds_per_km)
+            ),
+            "All Time": baseline_value(
+                all_time, lambda b: format_baseline_pace(b.avg_pace_seconds_per_km)
+            ),
+        },
+        {
+            "Metric": "Typical HR",
+            "Current": baseline_value(current, lambda b: f"{b.avg_hr:.0f} bpm"),
+            "Season": baseline_value(season, lambda b: f"{b.avg_hr:.0f} bpm"),
+            "All Time": baseline_value(all_time, lambda b: f"{b.avg_hr:.0f} bpm"),
+        },
+        {
+            "Metric": "Typical distance",
+            "Current": baseline_value(
+                current, lambda b: format_distance_dual(b.avg_distance_km)
+            ),
+            "Season": baseline_value(
+                season, lambda b: format_distance_dual(b.avg_distance_km)
+            ),
+            "All Time": baseline_value(
+                all_time, lambda b: format_distance_dual(b.avg_distance_km)
+            ),
+        },
+        {
+            "Metric": "Average elevation",
+            "Current": baseline_value(
+                current, lambda b: format_elevation(b.avg_elevation_m)
+            ),
+            "Season": baseline_value(
+                season, lambda b: format_elevation(b.avg_elevation_m)
+            ),
+            "All Time": baseline_value(
+                all_time, lambda b: format_elevation(b.avg_elevation_m)
+            ),
+        },
+    ]
+
+    st.table(baseline_table)
+    render_baseline_insight(current, all_time)
 
 
 def show_dashboard():
@@ -256,6 +451,10 @@ def show_dashboard():
 
     st.divider()
 
+    render_typical_run_section(selected_athlete_id)
+
+    st.divider()
+
     st.subheader("Recent Activities")
 
     recent_activities = get_recent_activities(selected_athlete_id)
@@ -271,7 +470,7 @@ def show_dashboard():
     st.subheader("Coming Next")
 
     st.info(
-        "Next sprint adds the first Passport Insight. Future sprints will add "
-        "heat-adjusted performance, Best Ever Easy Run, durability, fatigue, "
-        "race readiness and Passport Score."
+        "Next sprint adds individual run comparison. Future sprints will add "
+        "percentile rankings, heat-adjusted performance, Best Ever Easy Run, "
+        "durability, fatigue, race readiness and Passport Score."
     )

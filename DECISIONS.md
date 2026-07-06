@@ -302,3 +302,48 @@ The credibility of Performance Passport depends on runners understanding why a r
 Transparent calculations are easier to test, validate and improve over time.
 
 This approach also ensures that future AI explanations remain grounded in measurable evidence rather than subjective interpretation.
+---
+
+# Decision 009
+
+**Date**
+5 July 2026
+
+## Timing Rules
+
+### Status
+
+Accepted
+
+### Decision
+
+Performance Passport will use different time fields depending on the purpose of the analysis.
+
+Use **elapsed time** for:
+
+- PBs
+- Fastest 1k / 5k / 10k / half marathon / marathon
+- Distance records
+- Race performance metrics
+
+Use **moving time** for:
+
+- Training sessions
+- Easy runs
+- Threshold runs
+- Long runs
+- Performance Passport coaching analysis
+- Coaching metrics
+- Best Ever Easy Run / Threshold / Long Run analysis
+
+### Principle
+
+Performance metrics use elapsed time.
+
+Training quality metrics use moving time.
+
+### Reason
+
+Race and record performance should reflect the full time taken to complete the distance.
+
+Training quality analysis should focus on the active running portion of the session so that stops, pauses and non-running interruptions do not distort coaching insight.
