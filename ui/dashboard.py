@@ -50,6 +50,34 @@ def get_athletes():
     return athletes
 
 
+def get_athlete_thresholds(athlete_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT lt1_hr, lt2_hr, max_hr
+        FROM athletes
+        WHERE id = ?
+        """,
+        (athlete_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return {
+            "lt1_hr": None,
+            "lt2_hr": None,
+            "athlete_max_hr": None,
+        }
+
+    return {
+        "lt1_hr": row[0],
+        "lt2_hr": row[1],
+        "athlete_max_hr": row[2],
+    }
+
+
 def get_lifetime_summary(athlete_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -115,7 +143,7 @@ def get_recent_activities(athlete_id, limit=5):
     return rows
 
 
-def get_run_profiles(athlete_id):
+def get_run_profiles(athlete_id, athlete_thresholds):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -126,6 +154,7 @@ def get_run_profiles(athlete_id):
             distance_m,
             moving_time_s,
             avg_hr,
+            max_hr,
             sport_id,
             elevation_up_m
         FROM activities
@@ -144,8 +173,12 @@ def get_run_profiles(athlete_id):
             distance_km=distance_km,
             moving_time_seconds=moving_time_s,
             avg_hr=avg_hr,
+            run_max_hr=run_max_hr,
             sport_id=sport_id,
             elevation_m=elevation_m,
+            lt1_hr=athlete_thresholds["lt1_hr"],
+            lt2_hr=athlete_thresholds["lt2_hr"],
+            athlete_max_hr=athlete_thresholds["athlete_max_hr"],
         )
         for (
             activity_date,
@@ -153,6 +186,7 @@ def get_run_profiles(athlete_id):
             distance_km,
             moving_time_s,
             avg_hr,
+            run_max_hr,
             sport_id,
             elevation_m,
         ) in rows
@@ -277,29 +311,30 @@ def render_baseline_insight(current, all_time):
 
     if pace_diff_seconds_per_mile > 0 and hr_diff > 0:
         st.success(
-            "Passport Insight: Your current running baseline is faster and at a "
+            "Passport Insight: Your current easy-run baseline is faster and at a "
             "lower heart rate than your all-time baseline, suggesting improved "
             "aerobic fitness."
         )
     elif pace_diff_seconds_per_mile > 0:
         st.info(
-            "Passport Insight: Your current running baseline is faster than your "
+            "Passport Insight: Your current easy-run baseline is faster than your "
             "all-time baseline."
         )
     elif hr_diff > 0:
         st.info(
-            "Passport Insight: Your current running baseline is at a lower heart "
+            "Passport Insight: Your current easy-run baseline is at a lower heart "
             "rate than your all-time baseline."
         )
     else:
         st.info(
             "Passport Insight: Your current baseline is broadly similar to your "
-            "all-time running baseline."
+            "all-time easy-running baseline."
         )
 
 
 def render_typical_run_section(athlete_id):
-    run_profiles = get_run_profiles(athlete_id)
+    athlete_thresholds = get_athlete_thresholds(athlete_id)
+    run_profiles = get_run_profiles(athlete_id, athlete_thresholds)
 
     current = build_baseline(
         runs=run_profiles,
@@ -322,11 +357,11 @@ def render_typical_run_section(athlete_id):
         period_days=None,
     )
 
-    st.subheader("Typical Run")
-    st.caption("Baselines for activities classified as 🟢 Run")
+    st.subheader("Typical Easy Run")
+    st.caption("Baselines for activities included in the easy aerobic baseline")
 
     if current is None and season is None and all_time is None:
-        st.info("Not enough running data yet to calculate a typical run.")
+        st.info("Not enough running data yet to calculate a typical easy run.")
         return
 
     baseline_table = [

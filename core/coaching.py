@@ -24,8 +24,13 @@ class RunProfile:
     distance_km: float | None
     moving_time_seconds: float | None
     avg_hr: float | None = None
+    run_max_hr: float | None = None
     activity_date: str | None = None
     elevation_m: float | None = None
+
+    lt1_hr: float | None = None
+    lt2_hr: float | None = None
+    athlete_max_hr: float | None = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +112,8 @@ def classify_run(run: RunProfile) -> str | None:
         return None
 
     race_keywords = ["race", "parkrun", "5k", "10k", "half", "marathon"]
-    interval_keywords = [
+
+    session_keywords = [
         "interval",
         "intervals",
         "rep",
@@ -118,18 +124,44 @@ def classify_run(run: RunProfile) -> str | None:
         "1000",
         "1200",
         "fartlek",
+        "threshold",
+        "tempo",
+        "session",
+        "workout",
+        "hill",
     ]
 
     if any(keyword in title for keyword in race_keywords):
         return "🏁 Race"
 
-    if any(keyword in title for keyword in interval_keywords):
-        return "🔴 Interval Session"
+    if any(keyword in title for keyword in session_keywords):
+        return "🔴 Session"
 
     if run.distance_km and run.distance_km >= 16:
         return "🔵 Long Run"
 
     return "🟢 Run"
+
+
+def is_easy_baseline_candidate(run: RunProfile) -> bool:
+    """
+    Decide whether a run should be included in the easy aerobic baseline.
+
+    Version 1 keeps this deliberately strict:
+    easy baseline runs should generally stay below the athlete's LT1.
+    """
+    if classify_run(run) != "🟢 Run":
+        return False
+
+    if run.run_max_hr is not None and run.lt1_hr is not None:
+        if run.run_max_hr >= run.lt1_hr:
+            return False
+
+    if run.avg_hr is not None and run.lt1_hr is not None:
+        if run.avg_hr >= run.lt1_hr - 2:
+            return False
+
+    return True
 
 
 def build_baseline(
@@ -139,17 +171,6 @@ def build_baseline(
     period_days: int | None = None,
     period: str | None = None,
 ) -> AthleteBaseline | None:
-    """
-    Build a baseline for one training session type.
-
-    period_days:
-    - None = all time
-    - 365 = last 12 months
-    - 90 = last 90 days
-
-    The optional period argument is kept temporarily for backwards
-    compatibility with the existing dashboard.
-    """
     name = baseline_name or period or "All Time"
 
     cutoff_date = None
@@ -159,7 +180,10 @@ def build_baseline(
     matching_runs = []
 
     for run in runs:
-        if classify_run(run) != run_type:
+        if run_type == "🟢 Run":
+            if not is_easy_baseline_candidate(run):
+                continue
+        elif classify_run(run) != run_type:
             continue
 
         if cutoff_date is not None:
