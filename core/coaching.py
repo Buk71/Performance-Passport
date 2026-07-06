@@ -44,6 +44,19 @@ class AthleteBaseline:
     avg_elevation_m: float
 
 
+@dataclass(frozen=True)
+class ActivityEvidence:
+    """
+    Explain why an activity was classified in a particular way.
+
+    This is the foundation of the Activity Intelligence Engine.
+    """
+
+    classification: str
+    easy_baseline_candidate: bool
+    evidence: list[str]
+
+
 def metres_to_miles(metres: float) -> float:
     return metres / METRES_PER_MILE
 
@@ -104,64 +117,116 @@ def parse_activity_date(activity_date: str | None) -> datetime.date | None:
         return None
 
 
-def classify_run(run: RunProfile) -> str | None:
+def assess_activity(run: RunProfile) -> ActivityEvidence:
+    """
+    Assess an activity using deterministic coaching evidence.
+
+    Version 1 deliberately keeps the rules simple and explainable.
+    """
+
     title = (run.title or "").lower()
     sport_id = str(run.sport_id or "")
 
     if sport_id != "965611":
-        return None
+        return ActivityEvidence(
+            classification="Other",
+            easy_baseline_candidate=False,
+            evidence=["Not a running activity"],
+        )
 
-    race_keywords = ["race", "parkrun", "5k", "10k", "half", "marathon"]
+    evidence = []
+
+    race_keywords = [
+        "race",
+        "parkrun",
+        "5k",
+        "10k",
+        "half",
+        "marathon",
+    ]
 
     session_keywords = [
+        "session",
+        "threshold",
+        "tempo",
         "interval",
         "intervals",
         "rep",
         "reps",
         "400",
         "800",
-        "1k",
         "1000",
         "1200",
+        "1k",
         "fartlek",
-        "threshold",
-        "tempo",
-        "session",
-        "workout",
         "hill",
     ]
 
     if any(keyword in title for keyword in race_keywords):
-        return "🏁 Race"
+        evidence.append("Race keywords detected")
 
-    if any(keyword in title for keyword in session_keywords):
-        return "🔴 Session"
+        return ActivityEvidence(
+            classification="🏁 Race",
+            easy_baseline_candidate=False,
+            evidence=evidence,
+        )
 
     if run.distance_km and run.distance_km >= 16:
-        return "🔵 Long Run"
+        evidence.append("Long run distance")
 
-    return "🟢 Run"
+        return ActivityEvidence(
+            classification="🔵 Long Run",
+            easy_baseline_candidate=False,
+            evidence=evidence,
+        )
+
+    if any(keyword in title for keyword in session_keywords):
+        evidence.append("Session keywords detected")
+
+    if (
+        run.run_max_hr is not None
+        and run.lt1_hr is not None
+        and run.run_max_hr >= run.lt1_hr
+    ):
+        evidence.append("Maximum HR exceeded LT1")
+
+    if (
+        run.avg_hr is not None
+        and run.lt1_hr is not None
+        and run.avg_hr >= run.lt1_hr
+    ):
+        evidence.append("Average HR exceeded LT1")
+
+    if evidence:
+        return ActivityEvidence(
+            classification="🔴 Session",
+            easy_baseline_candidate=False,
+            evidence=evidence,
+        )
+
+    evidence.append("Matches easy aerobic profile")
+
+    return ActivityEvidence(
+        classification="🟢 Run",
+        easy_baseline_candidate=True,
+        evidence=evidence,
+    )
+
+
+def classify_run(run: RunProfile) -> str | None:
+    """
+    Return the activity classification.
+
+    The assessment logic lives in assess_activity().
+    """
+    return assess_activity(run).classification
 
 
 def is_easy_baseline_candidate(run: RunProfile) -> bool:
     """
-    Decide whether a run should be included in the easy aerobic baseline.
-
-    Version 1 keeps this deliberately strict:
-    easy baseline runs should generally stay below the athlete's LT1.
+    Return True if this activity should be included in the easy baseline.
     """
-    if classify_run(run) != "🟢 Run":
-        return False
-
-    if run.run_max_hr is not None and run.lt1_hr is not None:
-        if run.run_max_hr >= run.lt1_hr:
-            return False
-
-    if run.avg_hr is not None and run.lt1_hr is not None:
-        if run.avg_hr >= run.lt1_hr - 2:
-            return False
-
-    return True
+    return assess_activity(run).easy_baseline_candidate
 
 
 def build_baseline(

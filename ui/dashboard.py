@@ -6,8 +6,8 @@ from core.database import get_connection
 from core.coaching import (
     METRES_PER_MILE,
     RunProfile,
+    assess_activity,
     build_baseline,
-    classify_run,
     pace_per_km,
     pace_per_mile,
     seconds_to_pace,
@@ -119,35 +119,11 @@ def get_year_summary(athlete_id, year):
     return row
 
 
-def get_recent_activities(athlete_id, limit=5):
+def get_run_profiles(athlete_id, athlete_thresholds, limit=None):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            activity_date,
-            title,
-            distance_m,
-            moving_time_s,
-            avg_hr,
-            sport_id
-        FROM activities
-        WHERE athlete_id = ?
-        ORDER BY activity_datetime DESC
-        LIMIT ?
-        """,
-        (athlete_id, limit),
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
 
-
-def get_run_profiles(athlete_id, athlete_thresholds):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
+    query = """
         SELECT
             activity_date,
             title,
@@ -160,9 +136,15 @@ def get_run_profiles(athlete_id, athlete_thresholds):
         FROM activities
         WHERE athlete_id = ?
         ORDER BY activity_datetime DESC
-        """,
-        (athlete_id,),
-    )
+    """
+
+    params = [athlete_id]
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
 
@@ -268,35 +250,37 @@ def baseline_value(baseline, formatter):
     return formatter(baseline)
 
 
-def render_activity_card(activity):
-    activity_date, title, distance_km, moving_time_s, avg_hr, sport_id = activity
-
-    icon, sport_name = get_sport_display(sport_id)
-
-    run_profile = RunProfile(
-        title=title,
-        sport_id=sport_id,
-        distance_km=distance_km,
-        moving_time_seconds=moving_time_s,
-        avg_hr=avg_hr,
-        activity_date=activity_date,
-    )
-    run_classification = classify_run(run_profile)
+def render_activity_card(run_profile):
+    icon, sport_name = get_sport_display(run_profile.sport_id)
+    assessment = assess_activity(run_profile)
 
     with st.container(border=True):
-        st.write(f"{icon} **{title or sport_name}**")
+        st.write(f"{icon} **{run_profile.title or sport_name}**")
 
-        if run_classification:
-            st.write(f"**{run_classification}**")
+        if assessment.classification != "Other":
+            st.write(f"**{assessment.classification}**")
 
-        st.caption(f"{format_date(activity_date)} • {sport_name}")
+        st.caption(f"{format_date(run_profile.activity_date)} • {sport_name}")
 
         col1, col2, col3, col4 = st.columns(4)
 
-        col1.metric("Distance", format_distance(distance_km))
-        col2.metric("Pace", format_pace(distance_km, moving_time_s))
-        col3.metric("Duration", format_duration(moving_time_s))
-        col4.metric("Avg HR", f"{avg_hr:.0f}" if avg_hr else "--")
+        col1.metric("Distance", format_distance(run_profile.distance_km))
+        col2.metric(
+            "Pace",
+            format_pace(run_profile.distance_km, run_profile.moving_time_seconds),
+        )
+        col3.metric("Duration", format_duration(run_profile.moving_time_seconds))
+        col4.metric("Avg HR", f"{run_profile.avg_hr:.0f}" if run_profile.avg_hr else "--")
+
+        if assessment.classification != "Other":
+            with st.expander("Why was this classified this way?"):
+                for item in assessment.evidence:
+                    st.write(f"✅ {item}")
+
+                if assessment.easy_baseline_candidate:
+                    st.success("Included in Easy Baseline")
+                else:
+                    st.info("Excluded from Easy Baseline")
 
 
 def render_baseline_insight(current, all_time):
@@ -332,10 +316,7 @@ def render_baseline_insight(current, all_time):
         )
 
 
-def render_typical_run_section(athlete_id):
-    athlete_thresholds = get_athlete_thresholds(athlete_id)
-    run_profiles = get_run_profiles(athlete_id, athlete_thresholds)
-
+def render_typical_run_section(run_profiles):
     current = build_baseline(
         runs=run_profiles,
         run_type="🟢 Run",
@@ -444,6 +425,12 @@ def show_dashboard():
     )
 
     selected_athlete_id = athlete_options[selected_athlete_name]
+    athlete_thresholds = get_athlete_thresholds(selected_athlete_id)
+
+    all_run_profiles = get_run_profiles(
+        selected_athlete_id,
+        athlete_thresholds,
+    )
 
     st.divider()
 
@@ -486,19 +473,19 @@ def show_dashboard():
 
     st.divider()
 
-    render_typical_run_section(selected_athlete_id)
+    render_typical_run_section(all_run_profiles)
 
     st.divider()
 
     st.subheader("Recent Activities")
 
-    recent_activities = get_recent_activities(selected_athlete_id)
+    recent_run_profiles = all_run_profiles[:5]
 
-    if not recent_activities:
+    if not recent_run_profiles:
         st.info("No recent activities found.")
     else:
-        for activity in recent_activities:
-            render_activity_card(activity)
+        for run_profile in recent_run_profiles:
+            render_activity_card(run_profile)
 
     st.divider()
 
