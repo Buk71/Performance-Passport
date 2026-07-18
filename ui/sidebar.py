@@ -1,25 +1,84 @@
 import streamlit as st
-from config import APP_NAME, VERSION
+
+from config import APP_NAME, VERSION, VERSION_NAME
+
+
+PRIMARY_NAVIGATION = [
+    "Coach",
+    "Activities",
+    "Progress",
+    "Goal",
+    "Passport",
+]
+
+MANAGEMENT_NAVIGATION = [
+    "Athletes",
+    "Import",
+    "Settings",
+]
 
 
 def show_sidebar():
-    """Display the application sidebar."""
+    """Display the Performance Passport navigation."""
 
-    st.sidebar.title(f"🏃 {APP_NAME}")
-    st.sidebar.caption(f"Version {VERSION}")
+    st.sidebar.markdown(
+        f"""
+        <div class="pp-brand">
+            <div class="pp-brand-mark">PP</div>
+            <div>
+                <div class="pp-brand-title">{APP_NAME}</div>
+                <div class="pp-brand-subtitle">
+                    Personal Running Intelligence
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    page = st.sidebar.radio(
-        "Navigation",
-        [
-            "Dashboard",
-            "Athletes",
-            "Import",
-            "Activities",
-            "Settings",
-        ],
+    st.sidebar.markdown(
+        '<div class="pp-sidebar-section">Your running</div>',
+        unsafe_allow_html=True,
+    )
+
+    primary_page = st.sidebar.radio(
+        "Primary navigation",
+        PRIMARY_NAVIGATION,
+        key="primary_navigation",
     )
 
     st.sidebar.divider()
-    st.sidebar.caption("Sprint 1 • Data Foundation")
+
+    st.sidebar.markdown(
+        '<div class="pp-sidebar-section">Manage</div>',
+        unsafe_allow_html=True,
+    )
+
+    management_page = st.sidebar.radio(
+        "Management navigation",
+        ["None", *MANAGEMENT_NAVIGATION],
+        index=0,
+        key="management_navigation",
+        label_visibility="collapsed",
+    )
+
+    if management_page != "None":
+        page = management_page
+
+        if st.session_state.get("primary_navigation") != "Coach":
+            st.session_state.primary_navigation = "Coach"
+    else:
+        page = primary_page
+
+    st.sidebar.markdown(
+        f"""
+        <div class="pp-sidebar-footer">
+            <div class="pp-sidebar-footer-label">Current release</div>
+            <div class="pp-sidebar-footer-title">{VERSION_NAME}</div>
+            <div class="pp-sidebar-footer-meta">Version {VERSION}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     return page
