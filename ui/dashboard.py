@@ -4,6 +4,7 @@ import textwrap
 
 import streamlit as st
 
+from core.coach_brain import CoachBrain
 from core.coaching import (
     METRES_PER_MILE,
     RunProfile,
@@ -12,7 +13,8 @@ from core.coaching import (
     equivalent_performance,
     seconds_to_pace,
 )
-from core.database import get_connection
+from core.database import get_active_goal, get_connection
+from core.evidence import EvidenceStatus
 
 
 SPORT_MAP = {
@@ -32,15 +34,28 @@ SPORT_MAP = {
 }
 
 
-# Temporary goal values until the Goal screen and goal table are built.
-GOAL_NAME = "Sub 39:00 10K"
-GOAL_TARGET_SECONDS = 39 * 60
-CURRENT_PREDICTION_SECONDS = (39 * 60) + 18
-GOAL_PROGRESS_PERCENT = 74
-
-
 def athlete_full_name(first_name, last_name):
     return f"{first_name or ''} {last_name or ''}".strip()
+
+
+def update_selected_athlete():
+    """Persist the athlete selected in the visible page widget."""
+    st.session_state.selected_athlete_name = (
+        st.session_state.athlete_selector_widget
+    )
+
+
+def initialise_selected_athlete(athlete_names):
+    """Set a valid shared athlete selection for all pages."""
+    if (
+        "selected_athlete_name" not in st.session_state
+        or st.session_state.selected_athlete_name not in athlete_names
+    ):
+        st.session_state.selected_athlete_name = athlete_names[0]
+
+    st.session_state.athlete_selector_widget = (
+        st.session_state.selected_athlete_name
+    )
 
 
 def get_athletes():
@@ -127,6 +142,52 @@ def get_year_summary(athlete_id, year):
     return row
 
 
+def get_recent_weekly_average(athlete_id, weeks=26):
+    """
+    Return trailing average weekly distance ending on the latest imported run.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT MAX(date(activity_date))
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_date IS NOT NULL
+        """,
+        (athlete_id,),
+    )
+    row = cursor.fetchone()
+    latest_date_text = row[0] if row else None
+
+    if not latest_date_text:
+        conn.close()
+        return 0.0, None
+
+    latest_date = datetime.date.fromisoformat(latest_date_text)
+    start_date = latest_date - datetime.timedelta(weeks=weeks)
+
+    cursor.execute(
+        """
+        SELECT COALESCE(SUM(distance_m), 0)
+        FROM activities
+        WHERE athlete_id = ?
+          AND date(activity_date) > ?
+          AND date(activity_date) <= ?
+        """,
+        (
+            athlete_id,
+            start_date.isoformat(),
+            latest_date.isoformat(),
+        ),
+    )
+    total_distance_km = cursor.fetchone()[0] or 0
+    conn.close()
+
+    return total_distance_km / weeks, latest_date
+
+
 def get_run_profiles(athlete_id, athlete_thresholds):
     conn = get_connection()
     cursor = conn.cursor()
@@ -188,11 +249,11 @@ def get_run_profiles(athlete_id, athlete_thresholds):
 def safe_text(value):
     return html.escape(str(value or ""))
 
-def render_html(markup):
-    """Render a custom Performance Passport HTML component."""
 
+def render_html(markup):
     cleaned_markup = textwrap.dedent(markup).strip()
     st.html(cleaned_markup)
+
 
 def format_date(date_text):
     try:
@@ -202,13 +263,29 @@ def format_date(date_text):
         return date_text or "Unknown"
 
 
+def format_goal_date(date_text):
+    if not date_text:
+        return "No target date"
+
+    try:
+        parsed_date = datetime.date.fromisoformat(date_text)
+        return parsed_date.strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return date_text
+
+
 def format_clock(seconds):
     if seconds is None:
         return "--"
 
     seconds = int(round(seconds))
-    minutes = seconds // 60
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
     remaining_seconds = seconds % 60
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{remaining_seconds:02d}"
+
     return f"{minutes}:{remaining_seconds:02d}"
 
 
@@ -233,7 +310,39 @@ def get_sport_name(sport_id):
     return SPORT_MAP.get(str(sport_id or ""), ("Activity", "Activity"))
 
 
-def render_header(first_name):
+def evidence_strength(confidence):
+    if confidence >= 0.85:
+        return "Very strong"
+    if confidence >= 0.70:
+        return "Strong"
+    if confidence >= 0.50:
+        return "Developing"
+    if confidence > 0:
+        return "Limited"
+    return "Unavailable"
+
+
+def status_label(status):
+    if status == EvidenceStatus.AVAILABLE:
+        return "Available"
+    if status == EvidenceStatus.BUILDING:
+        return "Building"
+    return "Unavailable"
+
+
+def render_header(first_name, goal):
+    if goal is None:
+        intro = (
+            "Choose an objective to connect your training history to "
+            "personalised progress and future race prediction."
+        )
+    else:
+        intro = (
+            f"Your active goal is "
+            f"<strong>{safe_text(goal['goal_name'])}</strong>. "
+            "The Coach Brain is now inspecting the evidence behind it."
+        )
+
     render_html(
         f"""
         <div class="pp-page-header">
@@ -241,85 +350,97 @@ def render_header(first_name):
             <div class="pp-page-title">
                 Good morning, {safe_text(first_name)}.
             </div>
-            <div class="pp-page-intro">
-                You are <strong>18 seconds away</strong> from your
-                sub-39:00 goal. Today's easy running is an opportunity
-                to build fitness without adding unnecessary fatigue.
-            </div>
+            <div class="pp-page-intro">{intro}</div>
         </div>
         """
     )
 
 
-def render_goal_card():
-    difference = CURRENT_PREDICTION_SECONDS - GOAL_TARGET_SECONDS
+def render_goal_card(goal, prediction):
+    if goal is None:
+        render_html(
+            """
+            <div class="pp-card pp-card-hero pp-card-accent">
+                <div class="pp-card-label">Goal progress</div>
+                <div class="pp-card-title">No active goal</div>
+                <div class="pp-card-copy">
+                    Open the Goal page to choose the objective that matters
+                    most to this athlete.
+                </div>
+                <div style="margin-top:0.8rem;">
+                    <span class="pp-status pp-status-warning">
+                        Goal not configured
+                    </span>
+                </div>
+            </div>
+            """
+        )
+        return
+
+    target_text = (
+        format_clock(goal["target_time_s"])
+        if goal["target_time_s"] is not None
+        else "Completion goal"
+    )
+
+    if prediction.available:
+        prediction_text = format_clock(prediction.predicted_seconds)
+        prediction_context = evidence_strength(prediction.confidence)
+    else:
+        prediction_text = "Not available"
+        prediction_context = prediction.explanation
+
+    race_text = goal["race_name"] or "No race selected"
 
     render_html(
         f"""
         <div class="pp-card pp-card-hero pp-card-accent">
             <div class="pp-card-label">Goal progress</div>
+            <div class="pp-card-title">{safe_text(goal["goal_name"])}</div>
 
             <div style="
-                display:flex;
-                justify-content:space-between;
-                align-items:flex-start;
+                display:grid;
+                grid-template-columns:1fr 1fr;
                 gap:1rem;
-                margin-top:0.45rem;
+                margin-top:0.9rem;
             ">
                 <div>
-                    <div class="pp-card-title">{GOAL_NAME}</div>
-                    <div class="pp-small-meta">
-                        Current prediction
-                    </div>
-                    <div
-                        class="pp-large-value"
-                        style="margin-top:0.2rem;"
-                    >
-                        {format_clock(CURRENT_PREDICTION_SECONDS)}
+                    <div class="pp-small-meta">Target</div>
+                    <div class="pp-large-value" style="margin-top:0.2rem;">
+                        {safe_text(target_text)}
                     </div>
                 </div>
 
-                <div style="text-align:right;">
-                    <div
-                        class="
-                            pp-large-value
-                            pp-large-value-accent
-                        "
-                    >
-                        {GOAL_PROGRESS_PERCENT}%
-                    </div>
+                <div>
+                    <div class="pp-small-meta">Prediction</div>
+                    <div class="pp-card-title">{safe_text(prediction_text)}</div>
                     <div class="pp-small-meta">
-                        {difference} seconds to goal
+                        {safe_text(prediction_context)}
                     </div>
                 </div>
-            </div>
-
-            <div class="pp-progress-track">
-                <div
-                    class="pp-progress-fill"
-                    style="width:{GOAL_PROGRESS_PERCENT}%;"
-                ></div>
             </div>
 
             <div style="
+                margin-top:0.9rem;
+                padding-top:0.8rem;
+                border-top:1px solid var(--pp-border);
                 display:flex;
                 justify-content:space-between;
                 align-items:center;
-                margin-top:0.75rem;
+                gap:1rem;
             ">
                 <div class="pp-small-meta">
-                    Target {format_clock(GOAL_TARGET_SECONDS)}
+                    {safe_text(race_text)} ·
+                    {safe_text(format_goal_date(goal["target_date"]))}
                 </div>
-                <div class="pp-status">
-                    High confidence
-                </div>
+                <div class="pp-status">Active goal</div>
             </div>
         </div>
         """
     )
 
 
-def render_coach_brief(current_baseline, all_time_baseline):
+def render_coach_brief(current_baseline, all_time_baseline, brain_brief):
     if current_baseline and all_time_baseline:
         pace_change_per_mile = (
             all_time_baseline.avg_pace_seconds_per_km
@@ -327,50 +448,41 @@ def render_coach_brief(current_baseline, all_time_baseline):
         ) * (METRES_PER_MILE / 1000)
 
         if pace_change_per_mile >= 2:
-            main_message = (
-                "Your aerobic fitness is moving in the right direction."
-            )
-            evidence = (
+            baseline_message = (
                 f"Your current easy-running baseline is approximately "
                 f"{pace_change_per_mile:.0f} sec/mi faster than your "
                 f"all-time baseline."
             )
         else:
-            main_message = "Your aerobic fitness is currently stable."
-            evidence = (
+            baseline_message = (
                 "Your recent easy running is broadly consistent with your "
                 "long-term baseline."
             )
     else:
-        main_message = "Your training history is ready to be interpreted."
-        evidence = (
-            "More comparable easy runs will strengthen the confidence "
-            "of your aerobic baseline."
+        baseline_message = (
+            "More comparable easy runs will strengthen your aerobic baseline."
         )
 
     render_html(
         f"""
         <div class="pp-card pp-card-hero">
             <div class="pp-card-label">Coach's brief</div>
-            <div class="pp-card-title">{safe_text(main_message)}</div>
-            <div class="pp-card-copy">{safe_text(evidence)}</div>
+            <div class="pp-card-title">
+                {safe_text(brain_brief.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(brain_brief.summary)}
+            </div>
 
             <div style="
                 margin-top:0.95rem;
                 padding-top:0.85rem;
                 border-top:1px solid var(--pp-border);
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                gap:1rem;
             ">
-                <div>
-                    <div class="pp-card-label">Today's recommendation</div>
-                    <div class="pp-card-title" style="font-size:1rem;">
-                        Easy run · 8 miles
-                    </div>
+                <div class="pp-card-label">Aerobic context</div>
+                <div class="pp-small-meta">
+                    {safe_text(baseline_message)}
                 </div>
-                <div class="pp-status">High confidence</div>
             </div>
         </div>
         """
@@ -423,6 +535,166 @@ def render_latest_discovery(best_run):
     )
 
 
+def render_evidence_card(item):
+    status = status_label(item.status)
+    strength = evidence_strength(item.confidence)
+    prediction_text = (
+        format_clock(item.predicted_seconds)
+        if item.predicted_seconds is not None
+        else "No direct prediction"
+    )
+
+    render_html(
+        f"""
+        <div class="pp-card">
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                align-items:flex-start;
+                gap:1rem;
+            ">
+                <div>
+                    <div class="pp-card-label">Specialist coach</div>
+                    <div class="pp-card-title">{safe_text(item.title)}</div>
+                </div>
+                <div class="pp-status">{safe_text(status)}</div>
+            </div>
+
+            <div class="pp-card-copy">{safe_text(item.summary)}</div>
+
+            <div style="
+                display:grid;
+                grid-template-columns:repeat(3, minmax(0, 1fr));
+                gap:0.8rem;
+                margin-top:1rem;
+                padding-top:0.9rem;
+                border-top:1px solid var(--pp-border);
+            ">
+                <div>
+                    <div class="pp-stat-label">Evidence strength</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(strength)}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Confidence</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {item.confidence:.0%}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Goal estimate</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(prediction_text)}
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+    strengths = item.metadata.get("strengths", [])
+    limitations = item.metadata.get("limitations", [])
+
+    if strengths or limitations:
+        with st.expander(f"Why does {item.title} believe this?"):
+            if strengths:
+                st.markdown("**Strengths**")
+                for strength in strengths:
+                    st.write(f"✓ {strength}")
+
+            if limitations:
+                st.markdown("**Limitations**")
+                for limitation in limitations:
+                    st.write(f"• {limitation}")
+
+
+def render_placeholder_coach(title, description):
+    render_html(
+        f"""
+        <div class="pp-card">
+            <div class="pp-card-label">Specialist coach</div>
+            <div class="pp-card-title">{safe_text(title)}</div>
+            <div class="pp-card-copy">{safe_text(description)}</div>
+            <div style="margin-top:0.8rem;">
+                <span class="pp-status pp-status-warning">Coming soon</span>
+            </div>
+        </div>
+        """
+    )
+
+
+def render_coach_evidence_panel(evidence_bundle):
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero">
+            <div class="pp-card-label">Coach Brain</div>
+            <div class="pp-card-title">
+                Evidence strength:
+                {safe_text(evidence_strength(evidence_bundle.confidence))}
+            </div>
+            <div class="pp-card-copy">
+                The Coach Brain currently has
+                <strong>{len(evidence_bundle.available_items)}</strong>
+                available evidence source(s), based on
+                <strong>{evidence_bundle.total_sample_size:,}</strong>
+                observations.
+            </div>
+            <div style="margin-top:0.8rem;">
+                <span class="pp-status">
+                    {evidence_bundle.confidence:.0%} overall evidence confidence
+                </span>
+            </div>
+        </div>
+        """
+    )
+
+    available_items = [
+        item
+        for item in evidence_bundle.items
+        if item.key != "activity_history"
+    ]
+    history_items = [
+        item
+        for item in evidence_bundle.items
+        if item.key == "activity_history"
+    ]
+
+    row1, row2 = st.columns(2, gap="medium")
+
+    with row1:
+        if available_items:
+            render_evidence_card(available_items[0])
+        else:
+            render_placeholder_coach(
+                "Race Coach",
+                "No race evidence provider result is available yet.",
+            )
+
+    with row2:
+        if history_items:
+            render_evidence_card(history_items[0])
+        else:
+            render_placeholder_coach(
+                "Activity History",
+                "No historical evidence is available yet.",
+            )
+
+    row3, row4 = st.columns(2, gap="medium")
+
+    with row3:
+        render_placeholder_coach(
+            "Threshold Coach",
+            "Will interpret threshold sessions and sustained race-pace work.",
+        )
+
+    with row4:
+        render_placeholder_coach(
+            "Easy Run Coach",
+            "Will interpret aerobic efficiency and best easy-run evidence.",
+        )
+
+
 def render_recent_activities(run_profiles):
     rows = []
 
@@ -430,12 +702,11 @@ def render_recent_activities(run_profiles):
         sport_name, fallback_title = get_sport_name(run.sport_id)
         performance = equivalent_performance(run)
 
-        if performance is not None:
-            pace = format_pace_per_mile(
-                performance.actual_pace_seconds_per_km
-            )
-        else:
-            pace = "--"
+        pace = (
+            format_pace_per_mile(performance.actual_pace_seconds_per_km)
+            if performance is not None
+            else "--"
+        )
 
         rows.append(
             f"""
@@ -443,7 +714,6 @@ def render_recent_activities(run_profiles):
                 <div class="pp-activity-date">
                     {safe_text(format_date(run.activity_date))}
                 </div>
-
                 <div>
                     <div class="pp-activity-name">
                         {safe_text(run.title or fallback_title)}
@@ -452,19 +722,14 @@ def render_recent_activities(run_profiles):
                         {safe_text(sport_name)}
                     </div>
                 </div>
-
                 <div class="pp-activity-detail">
                     {safe_text(format_distance_miles(run.distance_km))}
                 </div>
-
                 <div class="pp-activity-detail">
                     {safe_text(pace)}
                 </div>
-
                 <div>
-                    <span class="pp-status">
-                        Analysed
-                    </span>
+                    <span class="pp-status">Analysed</span>
                 </div>
             </div>
             """
@@ -482,17 +747,8 @@ def render_recent_activities(run_profiles):
     render_html(
         f"""
         <div class="pp-card">
-            <div style="
-                display:flex;
-                align-items:center;
-                justify-content:space-between;
-                margin-bottom:0.2rem;
-            ">
-                <div>
-                    <div class="pp-card-label">Training history</div>
-                    <div class="pp-card-title">Recent activities</div>
-                </div>
-            </div>
+            <div class="pp-card-label">Training history</div>
+            <div class="pp-card-title">Recent activities</div>
             {''.join(rows)}
         </div>
         """
@@ -514,17 +770,29 @@ def show_dashboard():
         for athlete_id, first_name, last_name in athletes
     }
 
-    selector_col, spacer_col = st.columns([0.35, 0.65])
+    athlete_names = list(athlete_options.keys())
+    initialise_selected_athlete(athlete_names)
+
+    selector_col, _ = st.columns([0.35, 0.65])
 
     with selector_col:
-        selected_name = st.selectbox(
+        st.selectbox(
             "Athlete",
-            list(athlete_options.keys()),
+            athlete_names,
+            key="athlete_selector_widget",
+            on_change=update_selected_athlete,
             label_visibility="collapsed",
         )
 
+    selected_name = st.session_state.selected_athlete_name
     selected = athlete_options[selected_name]
     athlete_id = selected["id"]
+
+    brain = CoachBrain(athlete_id)
+    goal = get_active_goal(athlete_id)
+    evidence_bundle = brain.build_evidence()
+    prediction = brain.goal_prediction()
+    brain_brief = brain.morning_brief()
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
@@ -545,30 +813,34 @@ def show_dashboard():
 
     best_run = best_easy_run(run_profiles)
 
-    render_header(selected["first_name"])
+    render_header(selected["first_name"], goal)
 
     top_left, top_right = st.columns([1.05, 0.95], gap="medium")
 
     with top_left:
-        render_goal_card()
+        render_goal_card(goal, prediction)
 
     with top_right:
-        render_coach_brief(current_baseline, all_time_baseline)
+        render_coach_brief(
+            current_baseline,
+            all_time_baseline,
+            brain_brief,
+        )
 
     st.markdown("## This year")
-
     current_year = datetime.date.today().year
 
     (
         year_activities,
-        year_distance_km,
+        _year_distance_km,
         year_moving_time_s,
         _,
     ) = get_year_summary(athlete_id, current_year)
 
-    weeks_elapsed = max(datetime.date.today().isocalendar().week, 1)
-    weekly_distance_km = year_distance_km / weeks_elapsed
-    weekly_distance_miles = weekly_distance_km / (
+    recent_weekly_distance_km, latest_activity_date = (
+        get_recent_weekly_average(athlete_id, weeks=26)
+    )
+    recent_weekly_distance_miles = recent_weekly_distance_km / (
         METRES_PER_MILE / 1000
     )
 
@@ -582,10 +854,15 @@ def show_dashboard():
         )
 
     with stat2:
+        latest_context = (
+            f"26 weeks ending {latest_activity_date.strftime('%d %b %Y')}"
+            if latest_activity_date is not None
+            else "No activity date available"
+        )
         render_stat_card(
             "Average week",
-            f"{weekly_distance_miles:.1f} mi",
-            "Across the current year",
+            f"{recent_weekly_distance_miles:.1f} mi",
+            latest_context,
         )
 
     with stat3:
@@ -612,7 +889,6 @@ def show_dashboard():
             )
 
     st.markdown("## What matters now")
-
     discovery_col, context_col = st.columns([1.15, 0.85], gap="medium")
 
     with discovery_col:
@@ -620,7 +896,6 @@ def show_dashboard():
 
     with context_col:
         lifetime_activities, _, _, _ = get_lifetime_summary(athlete_id)
-
         render_html(
             f"""
             <div class="pp-card">
@@ -630,13 +905,16 @@ def show_dashboard():
                     Performance Passport has
                     <strong>{lifetime_activities:,} activities</strong>
                     available for learning about your training history.
+                </div>
+                <div style="margin-top:0.8rem;">
+                    <span class="pp-status">Strong evidence base</span>
+                </div>
             </div>
-            <div style="margin-top:0.8rem;">
-                <span class="pp-status">Strong evidence base</span>
-            </div>
-        </div>
-        """
-)
+            """
+        )
+
+    st.markdown("## Coach evidence")
+    render_coach_evidence_panel(evidence_bundle)
 
     st.markdown("## Latest training")
     render_recent_activities(run_profiles)

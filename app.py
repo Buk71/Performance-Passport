@@ -5,6 +5,7 @@ from core.database import initialise_database
 from theme import inject_global_theme, render_page_placeholder
 from ui.athletes import show_athletes_page
 from ui.dashboard import show_dashboard
+from ui.goals import show_goals_page
 from ui.import_page import show_import_page
 from ui.sidebar import show_sidebar
 
@@ -16,16 +17,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Apply the global Performance Passport design system.
 inject_global_theme()
-
-# Create the database if it does not exist.
 initialise_database()
 
-# Sidebar navigation.
 page = show_sidebar()
 
-# Page routing.
 if page == "Coach":
     show_dashboard()
 
@@ -52,15 +48,7 @@ elif page == "Progress":
     )
 
 elif page == "Goal":
-    render_page_placeholder(
-        title="Goal",
-        question="Am I getting closer?",
-        description=(
-            "Goal Progress will connect your training history to a chosen "
-            "objective, showing current prediction, strengths, limiters and "
-            "the next meaningful milestone."
-        ),
-    )
+    show_goals_page()
 
 elif page == "Passport":
     render_page_placeholder(

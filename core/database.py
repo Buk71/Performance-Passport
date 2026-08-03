@@ -1,38 +1,31 @@
 import sqlite3
 from pathlib import Path
 
-
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 def get_connection():
-    """Return a connection to the SQLite database."""
     DATABASE_PATH.parent.mkdir(exist_ok=True)
-    return sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def get_table_columns(cursor, table_name):
-    """Return a list of column names for a table."""
     cursor.execute(f"PRAGMA table_info({table_name})")
     return [row[1] for row in cursor.fetchall()]
 
 
 def ensure_column(cursor, table_name, column_name, column_definition):
-    """Add a column if it does not already exist."""
-    columns = get_table_columns(cursor, table_name)
-
-    if column_name not in columns:
+    if column_name not in get_table_columns(cursor, table_name):
         cursor.execute(
-            f"""
-            ALTER TABLE {table_name}
-            ADD COLUMN {column_name} {column_definition}
-            """
+            f"ALTER TABLE {table_name} ADD COLUMN "
+            f"{column_name} {column_definition}"
         )
 
 
 def create_schema_version_table(cursor):
-    """Create schema version tracking table."""
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_version (
@@ -45,18 +38,13 @@ def create_schema_version_table(cursor):
 
 
 def get_schema_version(cursor):
-    """Return current schema version."""
     create_schema_version_table(cursor)
-
     cursor.execute("SELECT version FROM schema_version WHERE id = 1")
     row = cursor.fetchone()
 
     if row is None:
         cursor.execute(
-            """
-            INSERT INTO schema_version (id, version)
-            VALUES (1, 1)
-            """
+            "INSERT INTO schema_version (id, version) VALUES (1, 1)"
         )
         return 1
 
@@ -64,12 +52,10 @@ def get_schema_version(cursor):
 
 
 def set_schema_version(cursor, version):
-    """Set database schema version."""
     cursor.execute(
         """
         UPDATE schema_version
-        SET version = ?,
-            applied_at = CURRENT_TIMESTAMP
+        SET version = ?, applied_at = CURRENT_TIMESTAMP
         WHERE id = 1
         """,
         (version,),
@@ -77,20 +63,15 @@ def set_schema_version(cursor, version):
 
 
 def get_activity_count():
-    """Return the number of activities currently stored."""
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute("SELECT COUNT(*) FROM activities")
     count = cursor.fetchone()[0]
-
     conn.close()
     return count
 
 
 def create_base_tables(cursor):
-    """Create all base schema v1 tables."""
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS athletes (
@@ -184,7 +165,6 @@ def create_base_tables(cursor):
 
 
 def create_athlete_identities_table(cursor):
-    """Create athlete identities table for external source names."""
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS athlete_identities (
@@ -202,42 +182,54 @@ def create_athlete_identities_table(cursor):
     )
 
 
+def create_goals_table(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            goal_name TEXT NOT NULL,
+            goal_type TEXT NOT NULL,
+            distance_m REAL,
+            target_time_s INTEGER,
+            target_date TEXT,
+            race_name TEXT,
+            priority TEXT NOT NULL DEFAULT 'Primary',
+            status TEXT NOT NULL DEFAULT 'Active',
+            motivation TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_goals_athlete_status
+        ON goals (athlete_id, status)
+        """
+    )
+
+
 def migrate_to_schema_v2(cursor):
-    """
-    Migrate database to schema v2.
-
-    Adds:
-    - activities.athlete_id
-    - athlete_identities table
-    - safe backfill for existing activities
-    """
-
     ensure_column(
         cursor,
         "activities",
         "athlete_id",
         "INTEGER REFERENCES athletes(id)",
     )
-
     create_athlete_identities_table(cursor)
 
     cursor.execute(
-        """
-        SELECT id, first_name, last_name
-        FROM athletes
-        ORDER BY id
-        """
+        "SELECT id, first_name, last_name FROM athletes ORDER BY id"
     )
-    athletes = cursor.fetchall()
 
-    for athlete_id, first_name, last_name in athletes:
+    for athlete_id, first_name, last_name in cursor.fetchall():
         full_name = f"{first_name or ''} {last_name or ''}".strip()
-
         possible_names = set()
 
         if first_name:
             possible_names.add(first_name.strip())
-
         if full_name:
             possible_names.add(full_name)
 
@@ -245,10 +237,7 @@ def migrate_to_schema_v2(cursor):
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO athlete_identities (
-                    athlete_id,
-                    source,
-                    external_name,
-                    is_primary
+                    athlete_id, source, external_name, is_primary
                 )
                 VALUES (?, ?, ?, ?)
                 """,
@@ -273,13 +262,117 @@ def migrate_to_schema_v2(cursor):
         WHERE athlete_id IS NULL
         """
     )
-
     set_schema_version(cursor, 2)
 
 
-def initialise_database():
-    """Create and migrate all database tables."""
+def migrate_to_schema_v3(cursor):
+    create_goals_table(cursor)
+    set_schema_version(cursor, 3)
 
+
+def get_active_goal(athlete_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            id, athlete_id, goal_name, goal_type, distance_m,
+            target_time_s, target_date, race_name, priority,
+            status, motivation, created_at, updated_at
+        FROM goals
+        WHERE athlete_id = ? AND status = 'Active'
+        ORDER BY
+            CASE WHEN priority = 'Primary' THEN 0 ELSE 1 END,
+            updated_at DESC,
+            id DESC
+        LIMIT 1
+        """,
+        (athlete_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    columns = [
+        "id", "athlete_id", "goal_name", "goal_type", "distance_m",
+        "target_time_s", "target_date", "race_name", "priority",
+        "status", "motivation", "created_at", "updated_at",
+    ]
+    return dict(zip(columns, row))
+
+
+def save_goal(
+    athlete_id,
+    goal_name,
+    goal_type,
+    distance_m=None,
+    target_time_s=None,
+    target_date=None,
+    race_name=None,
+    priority="Primary",
+    status="Active",
+    motivation=None,
+    goal_id=None,
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if status == "Active" and priority == "Primary":
+        cursor.execute(
+            """
+            UPDATE goals
+            SET status = 'Planned', updated_at = CURRENT_TIMESTAMP
+            WHERE athlete_id = ?
+              AND status = 'Active'
+              AND priority = 'Primary'
+              AND (? IS NULL OR id != ?)
+            """,
+            (athlete_id, goal_id, goal_id),
+        )
+
+    values = (
+        athlete_id, goal_name, goal_type, distance_m, target_time_s,
+        target_date, race_name, priority, status, motivation,
+    )
+
+    if goal_id is None:
+        cursor.execute(
+            """
+            INSERT INTO goals (
+                athlete_id, goal_name, goal_type, distance_m,
+                target_time_s, target_date, race_name, priority,
+                status, motivation
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
+        goal_id = cursor.lastrowid
+    else:
+        cursor.execute(
+            """
+            UPDATE goals
+            SET goal_name = ?, goal_type = ?, distance_m = ?,
+                target_time_s = ?, target_date = ?, race_name = ?,
+                priority = ?, status = ?, motivation = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND athlete_id = ?
+            """,
+            (
+                goal_name, goal_type, distance_m, target_time_s,
+                target_date, race_name, priority, status, motivation,
+                goal_id, athlete_id,
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    return goal_id
+
+
+def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -290,6 +383,13 @@ def initialise_database():
 
     if schema_version < 2:
         migrate_to_schema_v2(cursor)
+        schema_version = 2
+
+    if schema_version < 3:
+        migrate_to_schema_v3(cursor)
+
+    create_athlete_identities_table(cursor)
+    create_goals_table(cursor)
 
     conn.commit()
     conn.close()
