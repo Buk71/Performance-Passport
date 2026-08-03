@@ -356,6 +356,110 @@ def render_header(first_name, goal):
     )
 
 
+def render_daily_coach(
+    first_name,
+    goal,
+    prediction,
+    brain_brief,
+    evidence_bundle,
+    latest_activity_date,
+):
+    goal_name = goal["goal_name"] if goal else "No active goal"
+    capability = (
+        format_clock(prediction.predicted_seconds)
+        if prediction.available
+        else "Not available"
+    )
+    strength = evidence_strength(evidence_bundle.confidence)
+    data_date = (
+        latest_activity_date.strftime("%d %b %Y")
+        if latest_activity_date is not None
+        else "No activity date"
+    )
+
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero pp-card-accent">
+            <div class="pp-card-label">Daily coach</div>
+            <div class="pp-card-title" style="font-size:1.55rem;">
+                {safe_text(brain_brief.headline)}
+            </div>
+            <div class="pp-card-copy" style="font-size:1rem;">
+                {safe_text(brain_brief.summary)}
+            </div>
+
+            <div style="
+                display:grid;
+                grid-template-columns:repeat(3, minmax(0, 1fr));
+                gap:1rem;
+                margin-top:1.2rem;
+                padding-top:1rem;
+                border-top:1px solid var(--pp-border);
+            ">
+                <div>
+                    <div class="pp-stat-label">Goal</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(goal_name)}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Current capability</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(capability)}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Evidence strength</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(strength)}
+                    </div>
+                </div>
+            </div>
+
+            <div style="
+                margin-top:1rem;
+                padding-top:0.9rem;
+                border-top:1px solid var(--pp-border);
+            ">
+                <div class="pp-card-label">Today's recommendation</div>
+                <div class="pp-card-title" style="font-size:1rem;">
+                    Not available yet
+                </div>
+                <div class="pp-small-meta">
+                    Recovery and training-load evidence are not connected yet,
+                    so Performance Passport will not invent a session.
+                </div>
+            </div>
+
+            <div class="pp-small-meta" style="margin-top:0.9rem;">
+                Evidence updated through {safe_text(data_date)}.
+            </div>
+        </div>
+        """
+    )
+
+    with st.expander("Why is the Coach saying this?"):
+        st.write(f"**Goal:** {goal_name}")
+        st.write(
+            f"**Prediction:** "
+            f"{capability if prediction.available else prediction.explanation}"
+        )
+        st.write(
+            f"**Evidence strength:** {strength} "
+            f"({evidence_bundle.confidence:.0%})"
+        )
+
+        for item in evidence_bundle.items:
+            st.markdown(f"**{item.title}**")
+            st.write(item.summary)
+
+            limitations = item.metadata.get("limitations", [])
+            if limitations:
+                st.caption("Limitations")
+                for limitation in limitations:
+                    st.write(f"• {limitation}")
+
+
 def render_goal_card(goal, prediction):
     if goal is None:
         render_html(
@@ -608,6 +712,25 @@ def render_evidence_card(item):
                 for limitation in limitations:
                     st.write(f"• {limitation}")
 
+            candidates = item.metadata.get("candidate_debug", [])
+            if candidates:
+                st.markdown("**Race candidates considered**")
+                for index, candidate in enumerate(candidates, start=1):
+                    moving_ratio = candidate.get("moving_ratio")
+                    moving_text = (
+                        f"{moving_ratio:.1%}"
+                        if moving_ratio is not None
+                        else "—"
+                    )
+                    st.write(
+                        f"{index}. {candidate.get('date', '—')} · "
+                        f"{candidate.get('title', 'Untitled')} · "
+                        f"{candidate.get('distance_km', 0):.2f} km · "
+                        f"{candidate.get('elapsed', '—')} · "
+                        f"moving {moving_text} · "
+                        f"score {candidate.get('score', 0):.1f}"
+                    )
+
 
 def render_placeholder_coach(title, description):
     render_html(
@@ -815,6 +938,21 @@ def show_dashboard():
 
     render_header(selected["first_name"], goal)
 
+    recent_weekly_distance_km, latest_activity_date = (
+        get_recent_weekly_average(athlete_id, weeks=26)
+    )
+
+    render_daily_coach(
+        first_name=selected["first_name"],
+        goal=goal,
+        prediction=prediction,
+        brain_brief=brain_brief,
+        evidence_bundle=evidence_bundle,
+        latest_activity_date=latest_activity_date,
+    )
+
+    st.markdown("## Goal and context")
+
     top_left, top_right = st.columns([1.05, 0.95], gap="medium")
 
     with top_left:
@@ -837,9 +975,6 @@ def show_dashboard():
         _,
     ) = get_year_summary(athlete_id, current_year)
 
-    recent_weekly_distance_km, latest_activity_date = (
-        get_recent_weekly_average(athlete_id, weeks=26)
-    )
     recent_weekly_distance_miles = recent_weekly_distance_km / (
         METRES_PER_MILE / 1000
     )
