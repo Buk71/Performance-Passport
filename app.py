@@ -5,7 +5,7 @@ from core.database import initialise_database
 from theme import inject_global_theme, render_page_placeholder
 from ui.athletes import show_athletes_page
 from ui.dashboard import show_dashboard
-from ui.goals import show_goals_page
+from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.sidebar import show_sidebar
 
@@ -48,7 +48,15 @@ elif page == "Progress":
     )
 
 elif page == "Goal":
-    show_goals_page()
+    render_page_placeholder(
+        title="Goal",
+        question="Am I getting closer?",
+        description=(
+            "Goal Progress will connect your training history to a chosen "
+            "objective, showing current prediction, strengths, limiters and "
+            "the next meaningful milestone."
+        ),
+    )
 
 elif page == "Passport":
     render_page_placeholder(
@@ -66,6 +74,9 @@ elif page == "Athletes":
 
 elif page == "Import":
     show_import_page()
+
+elif page == "Diagnostics":
+    show_diagnostics_page()
 
 elif page == "Settings":
     render_page_placeholder(

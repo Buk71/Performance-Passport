@@ -14,6 +14,7 @@ PRIMARY_NAVIGATION = [
 MANAGEMENT_NAVIGATION = [
     "Athletes",
     "Import",
+    "Diagnostics",
     "Settings",
 ]
 
@@ -62,13 +63,7 @@ def show_sidebar():
         label_visibility="collapsed",
     )
 
-    if management_page != "None":
-        page = management_page
-
-        if st.session_state.get("primary_navigation") != "Coach":
-            st.session_state.primary_navigation = "Coach"
-    else:
-        page = primary_page
+    page = management_page if management_page != "None" else primary_page
 
     st.sidebar.markdown(
         f"""

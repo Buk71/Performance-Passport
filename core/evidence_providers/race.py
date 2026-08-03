@@ -31,6 +31,7 @@ from core.coaching import (
 from core.database import get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
+from core.race_detection import score_race_evidence
 
 
 RUNNING_SPORT_ID = "965611"
@@ -262,39 +263,38 @@ def _score_candidate(
 ) -> CandidateScore:
     age_days = (reference_date - candidate.activity_date).days
     recency = _recency_signal(age_days)
-    distance, matched_distance = _distance_signal(candidate.distance_km)
-    continuity, moving_ratio = _continuity_signal(
-        candidate.moving_time_s,
-        candidate.elapsed_time_s,
-    )
-    effort = _effort_signal(candidate)
-    official = _official_signal(candidate)
-    title = _title_signal(candidate.title)
-    training_penalty = _training_penalty(candidate.title)
 
-    total = (
-        recency * 30.0
-        + distance * 20.0
-        + continuity * 20.0
-        + effort * 20.0
-        + official * 8.0
-        + title * 5.0
-        - training_penalty * 28.0
+    shared = score_race_evidence(
+        title=candidate.title,
+        distance_km=candidate.distance_km,
+        moving_time_s=candidate.moving_time_s,
+        elapsed_time_s=candidate.elapsed_time_s,
+        avg_hr=candidate.avg_hr,
+        max_hr=candidate.max_hr,
+        athlete_lt2_hr=candidate.athlete_lt2_hr,
+        athlete_max_hr=candidate.athlete_max_hr,
+        official_race_name=candidate.official_race_name,
+        official_distance_m=candidate.official_distance_m,
+        official_time_s=candidate.official_time_s,
+        officially_measured=candidate.officially_measured,
     )
+
+    # Race Coach adds recency for choosing the best current evidence.
+    total = shared.total * 0.72 + recency * 28.0
 
     return CandidateScore(
         candidate=candidate,
         total=total,
         recency=recency,
-        distance=distance,
-        continuity=continuity,
-        effort=effort,
-        official=official,
-        title=title,
-        training_penalty=training_penalty,
-        matched_distance_km=matched_distance,
+        distance=shared.distance,
+        continuity=shared.continuity,
+        effort=shared.effort,
+        official=shared.official,
+        title=shared.title,
+        training_penalty=shared.training_penalty,
+        matched_distance_km=shared.matched_distance_km,
         age_days=age_days,
-        moving_ratio=moving_ratio,
+        moving_ratio=shared.moving_ratio,
     )
 
 

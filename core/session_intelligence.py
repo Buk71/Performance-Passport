@@ -11,6 +11,7 @@ from core.session import (
     SessionPurpose,
     SessionType,
 )
+from core.race_detection import score_race_evidence
 from core.splits import is_boundary_fragment, parse_splits, recognise_workout
 
 
@@ -46,6 +47,8 @@ class ActivityFacts:
     wind_speed: float | None
     route_name: str | None
     raw_json_text: str | None
+    athlete_lt2_hr: float | None = None
+    athlete_max_hr: float | None = None
 
 
 def _contains_any(title: str, words: tuple[str, ...]) -> bool:
@@ -237,14 +240,47 @@ def classify_session(facts: ActivityFacts) -> Session:
             suitable_coaches=tuple(routes),
         )
 
-    if _contains_any(facts.title, RACE_WORDS):
+    raw = {}
+    if facts.raw_json_text:
+        try:
+            raw = json.loads(facts.raw_json_text)
+        except (TypeError, json.JSONDecodeError):
+            raw = {}
+
+    race_signals = score_race_evidence(
+        title=facts.title,
+        distance_km=facts.distance_km,
+        moving_time_s=facts.moving_time_s,
+        elapsed_time_s=facts.elapsed_time_s,
+        avg_hr=facts.avg_hr,
+        max_hr=facts.max_hr,
+        athlete_lt2_hr=facts.athlete_lt2_hr,
+        athlete_max_hr=facts.athlete_max_hr,
+        official_race_name=raw.get("race_name"),
+        official_distance_m=raw.get("race_officialDistance"),
+        official_time_s=raw.get("race_officialTime"),
+        officially_measured=bool(raw.get("race_officiallyMeasured")),
+    )
+
+    if race_signals.classification == "confirmed_race":
         routes.extend([CoachRoute.RACE, CoachRoute.GOAL])
         evidence.append(
             SessionEvidence(
-                key="race_title",
-                description="Title contains race-like language.",
-                strength=0.75,
+                key="shared_race_classification",
+                description=(
+                    f"Shared race score {race_signals.total:.1f}/100. "
+                    + "; ".join(race_signals.reasons)
+                ),
+                strength=race_signals.confidence,
                 supports=SessionType.RACE.value,
+                metadata={
+                    "race_score": race_signals.total,
+                    "race_classification":
+                        race_signals.classification,
+                    "matched_distance_km":
+                        race_signals.matched_distance_km,
+                    "moving_ratio": race_signals.moving_ratio,
+                },
             )
         )
         return Session(
@@ -255,12 +291,24 @@ def classify_session(facts: ActivityFacts) -> Session:
             sport_id=facts.sport_id,
             session_type=SessionType.RACE,
             purpose=SessionPurpose.RACE,
-            confidence=0.75,
+            confidence=race_signals.confidence,
             distance_km=facts.distance_km,
             moving_time_s=facts.moving_time_s,
             elapsed_time_s=facts.elapsed_time_s,
+            avg_hr=facts.avg_hr,
+            max_hr=facts.max_hr,
+            elevation_up_m=facts.elevation_up_m,
+            temperature_c=facts.temperature_c,
+            humidity=facts.humidity,
+            wind_speed=facts.wind_speed,
+            route_name=facts.route_name,
             evidence=tuple(evidence),
             suitable_coaches=tuple(dict.fromkeys(routes)),
+            metadata={
+                "race_score": race_signals.total,
+                "race_classification":
+                    race_signals.classification,
+            },
         )
 
     raw_splits = _extract_raw_splits(facts.raw_json_text)
