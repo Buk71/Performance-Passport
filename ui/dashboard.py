@@ -714,7 +714,7 @@ def render_evidence_card(item):
 
             candidates = item.metadata.get("candidate_debug", [])
             if candidates:
-                st.markdown("**Race candidates considered**")
+                st.markdown("**Top sessions considered**")
                 for index, candidate in enumerate(candidates, start=1):
                     moving_ratio = candidate.get("moving_ratio")
                     moving_text = (
@@ -722,12 +722,16 @@ def render_evidence_card(item):
                         if moving_ratio is not None
                         else "—"
                     )
+                    pace_text = (
+                        candidate.get("equivalent_pace")
+                        or candidate.get("elapsed")
+                        or "—"
+                    )
                     st.write(
                         f"{index}. {candidate.get('date', '—')} · "
                         f"{candidate.get('title', 'Untitled')} · "
                         f"{candidate.get('distance_km', 0):.2f} km · "
-                        f"{candidate.get('elapsed', '—')} · "
-                        f"moving {moving_text} · "
+                        f"{pace_text} · moving {moving_text} · "
                         f"score {candidate.get('score', 0):.1f}"
                     )
 
@@ -748,31 +752,7 @@ def render_placeholder_coach(title, description):
 
 
 def render_coach_evidence_panel(evidence_bundle):
-    render_html(
-        f"""
-        <div class="pp-card pp-card-hero">
-            <div class="pp-card-label">Coach Brain</div>
-            <div class="pp-card-title">
-                Evidence strength:
-                {safe_text(evidence_strength(evidence_bundle.confidence))}
-            </div>
-            <div class="pp-card-copy">
-                The Coach Brain currently has
-                <strong>{len(evidence_bundle.available_items)}</strong>
-                available evidence source(s), based on
-                <strong>{evidence_bundle.total_sample_size:,}</strong>
-                observations.
-            </div>
-            <div style="margin-top:0.8rem;">
-                <span class="pp-status">
-                    {evidence_bundle.confidence:.0%} overall evidence confidence
-                </span>
-            </div>
-        </div>
-        """
-    )
-
-    available_items = [
+    specialist_items = [
         item
         for item in evidence_bundle.items
         if item.key != "activity_history"
@@ -783,39 +763,57 @@ def render_coach_evidence_panel(evidence_bundle):
         if item.key == "activity_history"
     ]
 
-    row1, row2 = st.columns(2, gap="medium")
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero">
+            <div class="pp-card-label">Your Coaching Team</div>
+            <div class="pp-card-title">
+                {len(specialist_items)} specialist coach(es) have reported
+            </div>
+            <div class="pp-card-copy">
+                Overall evidence strength is
+                <strong>
+                    {safe_text(evidence_strength(evidence_bundle.confidence))}
+                </strong>
+                from
+                <strong>{evidence_bundle.total_sample_size:,}</strong>
+                observations.
+            </div>
+            <div style="margin-top:0.8rem;">
+                <span class="pp-status">
+                    {evidence_bundle.confidence:.0%} evidence confidence
+                </span>
+            </div>
+        </div>
+        """
+    )
 
-    with row1:
-        if available_items:
-            render_evidence_card(available_items[0])
-        else:
-            render_placeholder_coach(
-                "Race Coach",
-                "No race evidence provider result is available yet.",
-            )
+    cards = [*specialist_items, *history_items]
 
-    with row2:
-        if history_items:
-            render_evidence_card(history_items[0])
-        else:
-            render_placeholder_coach(
-                "Activity History",
-                "No historical evidence is available yet.",
-            )
+    for index in range(0, len(cards), 2):
+        left, right = st.columns(2, gap="medium")
 
-    row3, row4 = st.columns(2, gap="medium")
+        with left:
+            render_evidence_card(cards[index])
 
-    with row3:
-        render_placeholder_coach(
-            "Threshold Coach",
-            "Will interpret threshold sessions and sustained race-pace work.",
-        )
+        if index + 1 < len(cards):
+            with right:
+                render_evidence_card(cards[index + 1])
 
-    with row4:
+    placeholder_left, placeholder_right = st.columns(2, gap="medium")
+
+    with placeholder_left:
         render_placeholder_coach(
             "Easy Run Coach",
             "Will interpret aerobic efficiency and best easy-run evidence.",
         )
+
+    with placeholder_right:
+        render_placeholder_coach(
+            "Environment Coach",
+            "Will specialise in heat, humidity, terrain, wind and surface.",
+        )
+
 
 
 def render_recent_activities(run_profiles):

@@ -19,6 +19,7 @@ from core.evidence import (
 from core.evidence_providers import (
     EvidenceProvider,
     RaceEvidenceProvider,
+    ThresholdEvidenceProvider,
 )
 from core.evidence_providers.base import EvidenceContext
 from core.prediction import GoalPrediction, PredictionEngine
@@ -49,7 +50,10 @@ class CoachBrain:
         self.providers = tuple(
             providers
             if providers is not None
-            else (RaceEvidenceProvider(),)
+            else (
+                RaceEvidenceProvider(),
+                ThresholdEvidenceProvider(),
+            )
         )
 
     def get_goal(self) -> dict | None:
