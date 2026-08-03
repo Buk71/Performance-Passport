@@ -14,6 +14,8 @@ import datetime
 import math
 from dataclasses import dataclass
 
+from core.database import get_athlete_sport_roles
+
 
 METRES_PER_MILE = 1609.344
 
@@ -34,6 +36,7 @@ class RunProfile:
     lt1_hr: float | None = None
     lt2_hr: float | None = None
     athlete_max_hr: float | None = None
+    athlete_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -547,11 +550,23 @@ def assess_activity(
     title = (run.title or "").lower()
     sport_id = str(run.sport_id or "")
 
-    if sport_id != "965611":
+    if run.athlete_id is not None:
+        sport_roles = get_athlete_sport_roles(run.athlete_id)
+        sport_role = sport_roles.get(sport_id)
+
+        if sport_role != "running":
+            return ActivityEvidence(
+                classification="Other",
+                easy_baseline_candidate=False,
+                evidence=["Not a running activity"],
+            )
+    elif sport_id not in {"965611", "966023"}:
+        # Backwards-compatible fallback for older callers that have not yet
+        # supplied athlete_id. New code should always use athlete mappings.
         return ActivityEvidence(
             classification="Other",
             easy_baseline_candidate=False,
-            evidence=["Not a running activity"],
+            evidence=["Not a recognised running activity"],
         )
 
     evidence = []

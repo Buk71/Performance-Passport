@@ -2,7 +2,7 @@
 Threshold Coach v1.
 
 This provider identifies whole-activity threshold-like sessions using:
-- heart rate relative to the athlete's LT2;
+- heart rate progressively from LT1 towards LT2;
 - sustained duration;
 - continuity;
 - recency;
@@ -25,14 +25,13 @@ from core.coaching import (
     humidity_adjustment_seconds_per_km,
     temperature_adjustment_seconds_per_km,
 )
-from core.database import get_connection
+from core.database import get_athlete_sport_roles, get_connection
 from core.splits import parse_splits, recognise_workout, splits_to_dicts
 from core.workouts import get_or_decode_workout
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 
 
-RUNNING_SPORT_ID = "965611"
 MAX_AGE_DAYS = 548
 MIN_SCORE = 58.0
 
@@ -86,6 +85,8 @@ TARGET_PACE_FACTORS = {
 @dataclass(frozen=True)
 class ThresholdCandidate:
     activity_id: int
+    athlete_id: int
+    sport_id: str | None
     activity_date: datetime.date
     title: str
     distance_km: float
@@ -93,6 +94,7 @@ class ThresholdCandidate:
     elapsed_time_s: float | None
     avg_hr: float | None
     max_hr: float | None
+    lt1_hr: float | None
     lt2_hr: float | None
     athlete_max_hr: float | None
     elevation_m: float | None
@@ -175,23 +177,60 @@ def _continuity(
 
 
 def _heart_rate_signal(candidate: ThresholdCandidate) -> float:
+    """
+    Score threshold HR progressively from LT1 towards LT2.
+
+    LT1 is the entry point for threshold evidence. The signal strengthens
+    through the LT1-LT2 range rather than requiring the whole-activity
+    average to sit close to LT2. This is more robust for interval recoveries
+    and wrist-based heart-rate data.
+    """
     signals = []
 
-    if candidate.avg_hr and candidate.lt2_hr and candidate.lt2_hr > 0:
-        ratio = candidate.avg_hr / candidate.lt2_hr
+    if (
+        candidate.avg_hr
+        and candidate.lt1_hr
+        and candidate.lt2_hr
+        and candidate.lt2_hr > candidate.lt1_hr > 0
+    ):
+        span = candidate.lt2_hr - candidate.lt1_hr
+        position = (
+            candidate.avg_hr - candidate.lt1_hr
+        ) / span
 
-        if 0.96 <= ratio <= 1.04:
-            signals.append(1.0)
-        elif 0.92 <= ratio < 0.96 or 1.04 < ratio <= 1.08:
-            signals.append(0.75)
-        elif 0.88 <= ratio < 0.92:
-            signals.append(0.45)
+        if position < -0.15:
+            avg_signal = 0.10
+        elif position < 0.0:
+            avg_signal = 0.30 + (position + 0.15) / 0.15 * 0.20
+        elif position <= 1.0:
+            avg_signal = 0.50 + position * 0.50
+        elif position <= 1.20:
+            avg_signal = 1.0 - (position - 1.0) / 0.20 * 0.20
         else:
-            signals.append(0.15)
+            avg_signal = 0.55
+
+        signals.append(_clamp(avg_signal))
+
+    elif candidate.avg_hr and candidate.lt1_hr and candidate.lt1_hr > 0:
+        ratio = candidate.avg_hr / candidate.lt1_hr
+
+        if 1.00 <= ratio <= 1.12:
+            signals.append(0.70)
+        elif 0.95 <= ratio < 1.00:
+            signals.append(0.50)
+        elif 1.12 < ratio <= 1.20:
+            signals.append(0.65)
+        else:
+            signals.append(0.20)
+
+    elif candidate.avg_hr and candidate.lt2_hr and candidate.lt2_hr > 0:
+        ratio = candidate.avg_hr / candidate.lt2_hr
+        signals.append(_clamp((ratio - 0.82) / 0.18))
 
     if candidate.max_hr and candidate.athlete_max_hr:
         ratio = candidate.max_hr / candidate.athlete_max_hr
-        signals.append(_clamp((ratio - 0.82) / 0.14))
+        max_signal = _clamp((ratio - 0.78) / 0.18)
+        signals.append(max_signal * 0.75)
 
     if not signals:
         return 0.35
@@ -460,7 +499,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             f"{len(scored)} threshold-like sessions identified",
             f"Best session score {best.score:.1f}/100",
             "Pace adjusted for available temperature and humidity data",
-            "Heart rate compared with the athlete's LT2 where available",
+            "Heart rate assessed progressively from LT1 towards LT2",
         ]
 
         if best_recognition.work_splits:
@@ -510,8 +549,9 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         reference_date: datetime.date,
     ) -> ScoredThreshold | None:
         run = RunProfile(
+            athlete_id=candidate.athlete_id,
             title=candidate.title,
-            sport_id=RUNNING_SPORT_ID,
+            sport_id=candidate.sport_id,
             distance_km=candidate.distance_km,
             moving_time_seconds=candidate.moving_time_s,
             avg_hr=candidate.avg_hr,
@@ -520,6 +560,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             elevation_m=candidate.elevation_m,
             temperature_c=candidate.temperature_c,
             humidity=candidate.humidity,
+            lt1_hr=candidate.lt1_hr,
             lt2_hr=candidate.lt2_hr,
             athlete_max_hr=candidate.athlete_max_hr,
         )
@@ -632,10 +673,25 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             else datetime.date.today()
         )
 
+        sport_roles = get_athlete_sport_roles(athlete_id)
+        running_sport_ids = [
+            sport_id
+            for sport_id, role in sport_roles.items()
+            if role == "running"
+        ]
+
+        if not running_sport_ids:
+            conn.close()
+            return [], reference_date
+
+        placeholders = ",".join("?" for _ in running_sport_ids)
+
         cursor.execute(
-            """
+            f"""
             SELECT
                 a.id,
+                a.athlete_id,
+                CAST(a.sport_id AS TEXT),
                 a.activity_date,
                 a.title,
                 a.distance_m,
@@ -643,6 +699,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 a.elapsed_time_s,
                 a.avg_hr,
                 a.max_hr,
+                at.lt1_hr,
                 at.lt2_hr,
                 at.max_hr,
                 a.elevation_up_m,
@@ -652,63 +709,73 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             FROM activities a
             JOIN athletes at ON at.id = a.athlete_id
             WHERE a.athlete_id = ?
-              AND CAST(a.sport_id AS TEXT) = ?
+              AND CAST(a.sport_id AS TEXT) IN ({placeholders})
               AND a.activity_date IS NOT NULL
               AND a.distance_m BETWEEN 3.0 AND 20.0
               AND a.moving_time_s BETWEEN 900 AND 5400
+              AND date(a.activity_date) >= date(?, '-730 days')
               AND (
                     (
                         a.avg_hr IS NOT NULL
-                        AND at.lt2_hr IS NOT NULL
-                        AND a.avg_hr BETWEEN at.lt2_hr * 0.88
-                                         AND at.lt2_hr * 1.08
+                        AND at.lt1_hr IS NOT NULL
+                        AND a.avg_hr >= at.lt1_hr * 0.85
                     )
                     OR lower(COALESCE(a.title, '')) LIKE '%threshold%'
                     OR lower(COALESCE(a.title, '')) LIKE '%tempo%'
                     OR lower(COALESCE(a.title, '')) LIKE '%cruise%'
+                    OR lower(COALESCE(a.title, '')) LIKE '%interval%'
+                    OR lower(COALESCE(a.title, '')) LIKE '%reps%'
+                    OR a.raw_json LIKE '%"splits": "I%'
                   )
             ORDER BY a.activity_datetime DESC
             """,
-            (athlete_id, RUNNING_SPORT_ID),
+            (
+                athlete_id,
+                *running_sport_ids,
+                reference_date.isoformat(),
+            ),
         )
 
         result = []
 
         for row in cursor.fetchall():
             try:
-                activity_date = datetime.date.fromisoformat(row[1][:10])
+                activity_date = datetime.date.fromisoformat(row[3][:10])
             except (TypeError, ValueError):
                 continue
 
             result.append(
                 ThresholdCandidate(
                     activity_id=int(row[0]),
+                    athlete_id=int(row[1]),
+                    sport_id=row[2],
                     activity_date=activity_date,
-                    title=row[2] or "Threshold-like session",
-                    distance_km=float(row[3]),
-                    moving_time_s=float(row[4]),
+                    title=row[4] or "Threshold-like session",
+                    distance_km=float(row[5]),
+                    moving_time_s=float(row[6]),
                     elapsed_time_s=(
-                        float(row[5]) if row[5] is not None else None
+                        float(row[7]) if row[7] is not None else None
                     ),
-                    avg_hr=float(row[6]) if row[6] is not None else None,
-                    max_hr=float(row[7]) if row[7] is not None else None,
-                    lt2_hr=float(row[8]) if row[8] is not None else None,
+                    avg_hr=float(row[8]) if row[8] is not None else None,
+                    max_hr=float(row[9]) if row[9] is not None else None,
+                    lt1_hr=float(row[10]) if row[10] is not None else None,
+                    lt2_hr=float(row[11]) if row[11] is not None else None,
                     athlete_max_hr=(
-                        float(row[9]) if row[9] is not None else None
-                    ),
-                    elevation_m=(
-                        float(row[10]) if row[10] is not None else None
-                    ),
-                    temperature_c=(
-                        float(row[11]) if row[11] is not None else None
-                    ),
-                    humidity=(
                         float(row[12]) if row[12] is not None else None
                     ),
-                    raw_splits=(
-                        self._extract_splits(row[13])
+                    elevation_m=(
+                        float(row[13]) if row[13] is not None else None
                     ),
-                    raw_json_text=row[13],
+                    temperature_c=(
+                        float(row[14]) if row[14] is not None else None
+                    ),
+                    humidity=(
+                        float(row[15]) if row[15] is not None else None
+                    ),
+                    raw_splits=(
+                        self._extract_splits(row[16])
+                    ),
+                    raw_json_text=row[16],
                 )
             )
 

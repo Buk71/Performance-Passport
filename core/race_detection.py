@@ -142,20 +142,37 @@ def _effort_signal(
     athlete_lt2_hr: float | None,
     athlete_max_hr: float | None,
 ) -> float:
-    signals = []
+    """
+    Estimate race-like effort from available heart-rate evidence.
+
+    Maximum HR is weighted more strongly than average HR because:
+    - short races can have a lower average due to warm-up lag or sensor lag;
+    - device ecosystems may summarise average HR differently;
+    - a peak very close to the athlete's known maximum is strong evidence
+      of genuine racing even when average HR sits below LT2.
+    """
+    avg_signal = None
+    max_signal = None
 
     if avg_hr and athlete_lt2_hr and athlete_lt2_hr > 0:
         ratio = avg_hr / athlete_lt2_hr
-        signals.append(_clamp((ratio - 0.86) / 0.18))
+        avg_signal = _clamp((ratio - 0.84) / 0.20)
 
     if max_hr and athlete_max_hr and athlete_max_hr > 0:
         ratio = max_hr / athlete_max_hr
-        signals.append(_clamp((ratio - 0.82) / 0.17))
+        max_signal = _clamp((ratio - 0.80) / 0.19)
 
-    if not signals:
+    if avg_signal is None and max_signal is None:
         return 0.35
 
-    return sum(signals) / len(signals)
+    if avg_signal is None:
+        return max_signal
+
+    if max_signal is None:
+        return avg_signal
+
+    # Peak HR is the stronger behavioural race signal.
+    return avg_signal * 0.30 + max_signal * 0.70
 
 
 def score_race_evidence(
@@ -209,7 +226,19 @@ def score_race_evidence(
 
     explicit_confirmation = official >= 0.35 or title_signal >= 0.75
 
+    strong_behavioural_confirmation = (
+        distance >= 0.90
+        and continuity >= 0.90
+        and effort >= 0.62
+        and training_penalty == 0.0
+    )
+
     if (
+        strong_behavioural_confirmation
+        and total >= 68.0
+    ):
+        classification = "confirmed_race"
+    elif (
         total >= 70.0
         and distance >= 0.68
         and continuity >= 0.72

@@ -28,13 +28,12 @@ from core.coaching import (
     humidity_adjustment_seconds_per_km,
     temperature_adjustment_seconds_per_km,
 )
-from core.database import get_connection
+from core.database import get_athlete_sport_roles, get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.race_detection import score_race_evidence
 
 
-RUNNING_SPORT_ID = "965611"
 RIEGEL_EXPONENT = 1.06
 MAX_AGE_DAYS = 548
 MINIMUM_SELECTION_SCORE = 45.0
@@ -621,8 +620,21 @@ class RaceEvidenceProvider(EvidenceProvider):
             else None
         )
 
+        sport_roles = get_athlete_sport_roles(athlete_id)
+        running_sport_ids = [
+            sport_id
+            for sport_id, role in sport_roles.items()
+            if role == "running"
+        ]
+
+        if not running_sport_ids:
+            conn.close()
+            return [], latest_date
+
+        placeholders = ",".join("?" for _ in running_sport_ids)
+
         cursor.execute(
-            """
+            f"""
             SELECT
                 a.id,
                 a.activity_date,
@@ -644,13 +656,13 @@ class RaceEvidenceProvider(EvidenceProvider):
             FROM activities a
             JOIN athletes at ON at.id = a.athlete_id
             WHERE a.athlete_id = ?
-              AND CAST(a.sport_id AS TEXT) = ?
+              AND CAST(a.sport_id AS TEXT) IN ({placeholders})
               AND a.activity_date IS NOT NULL
               AND a.distance_m IS NOT NULL
               AND COALESCE(a.elapsed_time_s, a.moving_time_s) IS NOT NULL
             ORDER BY a.activity_datetime DESC
             """,
-            (athlete_id, RUNNING_SPORT_ID),
+            (athlete_id, *running_sport_ids),
         )
 
         candidates = []

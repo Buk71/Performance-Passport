@@ -217,6 +217,7 @@ def get_run_profiles(athlete_id, athlete_thresholds):
 
     return [
         RunProfile(
+            athlete_id=athlete_id,
             activity_date=activity_date,
             title=title,
             distance_km=distance_km,
