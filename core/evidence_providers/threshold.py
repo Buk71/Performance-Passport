@@ -16,10 +16,17 @@ from __future__ import annotations
 
 import datetime
 import math
+import json
 from dataclasses import dataclass
 
-from core.coaching import RunProfile, equivalent_performance
+from core.coaching import (
+    RunProfile,
+    equivalent_performance,
+    humidity_adjustment_seconds_per_km,
+    temperature_adjustment_seconds_per_km,
+)
 from core.database import get_connection
+from core.splits import parse_splits, recognise_workout, splits_to_dicts
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 
@@ -90,6 +97,7 @@ class ThresholdCandidate:
     elevation_m: float | None
     temperature_c: float | None
     humidity: float | None
+    raw_splits: str | None
 
 
 @dataclass(frozen=True)
@@ -217,6 +225,67 @@ def _format_pace(seconds_per_km: float) -> str:
     return f"{minutes}:{seconds:02d}/km"
 
 
+def _weather_adjusted_rep_pace(
+    candidate: ThresholdCandidate,
+    raw_rep_pace_s_per_km: float,
+) -> tuple[float, dict]:
+    """
+    Convert recognised rep pace to a conservative cool-weather equivalent.
+
+    This uses the same temperature and humidity/dew-point penalties already
+    used elsewhere in Performance Passport. Elevation, surface and wind are
+    still reported as limitations rather than guessed.
+    """
+    temperature_cost = temperature_adjustment_seconds_per_km(
+        candidate.temperature_c
+    )
+    humidity_cost = humidity_adjustment_seconds_per_km(
+        candidate.temperature_c,
+        candidate.humidity,
+    )
+    total_cost = max(temperature_cost + humidity_cost, 0.0)
+
+    adjusted = max(raw_rep_pace_s_per_km - total_cost, 1.0)
+
+    return adjusted, {
+        "raw_rep_pace_seconds_per_km": raw_rep_pace_s_per_km,
+        "temperature_cost_seconds_per_km": temperature_cost,
+        "humidity_cost_seconds_per_km": humidity_cost,
+        "total_weather_cost_seconds_per_km": total_cost,
+        "adjusted_rep_pace_seconds_per_km": adjusted,
+    }
+
+
+def _split_threshold_evidence(candidate: ThresholdCandidate):
+    splits = parse_splits(candidate.raw_splits)
+    recognition = recognise_workout(splits)
+
+    if not recognition.work_splits:
+        return None, recognition, splits
+
+    average_rep_pace = recognition.average_rep_pace_s_per_km
+
+    if average_rep_pace is None:
+        return None, recognition, splits
+
+    # Longer repeated work is more threshold-relevant than short intervals.
+    average_distance = recognition.average_rep_distance_km or 0.0
+
+    if average_distance >= 2.4:
+        relevance = 1.0
+    elif average_distance >= 1.35:
+        relevance = 0.88
+    elif average_distance >= 0.8:
+        relevance = 0.60
+    else:
+        relevance = 0.30
+
+    if recognition.rep_count >= 2:
+        relevance += 0.05
+
+    return min(relevance, 1.0), recognition, splits
+
+
 class ThresholdEvidenceProvider(EvidenceProvider):
     key = "threshold"
     title = "Threshold Coach"
@@ -313,15 +382,29 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         )
 
         trend = "Stable"
+        trend_confidence = "Limited"
         change_s_per_km = None
 
         if recent_pace is not None and previous_pace is not None:
             change_s_per_km = previous_pace - recent_pace
 
+            recent_count = len(recent[:5])
+            previous_count = len(previous[:5])
+
+            if recent_count >= 2 and previous_count >= 2:
+                trend_confidence = "Moderate"
+
+            if recent_count >= 3 and previous_count >= 3:
+                trend_confidence = "Strong"
+
             if change_s_per_km >= 3:
                 trend = "Improving"
             elif change_s_per_km <= -3:
-                trend = "Declining"
+                trend = (
+                    "Declining"
+                    if trend_confidence == "Strong"
+                    else "Possible decline"
+                )
 
         best = scored[0]
         sample_factor = min(len(scored) / 8.0, 1.0)
@@ -330,17 +413,43 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             + sample_factor * 0.35
         )
 
-        summary = (
-            f"Current threshold estimate: {_format_pace(threshold_pace)} "
-            f"from {len(representative)} representative session(s). "
-            f"Trend: {trend.lower()}."
+        recent_text = (
+            _format_pace(recent_pace)
+            if recent_pace is not None
+            else "unavailable"
+        )
+        previous_text = (
+            _format_pace(previous_pace)
+            if previous_pace is not None
+            else "unavailable"
         )
 
-        recommendation = (
-            "Maintain the current threshold pattern."
-            if trend in ("Improving", "Stable")
-            else "Consider reducing intensity and rebuilding consistency."
+        summary = (
+            f"Current threshold estimate: {_format_pace(threshold_pace)}, "
+            f"calculated from the {len(representative)} strongest comparable "
+            f"sessions out of {len(scored)} identified. "
+            f"Trend: {trend.lower()} ({trend_confidence.lower()} confidence). "
+            f"Recent adjusted pace {recent_text}; earlier adjusted pace "
+            f"{previous_text}."
         )
+
+        if trend == "Improving":
+            recommendation = "Maintain the current threshold pattern."
+        elif trend == "Stable":
+            recommendation = "Keep the current threshold structure consistent."
+        elif trend == "Possible decline":
+            recommendation = (
+                "Do not change training from this signal alone; gather more "
+                "comparable sessions first."
+            )
+        else:
+            recommendation = (
+                "Review fatigue and recent session quality before increasing "
+                "threshold intensity."
+            )
+
+        best_splits = parse_splits(best.candidate.raw_splits)
+        best_recognition = recognise_workout(best_splits)
 
         strengths = [
             f"{len(scored)} threshold-like sessions identified",
@@ -349,8 +458,13 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             "Heart rate compared with the athlete's LT2 where available",
         ]
 
+        if best_recognition.work_splits:
+            strengths.append(
+                f"Split decoder recognised: {best_recognition.description}"
+            )
+
         limitations = [
-            "Whole-activity summaries cannot separate work intervals from recoveries.",
+            "Recognised rep pace is adjusted for activity-level temperature and humidity, but per-lap heart rate is unavailable.",
             "Elevation is reported but not yet used as a precise pace correction.",
             "Surface and wind are not stored reliably enough for adjustment.",
             "Goal conversion uses transparent generic race-pace factors.",
@@ -369,7 +483,12 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 "threshold_pace_seconds_per_km": threshold_pace,
                 "threshold_pace_text": _format_pace(threshold_pace),
                 "trend": trend,
+                "trend_confidence": trend_confidence,
                 "change_seconds_per_km": change_s_per_km,
+                "recent_adjusted_pace_seconds_per_km": recent_pace,
+                "previous_adjusted_pace_seconds_per_km": previous_pace,
+                "recent_session_count": len(recent[:5]),
+                "previous_session_count": len(previous[:5]),
                 "recommendation": recommendation,
                 "selected_activity_id": best.candidate.activity_id,
                 "selected_title": best.candidate.title,
@@ -425,16 +544,41 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             EASY_WORDS,
         ) else 0.0
 
+        split_relevance, recognition, parsed_splits = (
+            _split_threshold_evidence(candidate)
+        )
+
+        split_bonus = (
+            recognition.confidence * split_relevance * 28.0
+            if split_relevance is not None
+            else 0.0
+        )
+
         score = (
-            recency * 20.0
-            + heart_rate * 32.0
-            + duration * 20.0
-            + continuity * 15.0
-            + title_signal * 10.0
+            recency * 18.0
+            + heart_rate * 27.0
+            + duration * 15.0
+            + continuity * 12.0
+            + title_signal * 7.0
+            + split_bonus
             + 3.0
             - race_penalty * 25.0
             - easy_penalty * 35.0
         )
+
+        split_adjustment = None
+
+        if (
+            split_relevance is not None
+            and split_relevance >= 0.55
+            and recognition.average_rep_pace_s_per_km is not None
+        ):
+            equivalent_pace, split_adjustment = _weather_adjusted_rep_pace(
+                candidate,
+                recognition.average_rep_pace_s_per_km,
+            )
+        else:
+            equivalent_pace = performance.equivalent_pace_seconds_per_km
 
         return ScoredThreshold(
             candidate=candidate,
@@ -446,9 +590,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             title_signal=title_signal,
             race_penalty=race_penalty,
             easy_penalty=easy_penalty,
-            equivalent_pace_s_per_km=(
-                performance.equivalent_pace_seconds_per_km
-            ),
+            equivalent_pace_s_per_km=equivalent_pace,
             actual_pace_s_per_km=(
                 performance.actual_pace_seconds_per_km
             ),
@@ -494,7 +636,8 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 at.max_hr,
                 a.elevation_up_m,
                 a.temperature_c,
-                a.humidity
+                a.humidity,
+                a.raw_json
             FROM activities a
             JOIN athletes at ON at.id = a.athlete_id
             WHERE a.athlete_id = ?
@@ -545,11 +688,25 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                     humidity=(
                         float(row[12]) if row[12] is not None else None
                     ),
+                    raw_splits=(
+                        self._extract_splits(row[13])
+                    ),
                 )
             )
 
         conn.close()
         return result, reference_date
+
+    def _extract_splits(self, raw_json_text):
+        if not raw_json_text:
+            return None
+
+        try:
+            raw = json.loads(raw_json_text)
+        except (TypeError, json.JSONDecodeError):
+            return None
+
+        return raw.get("splits") or raw.get("splitsCustom")
 
     def _debug(self, scored: list[ScoredThreshold]) -> list[dict]:
         return [
@@ -572,9 +729,46 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 "heart_rate": round(item.heart_rate, 3),
                 "duration": round(item.duration, 3),
                 "continuity": round(item.continuity, 3),
+                "workout": self._workout_debug(item.candidate),
             }
             for item in scored
         ]
+
+    def _workout_debug(self, candidate):
+        splits = parse_splits(candidate.raw_splits)
+        recognition = recognise_workout(splits)
+
+        weather_adjustment = None
+
+        if recognition.average_rep_pace_s_per_km is not None:
+            _, weather_adjustment = _weather_adjusted_rep_pace(
+                candidate,
+                recognition.average_rep_pace_s_per_km,
+            )
+
+        return {
+            "type": recognition.workout_type,
+            "confidence": round(recognition.confidence, 3),
+            "description": recognition.description,
+            "weather_adjustment": weather_adjustment,
+            "rep_count": recognition.rep_count,
+            "average_rep_distance_km": (
+                round(recognition.average_rep_distance_km, 3)
+                if recognition.average_rep_distance_km is not None
+                else None
+            ),
+            "average_rep_pace": (
+                _format_pace(recognition.average_rep_pace_s_per_km)
+                if recognition.average_rep_pace_s_per_km is not None
+                else None
+            ),
+            "pace_variation_percent": (
+                round(recognition.rep_pace_variation_percent, 2)
+                if recognition.rep_pace_variation_percent is not None
+                else None
+            ),
+            "splits": splits_to_dicts(splits),
+        }
 
     def _unavailable(self, message: str) -> EvidenceItem:
         return EvidenceItem(

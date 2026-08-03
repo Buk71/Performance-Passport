@@ -712,6 +712,52 @@ def render_evidence_card(item):
                 for limitation in limitations:
                     st.write(f"• {limitation}")
 
+            trend = item.metadata.get("trend")
+            if trend:
+                recent_pace = item.metadata.get(
+                    "recent_adjusted_pace_seconds_per_km"
+                )
+                previous_pace = item.metadata.get(
+                    "previous_adjusted_pace_seconds_per_km"
+                )
+                change = item.metadata.get("change_seconds_per_km")
+                trend_confidence = item.metadata.get(
+                    "trend_confidence",
+                    "Limited",
+                )
+
+                st.markdown("**Trend comparison**")
+                st.write(
+                    f"Conclusion: {trend} "
+                    f"({trend_confidence.lower()} confidence)"
+                )
+
+                if recent_pace is not None:
+                    st.write(
+                        "Recent adjusted threshold pace: "
+                        f"{seconds_to_pace(recent_pace)}/km "
+                        f"from {item.metadata.get('recent_session_count', 0)} "
+                        "session(s)"
+                    )
+
+                if previous_pace is not None:
+                    st.write(
+                        "Earlier adjusted threshold pace: "
+                        f"{seconds_to_pace(previous_pace)}/km "
+                        f"from {item.metadata.get('previous_session_count', 0)} "
+                        "session(s)"
+                    )
+
+                if change is not None:
+                    direction = "faster" if change > 0 else "slower"
+                    st.write(
+                        f"Difference: {abs(change):.1f} sec/km {direction}"
+                    )
+
+                recommendation = item.metadata.get("recommendation")
+                if recommendation:
+                    st.write(f"Recommendation: {recommendation}")
+
             candidates = item.metadata.get("candidate_debug", [])
             if candidates:
                 st.markdown("**Top sessions considered**")
@@ -727,6 +773,8 @@ def render_evidence_card(item):
                         or candidate.get("elapsed")
                         or "—"
                     )
+                    workout = candidate.get("workout") or {}
+                    workout_text = workout.get("description")
                     st.write(
                         f"{index}. {candidate.get('date', '—')} · "
                         f"{candidate.get('title', 'Untitled')} · "
@@ -734,6 +782,11 @@ def render_evidence_card(item):
                         f"{pace_text} · moving {moving_text} · "
                         f"score {candidate.get('score', 0):.1f}"
                     )
+                    if workout_text:
+                        st.caption(
+                            f"Workout decoder: {workout_text} "
+                            f"({workout.get('confidence', 0):.0%} confidence)"
+                        )
 
 
 def render_placeholder_coach(title, description):
