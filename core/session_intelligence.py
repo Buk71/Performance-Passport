@@ -63,7 +63,19 @@ def _extract_raw_splits(raw_json_text: str | None) -> str | None:
     return raw.get("splits") or raw.get("splitsCustom")
 
 
-def _continuous_split_pattern(raw_splits: str | None) -> tuple[bool, dict[str, Any]]:
+def _continuous_split_pattern(
+    raw_splits: str | None,
+) -> tuple[bool, dict[str, Any]]:
+    """
+    Distinguish ordinary auto-laps from deliberate workout structure.
+
+    Repeated distances alone never prove repetitions. A run is considered
+    structured only when there is credible interruption evidence such as:
+    - recorded recovery laps;
+    - lap/stop/start boundaries between work segments;
+    - clear alternating effort and recovery pace;
+    - explicit workout wording handled by classify_session().
+    """
     splits = parse_splits(raw_splits)
 
     if len(splits) < 2:
@@ -72,30 +84,89 @@ def _continuous_split_pattern(raw_splits: str | None) -> tuple[bool, dict[str, A
             "reason": "Too few splits to show deliberate interruption.",
         }
 
-    boundaries = [s for s in splits if is_boundary_fragment(s)]
+    boundaries = [
+        split for split in splits if is_boundary_fragment(split)
+    ]
+    meaningful = [
+        split for split in splits if not is_boundary_fragment(split)
+    ]
+
+    substantial = [
+        split
+        for split in meaningful
+        if split.duration_s >= 120
+        and split.distance_km >= 0.70
+        and split.pace_s_per_km is not None
+    ]
+
+    # Auto-lap protection:
+    # A sequence of broadly equal mile/km laps with no short connectors is
+    # a continuous run, even if normal pace variation confuses the workout
+    # recogniser.
+    if len(substantial) >= 3:
+        distances = [split.distance_km for split in substantial]
+        average_distance = sum(distances) / len(distances)
+        maximum_distance_error = max(
+            abs(distance - average_distance)
+            for distance in distances
+        )
+
+        distance_variation = (
+            maximum_distance_error / average_distance
+            if average_distance > 0
+            else 1.0
+        )
+
+        short_connectors = [
+            split
+            for split in meaningful
+            if split not in substantial
+            and split.duration_s < 120
+            and split.distance_km < 0.35
+        ]
+
+        substantial_share = len(substantial) / max(len(meaningful), 1)
+
+        if (
+            distance_variation <= 0.10
+            and substantial_share >= 0.70
+            and not short_connectors
+            and not boundaries
+        ):
+            return True, {
+                "split_count": len(splits),
+                "substantial_split_count": len(substantial),
+                "average_lap_distance_km": round(average_distance, 3),
+                "distance_variation": round(distance_variation, 4),
+                "reason": (
+                    "Repeated similar auto-laps had no recovery, connector "
+                    "or stop/start evidence."
+                ),
+            }
+
     recognition = recognise_workout(splits)
 
-    if recognition.recovery_splits or recognition.unknown_recovery_count > 0:
+    if recognition.recovery_splits:
         return False, {
             "split_count": len(splits),
             "boundary_count": len(boundaries),
             "recovery_count": len(recognition.recovery_splits),
-            "unknown_recovery_count": recognition.unknown_recovery_count,
+            "unknown_recovery_count":
+                recognition.unknown_recovery_count,
             "recognition": recognition.description,
+            "reason": "Recorded recovery segments were detected.",
         }
 
-    substantial = [
-        s for s in splits
-        if s.duration_s >= 120 and s.distance_km >= 0.70
-    ]
-
-    if len(substantial) >= 3:
-        return True, {
+    if recognition.unknown_recovery_count > 0:
+        return False, {
             "split_count": len(splits),
-            "substantial_split_count": len(substantial),
             "boundary_count": len(boundaries),
+            "unknown_recovery_count":
+                recognition.unknown_recovery_count,
+            "recognition": recognition.description,
             "reason": (
-                "Repeated substantial laps had no recovery or interruption evidence."
+                "Stop/start boundary evidence was detected between "
+                "meaningful work segments."
             ),
         }
 
@@ -108,12 +179,19 @@ def _continuous_split_pattern(raw_splits: str | None) -> tuple[bool, dict[str, A
             "split_count": len(splits),
             "boundary_count": len(boundaries),
             "recognition": recognition.description,
+            "reason": "No deliberate recovery pattern was detected.",
         }
 
-    return False, {
+    # A recognised repeating pattern without recovery evidence is still
+    # treated as continuous. This prevents mile auto-laps becoming reps.
+    return True, {
         "split_count": len(splits),
         "boundary_count": len(boundaries),
         "recognition": recognition.description,
+        "reason": (
+            "Repeated segments were present, but no deliberate recovery "
+            "or interruption evidence supported a structured workout."
+        ),
     }
 
 
