@@ -1,8 +1,9 @@
 import sqlite3
+from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def get_connection():
@@ -410,6 +411,208 @@ def migrate_to_schema_v4(cursor):
     create_decoded_workouts_table(cursor)
     set_schema_version(cursor, 4)
 
+
+def create_athlete_sport_mappings_table(cursor):
+    """Store account-specific sport IDs for each athlete."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_sport_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            sport_id TEXT NOT NULL,
+            sport_role TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0,
+            source TEXT NOT NULL DEFAULT 'inferred',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id),
+            UNIQUE(athlete_id, sport_id)
+        )
+        """
+    )
+
+
+def backfill_missing_athlete_ids(cursor):
+    """
+    Repair imported activities that have athlete_name but no athlete_id.
+
+    Matching is case-insensitive and accepts first name or full name.
+    """
+    cursor.execute(
+        """
+        SELECT id, first_name, last_name
+        FROM athletes
+        ORDER BY id
+        """
+    )
+
+    for athlete_id, first_name, last_name in cursor.fetchall():
+        first = (first_name or "").strip()
+        full = f"{first_name or ''} {last_name or ''}".strip()
+
+        names = [name for name in {first, full} if name]
+
+        for name in names:
+            cursor.execute(
+                """
+                UPDATE activities
+                SET athlete_id = ?
+                WHERE athlete_id IS NULL
+                  AND lower(trim(athlete_name)) = lower(trim(?))
+                """,
+                (athlete_id, name),
+            )
+
+
+def infer_athlete_sport_mappings(cursor):
+    """
+    Infer running and walking sport IDs separately for every athlete.
+
+    Runalyze sport IDs are account-specific. We infer roles from title
+    evidence and activity frequency, then store the result.
+    """
+    create_athlete_sport_mappings_table(cursor)
+
+    cursor.execute("SELECT id FROM athletes ORDER BY id")
+    athlete_ids = [row[0] for row in cursor.fetchall()]
+
+    for athlete_id in athlete_ids:
+        cursor.execute(
+            """
+            SELECT
+                CAST(sport_id AS TEXT) AS sport_id,
+                COUNT(*) AS total,
+                SUM(
+                    CASE
+                        WHEN lower(COALESCE(title, '')) LIKE '%running%'
+                          OR lower(COALESCE(title, '')) LIKE '% run%'
+                          OR lower(COALESCE(title, '')) LIKE 'run%'
+                          OR lower(COALESCE(title, '')) LIKE '%parkrun%'
+                          OR lower(COALESCE(title, '')) LIKE '%5k%'
+                          OR lower(COALESCE(title, '')) LIKE '%10k%'
+                          OR lower(COALESCE(title, '')) LIKE '%race%'
+                        THEN 1 ELSE 0
+                    END
+                ) AS run_signals,
+                SUM(
+                    CASE
+                        WHEN lower(COALESCE(title, '')) LIKE '%walking%'
+                          OR lower(COALESCE(title, '')) LIKE '% walk%'
+                          OR lower(COALESCE(title, '')) LIKE 'walk%'
+                        THEN 1 ELSE 0
+                    END
+                ) AS walk_signals
+            FROM activities
+            WHERE athlete_id = ?
+              AND sport_id IS NOT NULL
+            GROUP BY CAST(sport_id AS TEXT)
+            """,
+            (athlete_id,),
+        )
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            continue
+
+        running = max(
+            rows,
+            key=lambda row: (
+                row[2] or 0,
+                row[1] if (row[2] or 0) > 0 else 0,
+            ),
+        )
+        walking = max(
+            rows,
+            key=lambda row: (
+                row[3] or 0,
+                row[1] if (row[3] or 0) > 0 else 0,
+            ),
+        )
+
+        mappings = []
+
+        if (running[2] or 0) > 0:
+            confidence = min((running[2] or 0) / max(running[1], 1), 1.0)
+            mappings.append((running[0], "running", confidence))
+
+        if (walking[3] or 0) > 0 and walking[0] != running[0]:
+            confidence = min((walking[3] or 0) / max(walking[1], 1), 1.0)
+            mappings.append((walking[0], "walking", confidence))
+
+        for sport_id, sport_role, confidence in mappings:
+            cursor.execute(
+                """
+                INSERT INTO athlete_sport_mappings (
+                    athlete_id,
+                    sport_id,
+                    sport_role,
+                    confidence,
+                    source,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, 'inferred', CURRENT_TIMESTAMP)
+                ON CONFLICT(athlete_id, sport_id) DO UPDATE SET
+                    sport_role = excluded.sport_role,
+                    confidence = excluded.confidence,
+                    source = excluded.source,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    athlete_id,
+                    str(sport_id),
+                    sport_role,
+                    confidence,
+                ),
+            )
+
+
+@lru_cache(maxsize=32)
+def get_athlete_sport_roles(athlete_id):
+    """
+    Return stored sport-role mappings for one athlete.
+
+    Important: this function must remain read-only because Session
+    Intelligence calls it once for every activity during diagnostics.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT sport_id, sport_role
+        FROM athlete_sport_mappings
+        WHERE athlete_id = ?
+        """,
+        (athlete_id,),
+    )
+
+    roles = {str(row[0]): row[1] for row in cursor.fetchall()}
+    conn.close()
+
+    return roles
+
+
+def refresh_athlete_sport_mappings():
+    """Rebuild sport mappings after an import or explicit repair."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    create_athlete_sport_mappings_table(cursor)
+    infer_athlete_sport_mappings(cursor)
+
+    conn.commit()
+    conn.close()
+
+    get_athlete_sport_roles.cache_clear()
+
+
+def migrate_to_schema_v5(cursor):
+    """Add automatic athlete repair and athlete-specific sport mappings."""
+    create_athlete_sport_mappings_table(cursor)
+    backfill_missing_athlete_ids(cursor)
+    infer_athlete_sport_mappings(cursor)
+    set_schema_version(cursor, 5)
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -429,10 +632,25 @@ def initialise_database():
 
     if schema_version < 4:
         migrate_to_schema_v4(cursor)
+        schema_version = 4
+
+    if schema_version < 5:
+        migrate_to_schema_v5(cursor)
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_decoded_workouts_table(cursor)
+    create_athlete_sport_mappings_table(cursor)
+
+    backfill_missing_athlete_ids(cursor)
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM athlete_sport_mappings"
+    )
+    mapping_count = cursor.fetchone()[0]
+
+    if mapping_count == 0:
+        infer_athlete_sport_mappings(cursor)
 
     conn.commit()
     conn.close()

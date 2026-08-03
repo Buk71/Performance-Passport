@@ -11,12 +11,10 @@ from core.session import (
     SessionPurpose,
     SessionType,
 )
+from core.database import get_athlete_sport_roles
 from core.race_detection import score_race_evidence
 from core.splits import is_boundary_fragment, parse_splits, recognise_workout
 
-
-RUNNING_SPORT_ID = "965611"
-WALKING_SPORT_ID = "965617"
 
 RACE_WORDS = (
     "race", "parkrun", "5k", "10k", "half marathon",
@@ -198,55 +196,113 @@ def _continuous_split_pattern(
     }
 
 
-def classify_session(facts: ActivityFacts) -> Session:
-    evidence: list[SessionEvidence] = []
-    routes = [
-        CoachRoute.ENVIRONMENT,
-        CoachRoute.RECOVERY,
-        CoachRoute.PROGRESS,
-    ]
+def _score_continuous(
+    *,
+    title: str,
+    continuous_pattern: bool,
+    split_details: dict[str, Any],
+    moving_time_s: float | None,
+    elapsed_time_s: float | None,
+) -> tuple[float, list[str]]:
+    score = 45.0
+    reasons = []
 
-    sport_id = str(facts.sport_id or "")
+    if continuous_pattern:
+        score += 35.0
+        reasons.append("No deliberate recovery pattern was detected.")
 
-    if sport_id == WALKING_SPORT_ID:
-        return Session(
-            activity_id=facts.activity_id,
-            athlete_id=facts.athlete_id,
-            activity_date=facts.activity_date,
-            title=facts.title,
-            sport_id=facts.sport_id,
-            session_type=SessionType.WALK,
-            purpose=SessionPurpose.GENERAL,
-            confidence=1.0,
-            distance_km=facts.distance_km,
-            moving_time_s=facts.moving_time_s,
-            elapsed_time_s=facts.elapsed_time_s,
-            suitable_coaches=tuple(routes),
+    if split_details.get("substantial_split_count", 0) >= 3:
+        score += 12.0
+        reasons.append("Repeated substantial laps resemble auto-laps.")
+
+    if moving_time_s and elapsed_time_s and elapsed_time_s > 0:
+        ratio = max(0.0, min(moving_time_s / elapsed_time_s, 1.0))
+        if ratio >= 0.985:
+            score += 8.0
+            reasons.append(f"Moving ratio was {ratio:.1%}.")
+        elif ratio < 0.94:
+            score -= 8.0
+
+    if _contains_any(title, WORKOUT_WORDS):
+        score -= 22.0
+        reasons.append("Workout wording reduced continuous-run confidence.")
+
+    return max(0.0, min(score, 100.0)), reasons
+
+
+def _score_structured(
+    *,
+    title: str,
+    continuous_pattern: bool,
+    split_details: dict[str, Any],
+    raw_splits: str | None,
+) -> tuple[float, list[str]]:
+    score = 15.0
+    reasons = []
+
+    if _contains_any(title, WORKOUT_WORDS):
+        score += 42.0
+        reasons.append("Title contains explicit workout language.")
+
+    recovery_count = split_details.get("recovery_count", 0) or 0
+    unknown_recovery_count = (
+        split_details.get("unknown_recovery_count", 0) or 0
+    )
+    boundary_count = split_details.get("boundary_count", 0) or 0
+
+    if recovery_count:
+        score += min(recovery_count * 8.0, 32.0)
+        reasons.append(
+            f"{recovery_count} recorded recovery segment(s) detected."
         )
 
-    if sport_id != RUNNING_SPORT_ID:
-        return Session(
-            activity_id=facts.activity_id,
-            athlete_id=facts.athlete_id,
-            activity_date=facts.activity_date,
-            title=facts.title,
-            sport_id=facts.sport_id,
-            session_type=SessionType.CROSS_TRAINING,
-            purpose=SessionPurpose.GENERAL,
-            confidence=0.98,
-            distance_km=facts.distance_km,
-            moving_time_s=facts.moving_time_s,
-            elapsed_time_s=facts.elapsed_time_s,
-            suitable_coaches=tuple(routes),
+    if unknown_recovery_count:
+        score += min(unknown_recovery_count * 7.0, 28.0)
+        reasons.append(
+            f"{unknown_recovery_count} likely stopped-watch recovery gap(s)."
         )
 
-    raw = {}
-    if facts.raw_json_text:
-        try:
-            raw = json.loads(facts.raw_json_text)
-        except (TypeError, json.JSONDecodeError):
-            raw = {}
+    if boundary_count:
+        score += min(boundary_count * 2.5, 15.0)
+        reasons.append(
+            f"{boundary_count} lap/stop/start boundary fragment(s) detected."
+        )
 
+    splits = parse_splits(raw_splits)
+    recognition = recognise_workout(splits)
+
+    if recognition.rep_count >= 3:
+        score += min(recognition.rep_count * 2.0, 18.0)
+        reasons.append(
+            f"{recognition.rep_count} faster work segment(s) were recognised."
+        )
+
+    if recognition.workout_type == "Mixed interval session":
+        score += 12.0
+        reasons.append("A mixed-distance work pattern was recognised.")
+    elif recognition.workout_type not in (
+        "No split data",
+        "Unclassified",
+        "Continuous sustained effort",
+    ):
+        score += 7.0
+        reasons.append(
+            f"Split decoder recognised {recognition.workout_type.lower()}."
+        )
+
+    if continuous_pattern and not _contains_any(title, WORKOUT_WORDS):
+        score -= 20.0
+        reasons.append(
+            "No clear interruption evidence reduced workout confidence."
+        )
+
+    return max(0.0, min(score, 100.0)), reasons
+
+
+def _score_race(
+    facts: ActivityFacts,
+    raw: dict[str, Any],
+) -> tuple[float, list[str], Any]:
     race_signals = score_race_evidence(
         title=facts.title,
         distance_km=facts.distance_km,
@@ -261,121 +317,174 @@ def classify_session(facts: ActivityFacts) -> Session:
         official_time_s=raw.get("race_officialTime"),
         officially_measured=bool(raw.get("race_officiallyMeasured")),
     )
+    return (
+        max(0.0, min(race_signals.total, 100.0)),
+        list(race_signals.reasons),
+        race_signals,
+    )
 
-    if race_signals.classification == "confirmed_race":
-        routes.extend([CoachRoute.RACE, CoachRoute.GOAL])
-        evidence.append(
-            SessionEvidence(
-                key="shared_race_classification",
-                description=(
-                    f"Shared race score {race_signals.total:.1f}/100. "
-                    + "; ".join(race_signals.reasons)
-                ),
-                strength=race_signals.confidence,
-                supports=SessionType.RACE.value,
-                metadata={
-                    "race_score": race_signals.total,
-                    "race_classification":
-                        race_signals.classification,
-                    "matched_distance_km":
-                        race_signals.matched_distance_km,
-                    "moving_ratio": race_signals.moving_ratio,
-                },
-            )
-        )
+
+def classify_session(facts: ActivityFacts) -> Session:
+    evidence: list[SessionEvidence] = []
+    routes = [
+        CoachRoute.ENVIRONMENT,
+        CoachRoute.RECOVERY,
+        CoachRoute.PROGRESS,
+    ]
+
+    sport_id = str(facts.sport_id or "")
+    sport_roles = get_athlete_sport_roles(facts.athlete_id)
+    sport_role = sport_roles.get(sport_id)
+
+    if sport_role == "walking":
         return Session(
             activity_id=facts.activity_id,
             athlete_id=facts.athlete_id,
             activity_date=facts.activity_date,
             title=facts.title,
             sport_id=facts.sport_id,
-            session_type=SessionType.RACE,
-            purpose=SessionPurpose.RACE,
-            confidence=race_signals.confidence,
+            session_type=SessionType.WALK,
+            purpose=SessionPurpose.GENERAL,
+            confidence=1.0,
             distance_km=facts.distance_km,
             moving_time_s=facts.moving_time_s,
             elapsed_time_s=facts.elapsed_time_s,
-            avg_hr=facts.avg_hr,
-            max_hr=facts.max_hr,
-            elevation_up_m=facts.elevation_up_m,
-            temperature_c=facts.temperature_c,
-            humidity=facts.humidity,
-            wind_speed=facts.wind_speed,
-            route_name=facts.route_name,
-            evidence=tuple(evidence),
-            suitable_coaches=tuple(dict.fromkeys(routes)),
+            suitable_coaches=tuple(routes),
             metadata={
-                "race_score": race_signals.total,
-                "race_classification":
-                    race_signals.classification,
+                "classification_scores": {
+                    "walk": 100.0,
+                    "continuous_run": 0.0,
+                    "structured_workout": 0.0,
+                    "race": 0.0,
+                }
             },
         )
 
-    raw_splits = _extract_raw_splits(facts.raw_json_text)
-    continuous, details = _continuous_split_pattern(raw_splits)
-    title_workout = _contains_any(facts.title, WORKOUT_WORDS)
-
-    if title_workout or not continuous:
-        routes.extend([CoachRoute.WORKOUT, CoachRoute.THRESHOLD])
-        confidence = 0.92 if title_workout and not continuous else 0.80
-        evidence.append(
-            SessionEvidence(
-                key="structured_evidence",
-                description=(
-                    "Title or split pattern indicates deliberate recovery or interruption."
-                ),
-                strength=confidence,
-                supports=SessionType.STRUCTURED_WORKOUT.value,
-                metadata=details,
-            )
-        )
+    if sport_role != "running":
         return Session(
             activity_id=facts.activity_id,
             athlete_id=facts.athlete_id,
             activity_date=facts.activity_date,
             title=facts.title,
             sport_id=facts.sport_id,
-            session_type=SessionType.STRUCTURED_WORKOUT,
-            purpose=(
-                SessionPurpose.THRESHOLD
-                if _contains_any(facts.title, ("threshold", "tempo", "cruise"))
-                else SessionPurpose.UNKNOWN
-            ),
-            confidence=confidence,
+            session_type=SessionType.CROSS_TRAINING,
+            purpose=SessionPurpose.GENERAL,
+            confidence=0.98,
             distance_km=facts.distance_km,
             moving_time_s=facts.moving_time_s,
             elapsed_time_s=facts.elapsed_time_s,
-            avg_hr=facts.avg_hr,
-            max_hr=facts.max_hr,
-            elevation_up_m=facts.elevation_up_m,
-            temperature_c=facts.temperature_c,
-            humidity=facts.humidity,
-            wind_speed=facts.wind_speed,
-            route_name=facts.route_name,
-            evidence=tuple(evidence),
-            suitable_coaches=tuple(dict.fromkeys(routes)),
-            metadata={"split_classification": details},
+            suitable_coaches=tuple(routes),
+            metadata={
+                "classification_scores": {
+                    "cross_training": 98.0,
+                    "continuous_run": 0.0,
+                    "structured_workout": 0.0,
+                    "race": 0.0,
+                }
+            },
         )
 
-    routes.append(CoachRoute.EASY)
+    raw = {}
+    if facts.raw_json_text:
+        try:
+            raw = json.loads(facts.raw_json_text)
+        except (TypeError, json.JSONDecodeError):
+            raw = {}
+
+    raw_splits = _extract_raw_splits(facts.raw_json_text)
+    continuous_pattern, split_details = _continuous_split_pattern(
+        raw_splits
+    )
+
+    continuous_score, continuous_reasons = _score_continuous(
+        title=facts.title,
+        continuous_pattern=continuous_pattern,
+        split_details=split_details,
+        moving_time_s=facts.moving_time_s,
+        elapsed_time_s=facts.elapsed_time_s,
+    )
+    workout_score, workout_reasons = _score_structured(
+        title=facts.title,
+        continuous_pattern=continuous_pattern,
+        split_details=split_details,
+        raw_splits=raw_splits,
+    )
+    race_score, race_reasons, race_signals = _score_race(facts, raw)
+
+    scores = {
+        "continuous_run": round(continuous_score, 1),
+        "structured_workout": round(workout_score, 1),
+        "race": round(race_score, 1),
+    }
+
+    ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    winner, winner_score = ordered[0]
+    runner_up, runner_up_score = ordered[1]
+    margin = winner_score - runner_up_score
+
+    reasons_by_type = {
+        "continuous_run": continuous_reasons,
+        "structured_workout": workout_reasons,
+        "race": race_reasons,
+    }
+
+    confidence = max(
+        0.35,
+        min((winner_score / 100.0) * 0.75 + min(margin / 40.0, 1.0) * 0.25, 0.98),
+    )
+
+    metadata = {
+        "split_classification": split_details,
+        "classification_scores": scores,
+        "classification_reasons": reasons_by_type,
+        "winner": winner,
+        "runner_up": runner_up,
+        "score_margin": round(margin, 1),
+    }
+
+    if winner == "race":
+        routes.extend([CoachRoute.RACE, CoachRoute.GOAL])
+        session_type = SessionType.RACE
+        purpose = SessionPurpose.RACE
+    elif winner == "structured_workout":
+        routes.extend([CoachRoute.WORKOUT, CoachRoute.THRESHOLD])
+        session_type = SessionType.STRUCTURED_WORKOUT
+        purpose = (
+            SessionPurpose.THRESHOLD
+            if _contains_any(
+                facts.title,
+                ("threshold", "tempo", "cruise"),
+            )
+            else SessionPurpose.UNKNOWN
+        )
+    else:
+        routes.append(CoachRoute.EASY)
+        session_type = SessionType.CONTINUOUS_RUN
+        purpose = SessionPurpose.GENERAL
+
     evidence.append(
         SessionEvidence(
-            key="continuous_pattern",
-            description="No deliberate recovery or interruption pattern was found.",
-            strength=0.88,
-            supports=SessionType.CONTINUOUS_RUN.value,
-            metadata=details,
+            key="explainable_classification",
+            description=(
+                f"{winner.replace('_', ' ').title()} scored "
+                f"{winner_score:.1f}; {runner_up.replace('_', ' ').title()} "
+                f"scored {runner_up_score:.1f}."
+            ),
+            strength=confidence,
+            supports=winner,
+            metadata=metadata,
         )
     )
+
     return Session(
         activity_id=facts.activity_id,
         athlete_id=facts.athlete_id,
         activity_date=facts.activity_date,
         title=facts.title,
         sport_id=facts.sport_id,
-        session_type=SessionType.CONTINUOUS_RUN,
-        purpose=SessionPurpose.GENERAL,
-        confidence=0.88,
+        session_type=session_type,
+        purpose=purpose,
+        confidence=confidence,
         distance_km=facts.distance_km,
         moving_time_s=facts.moving_time_s,
         elapsed_time_s=facts.elapsed_time_s,
@@ -388,5 +497,5 @@ def classify_session(facts: ActivityFacts) -> Session:
         route_name=facts.route_name,
         evidence=tuple(evidence),
         suitable_coaches=tuple(dict.fromkeys(routes)),
-        metadata={"split_classification": details},
+        metadata=metadata,
     )

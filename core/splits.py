@@ -10,11 +10,19 @@ The recogniser is designed around real lap-button use:
 - stopped-watch recoveries may be missing or only partly represented;
 - boundaries must never inflate the rep count.
 
-Runalyze split format:
+Supported Runalyze split formats:
+
+Legacy:
     U<distance_km>|<duration>
 
-Example:
+Current:
+    I<distance_km>|<duration>||<metadata>
+
+Examples:
     U1.000|4:02-U0.120|0:31-U0.998|4:01
+    I1.000|4:02||0-I0.120|0:31||0-I0.998|4:01||0
+
+Both formats are normalised into the same Split objects.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ TOKEN_PATTERN = re.compile(
     (?P<distance>\d+(?:\.\d+)?)
     \|
     (?P<time>\d+(?::\d{1,2}){1,2})
+    (?P<suffix>(?:\|\|.*)?)?
     \s*$
     """,
     re.VERBOSE,
@@ -153,6 +162,26 @@ def parse_duration(value: str) -> int:
         return hours * 3600 + minutes * 60 + seconds
 
     raise ValueError(f"Unsupported duration: {value}")
+
+
+def detect_split_format(raw_value: str | None) -> str:
+    """Return the recognised split encoding family."""
+    if raw_value is None:
+        return "none"
+
+    value = str(raw_value).strip()
+
+    if not value:
+        return "none"
+
+    first_token = value.split("-", 1)[0].strip()
+
+    if first_token.startswith("I"):
+        return "runalyze_current_i"
+    if first_token.startswith("U"):
+        return "runalyze_legacy_u"
+
+    return "unknown"
 
 
 def parse_splits(raw_value: str | None) -> tuple[Split, ...]:

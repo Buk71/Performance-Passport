@@ -12,10 +12,15 @@ import json
 from typing import Any
 
 from core.database import get_connection
-from core.splits import parse_splits, recognise_workout, splits_to_dicts
+from core.splits import (
+    detect_split_format,
+    parse_splits,
+    recognise_workout,
+    splits_to_dicts,
+)
 
 
-DECODER_VERSION = 2
+DECODER_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,7 @@ def decode_workout(activity_id: int, raw_splits: str | None) -> DecodedWorkout:
     recognition = recognise_workout(splits)
 
     payload = {
+        "split_format": detect_split_format(raw_splits),
         "workout_type": recognition.workout_type,
         "description": recognition.description,
         "confidence": recognition.confidence,

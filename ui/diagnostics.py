@@ -56,7 +56,7 @@ def _get_athletes():
 
 
 @st.cache_data(show_spinner=False)
-def _load_classified_sessions(athlete_id):
+def _load_classified_sessions(athlete_id, data_version=None):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -133,6 +133,11 @@ def _load_classified_sessions(athlete_id):
         )
 
         details = session.metadata.get("split_classification", {})
+        scores = session.metadata.get("classification_scores", {})
+        reasons_by_type = session.metadata.get(
+            "classification_reasons",
+            {},
+        )
         split_reason = details.get("reason")
         recognition = details.get("recognition")
 
@@ -161,6 +166,12 @@ def _load_classified_sessions(athlete_id):
                 "unknown_recovery_count": details.get(
                     "unknown_recovery_count"
                 ),
+                "continuous_score": scores.get("continuous_run"),
+                "workout_score": scores.get("structured_workout"),
+                "race_score": scores.get("race"),
+                "runner_up": session.metadata.get("runner_up"),
+                "score_margin": session.metadata.get("score_margin"),
+                "classification_reasons": reasons_by_type,
             }
         )
 
@@ -196,6 +207,37 @@ def _latest_by_type(df):
         )
 
     return pd.DataFrame(rows)
+
+
+def _get_data_version():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            COUNT(*),
+            COALESCE(MAX(id), 0),
+            SUM(CASE WHEN athlete_id IS NULL THEN 1 ELSE 0 END)
+        FROM activities
+        """
+    )
+
+    version = cursor.fetchone()
+    conn.close()
+
+    return tuple(version)
+
+
+def _get_orphan_count():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT COUNT(*) FROM activities WHERE athlete_id IS NULL"
+    )
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
 
 
 def show_diagnostics_page():
@@ -236,14 +278,27 @@ def show_diagnostics_page():
         item for item in athletes if item["name"] == athlete_name
     )
 
+    data_version = _get_data_version()
+
     with st.spinner("Classifying activity history..."):
-        rows = _load_classified_sessions(athlete["id"])
+        rows = _load_classified_sessions(
+            athlete["id"],
+            data_version,
+        )
 
     if not rows:
         st.info("No activities are available for this athlete.")
         return
 
     df = pd.DataFrame(rows)
+
+    orphan_count = _get_orphan_count()
+
+    if orphan_count:
+        st.error(
+            f"{orphan_count:,} activities are not linked to an athlete. "
+            "Restarting the app should repair them automatically."
+        )
 
     st.subheader("Classification summary")
 
@@ -265,6 +320,11 @@ def show_diagnostics_page():
     )
 
     st.subheader("Inspect classifications")
+
+    search_text = st.text_input(
+        "Find activity by date or title",
+        placeholder="e.g. 2026-07-29 or Wakefield Running",
+    )
 
     filter_columns = st.columns([1.3, 1, 1])
 
@@ -292,6 +352,19 @@ def show_diagnostics_page():
 
     filtered = df.copy()
 
+    if search_text.strip():
+        search = search_text.strip().lower()
+        filtered = filtered[
+            filtered["title"].str.lower().str.contains(
+                search,
+                na=False,
+            )
+            | filtered["date"].fillna("").str.lower().str.contains(
+                search,
+                na=False,
+            )
+        ]
+
     if selected_type != "All":
         filtered = filtered[
             filtered["session_label"] == selected_type
@@ -313,6 +386,10 @@ def show_diagnostics_page():
             "confidence",
             "distance_km",
             "avg_hr",
+            "continuous_score",
+            "workout_score",
+            "race_score",
+            "runner_up",
             "routes",
             "reason",
         ]
@@ -326,6 +403,10 @@ def show_diagnostics_page():
         "Confidence",
         "Distance km",
         "Avg HR",
+        "Continuous score",
+        "Workout score",
+        "Race score",
+        "Runner-up",
         "Coach routes",
         "Reason",
     ]
@@ -340,6 +421,71 @@ def show_diagnostics_page():
         width="stretch",
         height=520,
     )
+
+    st.subheader("Activity explanation")
+
+    if filtered.empty:
+        st.info("No activity matches the current filters.")
+    else:
+        activity_options = {
+            (
+                f"{row['date'] or 'Unknown'} · {row['title']} "
+                f"· {row['session_label']}"
+            ): int(row["activity_id"])
+            for _, row in filtered.head(200).iterrows()
+        }
+
+        selected_activity_label = st.selectbox(
+            "Inspect activity",
+            list(activity_options.keys()),
+        )
+        selected_activity_id = activity_options[selected_activity_label]
+        selected_row = df[
+            df["activity_id"] == selected_activity_id
+        ].iloc[0]
+
+        score_cols = st.columns(3)
+        score_cols[0].metric(
+            "Continuous",
+            f"{selected_row['continuous_score'] or 0:.1f}",
+        )
+        score_cols[1].metric(
+            "Workout",
+            f"{selected_row['workout_score'] or 0:.1f}",
+        )
+        score_cols[2].metric(
+            "Race",
+            f"{selected_row['race_score'] or 0:.1f}",
+        )
+
+        st.write(
+            f"**Current classification:** "
+            f"{selected_row['session_label']} "
+            f"({selected_row['confidence']:.0%} confidence)"
+        )
+        st.write(
+            f"**Runner-up:** "
+            f"{str(selected_row['runner_up'] or '—').replace('_', ' ').title()}"
+        )
+        st.write(
+            f"**Winning margin:** "
+            f"{selected_row['score_margin'] or 0:.1f} points"
+        )
+
+        reason_map = selected_row["classification_reasons"] or {}
+
+        for key, label in (
+            ("continuous_run", "Continuous run"),
+            ("structured_workout", "Structured workout"),
+            ("race", "Race"),
+        ):
+            with st.expander(f"Why {label} scored this way"):
+                reasons = reason_map.get(key, [])
+                if reasons:
+                    for reason in reasons:
+                        st.write(f"• {reason}")
+                else:
+                    st.write("No supporting reason was recorded.")
 
     st.subheader("Potential classification issues")
 
