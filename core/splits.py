@@ -1,26 +1,28 @@
 """
-Runalyze split-string decoder and workout recogniser.
+Runalyze split decoder and pattern-based Workout Coach recogniser.
 
-Observed Runalyze format:
-    U1.609|8:16-U0.153|1:00-U1.609|7:58
+The recogniser is designed around real lap-button use:
 
-Each segment is:
+- work reps do not need to have identical distances;
+- a session may contain more than one family of reps;
+- very short fragments can be created by pressing lap, stopping the watch,
+  restarting it and pressing lap again;
+- stopped-watch recoveries may be missing or only partly represented;
+- boundaries must never inflate the rep count.
+
+Runalyze split format:
     U<distance_km>|<duration>
 
-Examples:
-    U1.609|8:16  -> 1.609 km in 8:16
-    U0.400|1:32  -> 400 m in 1:32
-
-The leading "U" is preserved as the source marker but is not required for
-parsing. Distances are treated as kilometres because 1.609 consistently
-represents one mile in the exported data.
+Example:
+    U1.000|4:02-U0.120|0:31-U0.998|4:01
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import re
-from statistics import mean, pstdev
+from statistics import mean, median, pstdev
 
 
 TOKEN_PATTERN = re.compile(
@@ -34,6 +36,9 @@ TOKEN_PATTERN = re.compile(
     """,
     re.VERBOSE,
 )
+
+BOUNDARY_MAX_SECONDS = 10
+BOUNDARY_MAX_DISTANCE_KM = 0.08
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,9 @@ class WorkoutRecognition:
     description: str
     reasons: tuple[str, ...]
     limitations: tuple[str, ...]
+    boundary_splits: tuple[Split, ...] = ()
+    unknown_recovery_count: int = 0
+    work_blocks: tuple[WorkoutBlock, ...] = ()
 
     @property
     def rep_count(self) -> int:
@@ -130,7 +138,6 @@ class WorkoutRecognition:
 
 
 def parse_duration(value: str) -> int:
-    """Convert M:SS or H:MM:SS to seconds."""
     parts = [int(part) for part in value.strip().split(":")]
 
     if len(parts) == 2:
@@ -149,11 +156,6 @@ def parse_duration(value: str) -> int:
 
 
 def parse_splits(raw_value: str | None) -> tuple[Split, ...]:
-    """
-    Decode a Runalyze splits string.
-
-    Invalid tokens are skipped rather than breaking the whole activity.
-    """
     if raw_value is None:
         return ()
 
@@ -191,51 +193,128 @@ def parse_splits(raw_value: str | None) -> tuple[Split, ...]:
     return tuple(parsed)
 
 
-def _is_plausible_work_split(split: Split) -> bool:
-    pace = split.pace_s_per_km
+def is_boundary_fragment(split: Split) -> bool:
+    """
+    Tiny sub-10-second laps are usually lap/stop/start artefacts.
 
+    They are kept for auditability but never counted as work or recovery reps.
+    """
+    if (
+        split.duration_s < BOUNDARY_MAX_SECONDS
+        and split.distance_km < BOUNDARY_MAX_DISTANCE_KM
+    ):
+        return True
+
+    pace = split.pace_s_per_km
+    if split.duration_s <= 5 and pace is not None:
+        return True
+
+    return False
+
+
+def _valid_training_split(split: Split) -> bool:
+    pace = split.pace_s_per_km
     if pace is None:
         return False
 
-    # Broad running-work range: 2:30/km to 6:30/km.
-    return 150 <= pace <= 390 and 0.20 <= split.distance_km <= 5.0
+    return (
+        split.duration_s >= 10
+        and split.distance_km >= 0.06
+        and 120 <= pace <= 900
+    )
 
 
-def _distance_cluster(splits: list[Split]) -> list[Split]:
-    """
-    Return the strongest repeated-distance cluster.
+def _kmeans_two(values: list[float]) -> tuple[list[int], float, float] | None:
+    """Small deterministic two-cluster k-means for pace separation."""
+    if len(values) < 4:
+        return None
 
-    A tolerance of 8% allows GPS/lap rounding while separating work and
-    recovery segments.
-    """
-    if not splits:
-        return []
+    low = min(values)
+    high = max(values)
 
-    best = []
+    if high <= low:
+        return None
 
-    for seed in splits:
-        tolerance = max(seed.distance_km * 0.08, 0.025)
-        cluster = [
-            split
-            for split in splits
-            if abs(split.distance_km - seed.distance_km) <= tolerance
+    c1, c2 = low, high
+    assignments = [0] * len(values)
+
+    for _ in range(20):
+        new_assignments = [
+            0 if abs(value - c1) <= abs(value - c2) else 1
+            for value in values
         ]
 
-        if len(cluster) > len(best):
-            best = cluster
-        elif len(cluster) == len(best) and cluster:
-            if sum(s.distance_km for s in cluster) > sum(
-                s.distance_km for s in best
-            ):
-                best = cluster
+        group1 = [
+            value for value, group in zip(values, new_assignments)
+            if group == 0
+        ]
+        group2 = [
+            value for value, group in zip(values, new_assignments)
+            if group == 1
+        ]
 
-    return best
+        if not group1 or not group2:
+            return None
+
+        new_c1 = mean(group1)
+        new_c2 = mean(group2)
+
+        if (
+            new_assignments == assignments
+            and abs(new_c1 - c1) < 0.01
+            and abs(new_c2 - c2) < 0.01
+        ):
+            assignments = new_assignments
+            c1, c2 = new_c1, new_c2
+            break
+
+        assignments = new_assignments
+        c1, c2 = new_c1, new_c2
+
+    if c1 > c2:
+        assignments = [1 - group for group in assignments]
+        c1, c2 = c2, c1
+
+    return assignments, c1, c2
+
+
+def _distance_families(
+    splits: list[Split],
+    tolerance_ratio: float = 0.18,
+) -> list[list[Split]]:
+    """
+    Group work reps into approximate distance families.
+
+    The tolerance is deliberately broad so time-based reps and manual-lap
+    variation remain in the same family.
+    """
+    families: list[list[Split]] = []
+
+    for split in sorted(splits, key=lambda item: item.distance_km):
+        placed = False
+
+        for family in families:
+            centre = mean(item.distance_km for item in family)
+            tolerance = max(centre * tolerance_ratio, 0.06)
+
+            if abs(split.distance_km - centre) <= tolerance:
+                family.append(split)
+                placed = True
+                break
+
+        if not placed:
+            families.append([split])
+
+    return sorted(
+        families,
+        key=lambda family: min(item.index for item in family),
+    )
 
 
 def _format_distance(distance_km: float) -> str:
-    if abs(distance_km - 1.609) <= 0.08:
+    if abs(distance_km - 1.609) <= 0.12:
         return "1 mile"
-    if abs(distance_km - 3.218) <= 0.15:
+    if abs(distance_km - 3.218) <= 0.25:
         return "2 miles"
     if distance_km < 1:
         return f"{round(distance_km * 1000):.0f} m"
@@ -252,15 +331,72 @@ def _format_duration(seconds: int) -> str:
     return f"{minutes}:{remaining:02d}"
 
 
+def _format_pace(seconds_per_km: float) -> str:
+    minutes = int(seconds_per_km // 60)
+    seconds = int(round(seconds_per_km % 60))
+
+    if seconds == 60:
+        minutes += 1
+        seconds = 0
+
+    return f"{minutes}:{seconds:02d}/km"
+
+
+def _describe_families(work: list[Split]) -> str:
+    families = _distance_families(work)
+    parts = []
+
+    for family in families:
+        average_distance = mean(split.distance_km for split in family)
+        parts.append(f"{len(family)} × {_format_distance(average_distance)}")
+
+    return " + ".join(parts)
+
+
+def _build_work_blocks(
+    work: list[Split],
+    all_meaningful: list[Split],
+) -> tuple[WorkoutBlock, ...]:
+    if not work:
+        return ()
+
+    work_indexes = {split.index for split in work}
+    blocks: list[list[Split]] = []
+    current: list[Split] = []
+    previous_work_position: int | None = None
+
+    meaningful_positions = {
+        split.index: position
+        for position, split in enumerate(all_meaningful)
+    }
+
+    for split in sorted(work, key=lambda item: item.index):
+        position = meaningful_positions.get(split.index)
+
+        if (
+            previous_work_position is None
+            or position is None
+            or position - previous_work_position <= 2
+        ):
+            current.append(split)
+        else:
+            blocks.append(current)
+            current = [split]
+
+        previous_work_position = position
+
+    if current:
+        blocks.append(current)
+
+    return tuple(
+        WorkoutBlock(kind="work", splits=tuple(block))
+        for block in blocks
+    )
+
+
 def recognise_workout(
     splits: tuple[Split, ...],
 ) -> WorkoutRecognition:
-    """
-    Recognise the most likely workout structure from manual/recorded laps.
-
-    Version 1 focuses on repeated-distance sessions. It deliberately returns
-    "Unclassified" when the split pattern is ambiguous.
-    """
     if not splits:
         return WorkoutRecognition(
             workout_type="No split data",
@@ -274,187 +410,307 @@ def recognise_workout(
             limitations=("No split string was available.",),
         )
 
-    plausible = [split for split in splits if _is_plausible_work_split(split)]
-    cluster = _distance_cluster(plausible)
+    boundaries = tuple(
+        split for split in splits if is_boundary_fragment(split)
+    )
+    meaningful = [
+        split
+        for split in splits
+        if not is_boundary_fragment(split)
+        and _valid_training_split(split)
+    ]
 
-    if len(cluster) < 2:
-        longest = max(splits, key=lambda split: split.distance_km)
+    if len(meaningful) < 2:
+        return WorkoutRecognition(
+            workout_type="Unclassified",
+            confidence=0.30 if meaningful else 0.15,
+            work_splits=(),
+            recovery_splits=(),
+            warmup_splits=tuple(meaningful),
+            cooldown_splits=(),
+            boundary_splits=boundaries,
+            description=(
+                f"{len(splits)} split(s) decoded, but too few meaningful "
+                "segments remained after boundary filtering."
+            ),
+            reasons=(
+                f"{len(boundaries)} probable lap/stop/start fragment(s) ignored.",
+            ),
+            limitations=(
+                "The session structure cannot be recovered confidently.",
+            ),
+        )
+
+    # Short connector laps can look deceptively fast because they occur
+    # around lap/stop/start presses. When the session also contains several
+    # substantial segments, treat these connectors as recovery candidates
+    # before pace clustering.
+    substantial = [
+        split
+        for split in meaningful
+        if split.duration_s >= 90 and split.distance_km >= 0.25
+    ]
+    connector_recoveries = []
+
+    if len(substantial) >= 2:
+        connector_recoveries = [
+            split
+            for split in meaningful
+            if split.duration_s < 90 and split.distance_km < 0.25
+        ]
+
+    clustering_pool = [
+        split
+        for split in meaningful
+        if split not in connector_recoveries
+    ]
+    paces = [
+        split.pace_s_per_km
+        for split in clustering_pool
+        if split.pace_s_per_km is not None
+    ]
+    clustering = _kmeans_two(paces)
+
+    work: list[Split] = []
+    recovery: list[Split] = list(connector_recoveries)
+    pace_separation = 0.0
+
+    if clustering is not None:
+        assignments, fast_centre, slow_centre = clustering
+        pace_separation = (slow_centre - fast_centre) / slow_centre
+
+        if pace_separation >= 0.12:
+            for split, group in zip(clustering_pool, assignments):
+                if group == 0:
+                    work.append(split)
+                else:
+                    recovery.append(split)
+
+    # Fallback for sessions with repeated distances but less obvious pace
+    # separation, such as controlled threshold reps.
+    if len(work) < 2:
+        candidate_families = [
+            family
+            for family in _distance_families(
+                clustering_pool,
+                tolerance_ratio=0.10,
+            )
+            if len(family) >= 2
+        ]
+
+        if candidate_families:
+            best_family = max(
+                candidate_families,
+                key=lambda family: (
+                    len(family),
+                    sum(split.distance_km for split in family),
+                ),
+            )
+            family_pace = mean(
+                split.pace_s_per_km
+                for split in best_family
+                if split.pace_s_per_km is not None
+            )
+            overall_pace = median(paces)
+
+            if family_pace <= overall_pace * 1.06:
+                work = list(best_family)
+                work_indexes = {split.index for split in work}
+                recovery = [
+                    split
+                    for split in meaningful
+                    if split.index not in work_indexes
+                    and min(work_indexes) < split.index < max(work_indexes)
+                ]
+
+    if len(work) < 2:
+        longest = max(meaningful, key=lambda split: split.distance_km)
 
         if (
             longest.distance_km >= 3.0
             and longest.pace_s_per_km is not None
-            and longest.pace_s_per_km <= 360
+            and longest.pace_s_per_km <= 390
         ):
-            other = [split for split in splits if split != longest]
             return WorkoutRecognition(
                 workout_type="Continuous sustained effort",
-                confidence=0.62,
+                confidence=0.64,
                 work_splits=(longest,),
                 recovery_splits=(),
                 warmup_splits=tuple(
-                    split for split in other if split.index < longest.index
+                    split for split in meaningful if split.index < longest.index
                 ),
                 cooldown_splits=tuple(
-                    split for split in other if split.index > longest.index
+                    split for split in meaningful if split.index > longest.index
                 ),
+                boundary_splits=boundaries,
                 description=(
                     f"One sustained {_format_distance(longest.distance_km)} "
                     f"effort in {_format_duration(longest.duration_s)}."
                 ),
                 reasons=(
-                    "One long, continuous, faster split was identified.",
+                    "One long, continuous faster segment was identified.",
+                    f"{len(boundaries)} boundary fragment(s) were ignored.",
                 ),
                 limitations=(
-                    "A single split cannot prove the intended workout type.",
+                    "A single segment cannot prove the intended workout type.",
                 ),
             )
 
         return WorkoutRecognition(
             workout_type="Unclassified",
-            confidence=0.25,
+            confidence=0.35,
             work_splits=(),
             recovery_splits=(),
-            warmup_splits=(),
+            warmup_splits=tuple(meaningful),
             cooldown_splits=(),
+            boundary_splits=boundaries,
             description=(
-                f"{len(splits)} split(s) decoded, but no repeated work "
-                "pattern was strong enough to classify."
+                f"{len(splits)} split(s) decoded, but no convincing work "
+                "pattern was found."
             ),
-            reasons=("Split data was successfully decoded.",),
+            reasons=(
+                f"{len(boundaries)} probable lap/stop/start fragment(s) ignored.",
+            ),
             limitations=(
-                "The laps may represent route splits rather than workout reps.",
+                "The laps may be ordinary route splits or a session with "
+                "recoveries omitted while the watch was stopped.",
             ),
         )
 
-    # When work and recoveries use similar lap distances (for example
-    # alternating 400 m fast / 400 m float), split the distance cluster by
-    # pace and keep the faster group as the work reps.
-    cluster_paces = [
-        split.pace_s_per_km
-        for split in cluster
-        if split.pace_s_per_km is not None
-    ]
+    work = sorted(work, key=lambda split: split.index)
+    work_indexes = {split.index for split in work}
+    first_work = min(work_indexes)
+    last_work = max(work_indexes)
 
-    if len(cluster_paces) >= 4:
-        median_pace = sorted(cluster_paces)[len(cluster_paces) // 2]
-        fast_group = [
-            split
-            for split in cluster
-            if split.pace_s_per_km is not None
-            and split.pace_s_per_km <= median_pace * 0.92
-        ]
-        slow_group = [
-            split
-            for split in cluster
-            if split not in fast_group
-        ]
-
-        if len(fast_group) >= 2 and len(slow_group) >= 1:
-            cluster = fast_group
-
-    cluster_indexes = {split.index for split in cluster}
-    first_work = min(cluster_indexes)
-    last_work = max(cluster_indexes)
-
-    between = [
+    # Only slower segments between work reps are recoveries. Slower segments
+    # outside the work block are warm-up/cool-down.
+    recovery = [
         split
-        for split in splits
-        if first_work <= split.index <= last_work
-        and split.index not in cluster_indexes
+        for split in recovery
+        if first_work < split.index < last_work
     ]
-
-    work_average_pace = mean(
-        split.pace_s_per_km
-        for split in cluster
-        if split.pace_s_per_km is not None
+    warmup = tuple(
+        split
+        for split in meaningful
+        if split.index < first_work
+    )
+    cooldown = tuple(
+        split
+        for split in meaningful
+        if split.index > last_work
     )
 
-    recoveries = [
-        split
-        for split in between
-        if split.distance_km < mean(s.distance_km for s in cluster) * 0.65
-        or (
-            split.pace_s_per_km is not None
-            and split.pace_s_per_km > work_average_pace * 1.18
-        )
-    ]
+    # Boundary fragments between work reps indicate likely stopped-watch or
+    # manual-lap transitions. They count as unknown recoveries, never reps.
+    unknown_recovery_count = 0
+    sorted_work = sorted(work, key=lambda split: split.index)
 
-    warmup = tuple(split for split in splits if split.index < first_work)
-    cooldown = tuple(split for split in splits if split.index > last_work)
+    for previous, following in zip(sorted_work, sorted_work[1:]):
+        between_boundaries = [
+            split
+            for split in boundaries
+            if previous.index < split.index < following.index
+        ]
+        between_recoveries = [
+            split
+            for split in recovery
+            if previous.index < split.index < following.index
+        ]
 
-    average_distance = mean(split.distance_km for split in cluster)
+        if between_boundaries and not between_recoveries:
+            unknown_recovery_count += 1
+
     average_pace = (
-        sum(split.duration_s for split in cluster)
-        / sum(split.distance_km for split in cluster)
+        sum(split.duration_s for split in work)
+        / sum(split.distance_km for split in work)
     )
     variation = (
-        pstdev(split.pace_s_per_km for split in cluster)
+        pstdev(
+            split.pace_s_per_km
+            for split in work
+            if split.pace_s_per_km is not None
+        )
         / average_pace
         * 100.0
-        if len(cluster) >= 2
+        if len(work) >= 2
         else 0.0
     )
+    families = _distance_families(work)
+    mixed = len(families) > 1
+    blocks = _build_work_blocks(work, meaningful)
 
-    confidence = 0.45
-    confidence += min(len(cluster), 8) / 8 * 0.25
-    confidence += 0.15 if len(recoveries) >= len(cluster) - 1 else 0.05
-    confidence += 0.15 if variation <= 5 else 0.08 if variation <= 10 else 0
-    confidence = min(confidence, 0.98)
+    average_distance = mean(split.distance_km for split in work)
 
-    if 0.30 <= average_distance <= 0.50:
+    if mixed:
+        workout_type = "Mixed interval session"
+    elif 0.20 <= average_distance <= 0.55:
         workout_type = "Short intervals"
-    elif 0.70 <= average_distance <= 1.20:
+    elif 0.55 < average_distance <= 1.20:
         workout_type = "Long intervals"
-    elif 1.35 <= average_distance <= 1.85:
+    elif 1.20 < average_distance <= 1.95:
         workout_type = "Mile repetitions"
-    elif 2.5 <= average_distance <= 3.8:
+    elif 1.95 < average_distance <= 4.0:
         workout_type = "Long threshold repetitions"
     else:
-        workout_type = "Repeated-distance workout"
+        workout_type = "Structured workout"
+
+    confidence = 0.46
+    confidence += min(len(work), 8) / 8 * 0.18
+    confidence += min(pace_separation / 0.30, 1.0) * 0.14
+    confidence += 0.10 if recovery else 0.03
+    confidence += 0.08 if variation <= 6 else 0.04 if variation <= 12 else 0
+    confidence += 0.06 if boundaries else 0
+    confidence -= min(unknown_recovery_count * 0.025, 0.10)
+    confidence = max(0.35, min(confidence, 0.97))
+
+    family_description = _describe_families(work)
 
     description = (
-        f"{len(cluster)} × {_format_distance(average_distance)} recognised "
-        f"at an average pace of {_format_pace(average_pace)}."
+        f"{family_description} recognised at an average pace of "
+        f"{_format_pace(average_pace)}."
     )
 
     reasons = [
-        f"{len(cluster)} work splits have closely matched distances.",
-        f"{len(recoveries)} likely recovery split(s) were identified.",
+        f"{len(work)} work segment(s) were identified by pace and sequence.",
+        f"{len(recovery)} recorded recovery segment(s) were identified.",
+        f"{len(boundaries)} probable lap/stop/start fragment(s) were ignored.",
         f"Rep pace variation is {variation:.1f}%.",
     ]
 
+    if unknown_recovery_count:
+        reasons.append(
+            f"{unknown_recovery_count} recovery gap(s) may have occurred "
+            "while the watch was stopped."
+        )
+
+    if mixed:
+        reasons.append(
+            "More than one work-distance family was recognised."
+        )
+
     limitations = [
-        "The decoder identifies lap structure, not the athlete's intended zone.",
-        "Heart rate per split is not present in the CSV split string.",
-        "FIT lap records will later add split heart rate, cadence and power.",
+        "CSV splits do not include heart rate, cadence or power for each lap.",
+        "Stopped-watch recovery duration cannot be reconstructed exactly.",
+        "The parser identifies performed structure, not intended training zone.",
     ]
 
     return WorkoutRecognition(
         workout_type=workout_type,
         confidence=confidence,
-        work_splits=tuple(sorted(cluster, key=lambda split: split.index)),
-        recovery_splits=tuple(recoveries),
+        work_splits=tuple(work),
+        recovery_splits=tuple(sorted(recovery, key=lambda split: split.index)),
         warmup_splits=warmup,
         cooldown_splits=cooldown,
+        boundary_splits=boundaries,
+        unknown_recovery_count=unknown_recovery_count,
+        work_blocks=blocks,
         description=description,
         reasons=tuple(reasons),
         limitations=tuple(limitations),
     )
 
 
-def _format_pace(seconds_per_km: float) -> str:
-    minutes = int(seconds_per_km // 60)
-    seconds = int(round(seconds_per_km % 60))
-
-    if seconds == 60:
-        minutes += 1
-        seconds = 0
-
-    return f"{minutes}:{seconds:02d}/km"
-
-
 def splits_to_dicts(splits: tuple[Split, ...]) -> list[dict]:
-    """Return JSON-friendly split rows for UI/debug use."""
     return [
         {
             "index": split.index,
@@ -471,6 +727,7 @@ def splits_to_dicts(splits: tuple[Split, ...]) -> list[dict]:
                 if split.pace_s_per_km is not None
                 else None
             ),
+            "boundary_fragment": is_boundary_fragment(split),
         }
         for split in splits
     ]

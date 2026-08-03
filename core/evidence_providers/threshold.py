@@ -27,13 +27,14 @@ from core.coaching import (
 )
 from core.database import get_connection
 from core.splits import parse_splits, recognise_workout, splits_to_dicts
+from core.workouts import get_or_decode_workout
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 
 
 RUNNING_SPORT_ID = "965611"
 MAX_AGE_DAYS = 548
-MIN_SCORE = 48.0
+MIN_SCORE = 58.0
 
 THRESHOLD_WORDS = (
     "threshold",
@@ -98,6 +99,7 @@ class ThresholdCandidate:
     temperature_c: float | None
     humidity: float | None
     raw_splits: str | None
+    raw_json_text: str | None
 
 
 @dataclass(frozen=True)
@@ -257,30 +259,31 @@ def _weather_adjusted_rep_pace(
 
 
 def _split_threshold_evidence(candidate: ThresholdCandidate):
+    decoded = get_or_decode_workout(
+        candidate.activity_id,
+        candidate.raw_json_text,
+    )
     splits = parse_splits(candidate.raw_splits)
     recognition = recognise_workout(splits)
 
-    if not recognition.work_splits:
+    if not decoded.recognition_json.get("work_splits"):
         return None, recognition, splits
 
-    average_rep_pace = recognition.average_rep_pace_s_per_km
+    average_distance = decoded.average_rep_distance_km or 0.0
+    workout_type = decoded.workout_type
 
-    if average_rep_pace is None:
-        return None, recognition, splits
-
-    # Longer repeated work is more threshold-relevant than short intervals.
-    average_distance = recognition.average_rep_distance_km or 0.0
-
-    if average_distance >= 2.4:
+    if workout_type == "Long threshold repetitions":
         relevance = 1.0
-    elif average_distance >= 1.35:
+    elif workout_type == "Mile repetitions":
         relevance = 0.88
-    elif average_distance >= 0.8:
-        relevance = 0.60
+    elif workout_type == "Long intervals" and average_distance >= 0.8:
+        relevance = 0.62
+    elif workout_type == "Continuous sustained effort":
+        relevance = 0.70
     else:
-        relevance = 0.30
+        relevance = 0.0
 
-    if recognition.rep_count >= 2:
+    if decoded.rep_count >= 2 and relevance > 0:
         relevance += 0.05
 
     return min(relevance, 1.0), recognition, splits
@@ -407,10 +410,12 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 )
 
         best = scored[0]
-        sample_factor = min(len(scored) / 8.0, 1.0)
+        sample_factor = min(len(scored) / 12.0, 1.0)
+        comparability_factor = min(len(representative) / 5.0, 1.0)
         confidence = _clamp(
-            (best.score / 100.0) * 0.65
-            + sample_factor * 0.35
+            (best.score / 100.0) * 0.55
+            + sample_factor * 0.25
+            + comparability_factor * 0.20
         )
 
         recent_text = (
@@ -548,6 +553,12 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             _split_threshold_evidence(candidate)
         )
 
+        # A decoded structure must be genuinely threshold-relevant.
+        # Short intervals, mixed sessions and ordinary route splits are not
+        # allowed to become threshold evidence just because HR was elevated.
+        if split_relevance == 0.0 and title_signal == 0.0:
+            return None
+
         split_bonus = (
             recognition.confidence * split_relevance * 28.0
             if split_relevance is not None
@@ -646,9 +657,15 @@ class ThresholdEvidenceProvider(EvidenceProvider):
               AND a.distance_m BETWEEN 3.0 AND 20.0
               AND a.moving_time_s BETWEEN 900 AND 5400
               AND (
-                    a.avg_hr IS NOT NULL
+                    (
+                        a.avg_hr IS NOT NULL
+                        AND at.lt2_hr IS NOT NULL
+                        AND a.avg_hr BETWEEN at.lt2_hr * 0.88
+                                         AND at.lt2_hr * 1.08
+                    )
                     OR lower(COALESCE(a.title, '')) LIKE '%threshold%'
                     OR lower(COALESCE(a.title, '')) LIKE '%tempo%'
+                    OR lower(COALESCE(a.title, '')) LIKE '%cruise%'
                   )
             ORDER BY a.activity_datetime DESC
             """,
@@ -691,6 +708,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                     raw_splits=(
                         self._extract_splits(row[13])
                     ),
+                    raw_json_text=row[13],
                 )
             )
 

@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 def get_connection():
@@ -372,6 +372,44 @@ def save_goal(
     return goal_id
 
 
+
+def create_decoded_workouts_table(cursor):
+    """Create cached Workout Coach output."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS decoded_workouts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_id INTEGER NOT NULL UNIQUE,
+            workout_type TEXT NOT NULL,
+            description TEXT,
+            confidence REAL NOT NULL DEFAULT 0,
+            execution_score REAL,
+            rep_count INTEGER NOT NULL DEFAULT 0,
+            average_rep_distance_km REAL,
+            average_rep_pace_s_per_km REAL,
+            rep_pace_variation_percent REAL,
+            workout_json TEXT NOT NULL,
+            decoder_version INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(activity_id) REFERENCES activities(id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_decoded_workouts_type
+        ON decoded_workouts (workout_type)
+        """
+    )
+
+
+def migrate_to_schema_v4(cursor):
+    """Add the Workout Coach cache table."""
+    create_decoded_workouts_table(cursor)
+    set_schema_version(cursor, 4)
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -387,9 +425,14 @@ def initialise_database():
 
     if schema_version < 3:
         migrate_to_schema_v3(cursor)
+        schema_version = 3
+
+    if schema_version < 4:
+        migrate_to_schema_v4(cursor)
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
+    create_decoded_workouts_table(cursor)
 
     conn.commit()
     conn.close()

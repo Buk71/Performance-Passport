@@ -20,6 +20,7 @@ from core.evidence_providers import (
     EvidenceProvider,
     RaceEvidenceProvider,
     ThresholdEvidenceProvider,
+    WorkoutEvidenceProvider,
 )
 from core.evidence_providers.base import EvidenceContext
 from core.prediction import GoalPrediction, PredictionEngine
@@ -51,6 +52,7 @@ class CoachBrain:
             providers
             if providers is not None
             else (
+                WorkoutEvidenceProvider(),
                 RaceEvidenceProvider(),
                 ThresholdEvidenceProvider(),
             )

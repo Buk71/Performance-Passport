@@ -712,6 +712,45 @@ def render_evidence_card(item):
                 for limitation in limitations:
                     st.write(f"• {limitation}")
 
+            workout_json = item.metadata.get("workout_json")
+            if workout_json:
+                st.markdown("**Workout structure**")
+                st.write(
+                    f"Type: {item.metadata.get('workout_type', '—')}"
+                )
+
+                execution = item.metadata.get("execution_score")
+                if execution is not None:
+                    st.write(f"Execution score: {execution:.0f}/100")
+
+                variation = item.metadata.get(
+                    "rep_pace_variation_percent"
+                )
+                if variation is not None:
+                    st.write(
+                        f"Rep pace variation: {variation:.1f}%"
+                    )
+
+                work_splits = workout_json.get("work_splits", [])
+                if work_splits:
+                    st.markdown("**Work reps**")
+                    for rep in work_splits:
+                        st.write(
+                            f"Rep {rep.get('index', '—')}: "
+                            f"{rep.get('distance_km', 0):.3f} km · "
+                            f"{rep.get('duration', '—')} · "
+                            f"{rep.get('pace', '—')}"
+                        )
+
+                recoveries = workout_json.get("recovery_splits", [])
+                if recoveries:
+                    st.markdown("**Recoveries**")
+                    for recovery in recoveries:
+                        st.write(
+                            f"{recovery.get('distance_km', 0):.3f} km · "
+                            f"{recovery.get('duration', '—')}"
+                        )
+
             trend = item.metadata.get("trend")
             if trend:
                 recent_pace = item.metadata.get(
