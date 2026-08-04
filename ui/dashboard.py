@@ -19,6 +19,7 @@ from core.database import get_active_goal, get_connection
 from core.evidence import EvidenceStatus
 from core.environment_forecast import build_environment_forecast
 from core.environment_profile import build_personal_environment_profile
+from core.easy_run_coach import build_easy_run_coach
 from core.performance_dna import build_performance_dna
 
 
@@ -751,6 +752,85 @@ def goal_distance_km(goal):
         return 5.0
 
     return None
+
+
+def render_easy_run_coach(result):
+    st.markdown("## 😊 Easy Run Coach")
+
+    if not result.available or result.latest is None:
+        st.info(result.summary)
+        return
+
+    latest = result.latest
+
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero">
+            <div class="pp-card-label">Easy Run Coach</div>
+            <div class="pp-card-title">
+                {safe_text(result.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(result.summary)}
+            </div>
+        </div>
+        """
+    )
+
+    columns = st.columns(4)
+    columns[0].metric(
+        "Verdict",
+        latest.verdict,
+    )
+    columns[1].metric(
+        "Historical rank",
+        f"{latest.rank} of {latest.comparison_count}",
+    )
+    columns[2].metric(
+        "Aerobic trend",
+        result.trend_label,
+        (
+            f"{result.trend_percent:+.1f}%"
+            if result.trend_percent is not None
+            else None
+        ),
+    )
+    columns[3].metric(
+        "Evidence strength",
+        confidence_label(result.confidence),
+    )
+
+    st.caption(
+        f"Latest suitable easy run: {latest.activity_date or 'Unknown date'} · "
+        f"{latest.distance_km:.2f} km · "
+        f"{format_pace_value(latest.actual_pace_s_per_km)} actual · "
+        f"{format_pace_value(latest.equivalent_pace_s_per_km)} "
+        "condition-adjusted · "
+        f"{latest.avg_hr:.0f} bpm"
+    )
+
+    if result.best_ever:
+        st.success(
+            "🏆 This is currently your best recorded easy run by adjusted "
+            "aerobic efficiency."
+        )
+    elif result.best_this_year:
+        st.success(
+            "🏆 This is your strongest easy run of the current year."
+        )
+
+    with st.expander("Why does Easy Run Coach believe this?"):
+        for reason in latest.reasons:
+            st.write(f"✓ {reason}")
+
+        if result.strengths:
+            st.markdown("**Evidence base**")
+            for strength in result.strengths:
+                st.write(f"✓ {strength}")
+
+        st.markdown("**Limitations**")
+        for limitation in result.limitations:
+            st.write(f"• {limitation}")
 
 def render_capability_card(capability):
     st.markdown("## Current capability")
@@ -2106,6 +2186,11 @@ def show_dashboard():
     evidence_bundle = brain.build_evidence()
     prediction = brain.goal_prediction()
     brain_brief = brain.morning_brief()
+
+    thresholds = get_athlete_thresholds(athlete_id)
+    run_profiles = get_run_profiles(athlete_id, thresholds)
+    easy_run_coach = build_easy_run_coach(run_profiles)
+
     performance_dna = build_performance_dna(
         evidence_bundle,
         consensus_prediction_s=(
@@ -2113,6 +2198,7 @@ def show_dashboard():
             if prediction.available
             else None
         ),
+        easy_run_coach=easy_run_coach,
     )
     coach_consensus = build_coach_consensus(
         performance_dna,
@@ -2141,9 +2227,6 @@ def show_dashboard():
             else None
         ),
     )
-    thresholds = get_athlete_thresholds(athlete_id)
-    run_profiles = get_run_profiles(athlete_id, thresholds)
-
     personal_environment_profile = build_personal_environment_profile(
         run_profiles,
         athlete_id=athlete_id,
@@ -2192,6 +2275,7 @@ def show_dashboard():
         coach_consensus,
     )
 
+    render_easy_run_coach(easy_run_coach)
     render_capability_card(capability)
     render_personal_environment_profile(
         personal_environment_profile

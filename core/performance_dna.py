@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.athlete_dna import build_athlete_dna
+from core.easy_run_coach import EasyRunCoachResult
 from core.evidence import EvidenceBundle, EvidenceItem, EvidenceStatus
 
 
@@ -77,12 +78,6 @@ COACH_DEFINITIONS = {
 }
 
 FUTURE_COACHES = (
-    {
-        "key": "easy",
-        "title": "Easy Run Coach",
-        "icon": "😊",
-        "signal": "Aerobic efficiency",
-    },
     {
         "key": "endurance",
         "title": "Endurance Coach",
@@ -216,6 +211,7 @@ def build_performance_dna(
     evidence_bundle: EvidenceBundle,
     *,
     consensus_prediction_s: float | None = None,
+    easy_run_coach: EasyRunCoachResult | None = None,
 ) -> PerformanceDNA:
     item_by_key = {}
 
@@ -261,6 +257,33 @@ def build_performance_dna(
                     available=False,
                 )
             )
+
+    if easy_run_coach is not None:
+        verdicts.append(
+            CoachVerdict(
+                key="easy",
+                title="Easy Run Coach",
+                icon="😊",
+                status=(
+                    easy_run_coach.status
+                    if easy_run_coach.available
+                    else "building"
+                ),
+                verdict=(
+                    easy_run_coach.latest.verdict
+                    if (
+                        easy_run_coach.available
+                        and easy_run_coach.latest is not None
+                    )
+                    else "Still learning"
+                ),
+                confidence=easy_run_coach.confidence,
+                predicted_seconds=None,
+                evidence_summary=easy_run_coach.summary,
+                signal="Aerobic efficiency",
+                available=easy_run_coach.available,
+            )
+        )
 
     verdicts.extend(
         _future_verdict(definition)
