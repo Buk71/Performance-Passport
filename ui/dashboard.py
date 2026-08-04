@@ -735,6 +735,50 @@ def render_evidence_card(item):
                 if warning:
                     st.warning(warning)
 
+            workout_prediction = item.metadata.get(
+                "workout_prediction"
+            )
+            if workout_prediction:
+                st.markdown("**Workout-derived race prediction**")
+                prediction_columns = st.columns(3)
+                prediction_columns[0].metric(
+                    "Central estimate",
+                    format_clock(
+                        workout_prediction.get("central_seconds")
+                    ),
+                )
+                prediction_columns[1].metric(
+                    "Likely range",
+                    (
+                        f"{format_clock(workout_prediction.get('low_seconds'))}"
+                        f"–{format_clock(workout_prediction.get('high_seconds'))}"
+                    ),
+                )
+                prediction_columns[2].metric(
+                    "Prediction confidence",
+                    f"{workout_prediction.get('confidence', 0):.0%}",
+                )
+                st.caption(
+                    f"{workout_prediction.get('conditions', 'Ideal conditions')} · "
+                    f"based on {workout_prediction.get('estimate_count', 0)} "
+                    "representative workout estimate(s). Recognition confidence "
+                    "and prediction confidence are deliberately separate."
+                )
+
+                with st.expander("How each workout predicted the goal"):
+                    for estimate in workout_prediction.get("estimates", []):
+                        st.write(
+                            f"**{estimate.get('date', '—')} · "
+                            f"{estimate.get('description', '—')}**"
+                        )
+                        st.write(
+                            f"Estimate: "
+                            f"{format_clock(estimate.get('predicted_seconds'))} · "
+                            f"prediction quality "
+                            f"{estimate.get('quality', 0):.0%} · "
+                            f"trust {estimate.get('trust_score', 0):.0f}/100"
+                        )
+
             if top_workouts:
                 st.markdown("**Strongest five recent workouts**")
                 for workout_item in top_workouts:

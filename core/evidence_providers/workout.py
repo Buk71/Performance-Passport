@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import Counter
 import datetime
+import math
 from statistics import mean
 
 from core.database import get_athlete_sport_roles, get_connection
@@ -228,6 +229,250 @@ def _trend(comparable_items) -> dict:
     }
 
 
+GOAL_DISTANCES_KM = (5.0, 10.0, 16.09344, 21.0975, 42.195)
+
+# Convert average work-rep pace into estimated ideal-condition race pace.
+# Values above 1.0 mean the race pace is expected to be slower than rep pace.
+WORKOUT_RACE_FACTORS = {
+    "Short intervals": {
+        5.0: 1.08,
+        10.0: 1.16,
+        16.09344: 1.23,
+        21.0975: 1.28,
+        42.195: 1.43,
+    },
+    "Long intervals": {
+        5.0: 1.02,
+        10.0: 1.08,
+        16.09344: 1.14,
+        21.0975: 1.18,
+        42.195: 1.31,
+    },
+    "Mile repetitions": {
+        5.0: 0.99,
+        10.0: 1.04,
+        16.09344: 1.09,
+        21.0975: 1.13,
+        42.195: 1.25,
+    },
+    "Long threshold repetitions": {
+        5.0: 0.94,
+        10.0: 0.98,
+        16.09344: 1.02,
+        21.0975: 1.05,
+        42.195: 1.16,
+    },
+    "Continuous sustained effort": {
+        5.0: 0.93,
+        10.0: 0.97,
+        16.09344: 1.01,
+        21.0975: 1.04,
+        42.195: 1.15,
+    },
+    "Mixed interval session": {
+        5.0: 1.01,
+        10.0: 1.07,
+        16.09344: 1.13,
+        21.0975: 1.18,
+        42.195: 1.31,
+    },
+    "Structured workout": {
+        5.0: 1.01,
+        10.0: 1.07,
+        16.09344: 1.13,
+        21.0975: 1.18,
+        42.195: 1.31,
+    },
+}
+
+
+def _nearest_goal_distance(distance_km: float) -> float:
+    return min(
+        GOAL_DISTANCES_KM,
+        key=lambda value: abs(value - distance_km),
+    )
+
+
+def _prediction_factor(
+    workout_type: str,
+    goal_distance_km: float,
+) -> float:
+    factors = WORKOUT_RACE_FACTORS.get(
+        workout_type,
+        WORKOUT_RACE_FACTORS["Structured workout"],
+    )
+    nearest = _nearest_goal_distance(goal_distance_km)
+    return factors[nearest]
+
+
+def _total_work_distance_km(workout) -> float:
+    work_splits = workout.recognition_json.get("work_splits", [])
+    return sum(
+        float(split.get("distance_km") or 0.0)
+        for split in work_splits
+    )
+
+
+def _workout_prediction_quality(item, goal_distance_km: float) -> float:
+    """
+    Return prediction-specific quality.
+
+    Recognition confidence answers "is this a real workout?" Prediction
+    quality additionally asks whether its structure and volume are suitable
+    for estimating the selected race distance.
+    """
+    workout = item["workout"]
+    work_distance = _total_work_distance_km(workout)
+    execution = (
+        workout.execution_score / 100.0
+        if workout.execution_score is not None
+        else 0.55
+    )
+
+    volume_target = min(max(goal_distance_km * 0.45, 3.0), 12.0)
+    volume_quality = min(work_distance / volume_target, 1.0)
+
+    type_quality = {
+        "Long threshold repetitions": 1.00,
+        "Continuous sustained effort": 0.95,
+        "Mile repetitions": 0.92,
+        "Long intervals": 0.86,
+        "Mixed interval session": 0.78,
+        "Short intervals": 0.70,
+    }.get(workout.workout_type, 0.68)
+
+    return max(
+        0.20,
+        min(
+            workout.confidence * 0.30
+            + execution * 0.25
+            + volume_quality * 0.25
+            + type_quality * 0.20,
+            1.0,
+        ),
+    )
+
+
+def _predict_from_workout(item, goal_distance_km: float) -> dict | None:
+    workout = item["workout"]
+    rep_pace = workout.average_rep_pace_s_per_km
+
+    if rep_pace is None or rep_pace <= 0:
+        return None
+
+    factor = _prediction_factor(
+        workout.workout_type,
+        goal_distance_km,
+    )
+    race_pace = rep_pace * factor
+    predicted_seconds = race_pace * goal_distance_km
+    quality = _workout_prediction_quality(item, goal_distance_km)
+
+    return {
+        "activity_id": item["session"].activity_id,
+        "date": (
+            item["session"].activity_date[:10]
+            if item["session"].activity_date
+            else "Unknown"
+        ),
+        "title": item["session"].title,
+        "description": workout.description,
+        "workout_type": workout.workout_type,
+        "rep_pace_s_per_km": round(rep_pace, 1),
+        "factor": round(factor, 3),
+        "predicted_seconds": round(predicted_seconds, 1),
+        "quality": round(quality, 4),
+        "trust_score": item["trust_score"],
+        "work_distance_km": round(_total_work_distance_km(workout), 2),
+    }
+
+
+def _combine_workout_predictions(
+    items,
+    goal_distance_km: float | None,
+) -> dict | None:
+    if not goal_distance_km or goal_distance_km <= 0:
+        return None
+
+    estimates = []
+
+    for item in items:
+        estimate = _predict_from_workout(item, goal_distance_km)
+        if estimate is None:
+            continue
+
+        # Trust chooses representative workouts; prediction quality judges
+        # whether that workout can estimate the selected race distance.
+        weight = (
+            max(item["trust_score"], 1.0) / 100.0
+            * estimate["quality"]
+        )
+        estimate["weight"] = round(weight, 4)
+        estimates.append(estimate)
+
+    if not estimates:
+        return None
+
+    total_weight = sum(item["weight"] for item in estimates)
+
+    if total_weight <= 0:
+        return None
+
+    central = sum(
+        item["predicted_seconds"] * item["weight"]
+        for item in estimates
+    ) / total_weight
+
+    weighted_variance = sum(
+        item["weight"]
+        * math.pow(item["predicted_seconds"] - central, 2)
+        for item in estimates
+    ) / total_weight
+    disagreement_s = math.sqrt(max(weighted_variance, 0.0))
+
+    average_quality = sum(
+        item["quality"] * item["weight"]
+        for item in estimates
+    ) / total_weight
+
+    sample_factor = min(len(estimates) / TOP_EVIDENCE_COUNT, 1.0)
+    disagreement_factor = max(
+        0.35,
+        1.0 - disagreement_s / max(central * 0.05, 1.0),
+    )
+
+    confidence = min(
+        0.90,
+        average_quality * 0.65
+        + sample_factor * 0.20
+        + disagreement_factor * 0.15,
+    )
+
+    # Range reflects both model uncertainty and disagreement between sessions.
+    uncertainty_fraction = max(
+        0.012,
+        (1.0 - confidence) * 0.055,
+    )
+    half_range = max(
+        central * uncertainty_fraction,
+        disagreement_s * 0.75,
+        8.0,
+    )
+
+    return {
+        "central_seconds": round(central, 1),
+        "low_seconds": round(max(central - half_range, 1.0), 1),
+        "high_seconds": round(central + half_range, 1),
+        "confidence": round(confidence, 4),
+        "goal_distance_km": round(goal_distance_km, 4),
+        "disagreement_seconds": round(disagreement_s, 1),
+        "estimate_count": len(estimates),
+        "estimates": estimates,
+        "conditions": "Ideal, flat conditions",
+        "model_version": 1,
+    }
+
+
 class WorkoutEvidenceProvider(EvidenceProvider):
     key = "workout"
     title = "Workout Coach"
@@ -418,6 +663,18 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         )[:TOP_EVIDENCE_COUNT]
 
         best = strongest[0]
+
+        goal = context.goal or {}
+        goal_distance_km = (
+            float(goal["distance_m"]) / 1000.0
+            if goal.get("distance_m")
+            else None
+        )
+        workout_prediction = _combine_workout_predictions(
+            strongest,
+            goal_distance_km,
+        )
+
         comparable = [
             item for item in recent_candidates if _comparable(best, item)
         ]
@@ -459,6 +716,14 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "a reliable trend."
             )
 
+        if workout_prediction:
+            summary_parts.append(
+                f"Workout-derived goal prediction: "
+                f"{int(round(workout_prediction['central_seconds'] // 60))}:"
+                f"{int(round(workout_prediction['central_seconds'] % 60)):02d} "
+                f"under ideal, flat conditions."
+            )
+
         if warning:
             summary_parts.append(warning)
 
@@ -488,13 +753,25 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 }
             )
 
-        confidence = min(
+        recognition_confidence = min(
             0.96,
             (
                 best["session"].confidence * 0.35
                 + best["workout"].confidence * 0.40
                 + min(len(strongest) / TOP_EVIDENCE_COUNT, 1.0) * 0.25
             ),
+        )
+
+        prediction_confidence = (
+            workout_prediction["confidence"]
+            if workout_prediction
+            else 0.0
+        )
+
+        confidence = (
+            min(recognition_confidence, prediction_confidence)
+            if workout_prediction
+            else recognition_confidence
         )
 
         strengths = [
@@ -510,6 +787,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         limitations = [
             "Trends compare only sessions with similar workout type and rep distance.",
             "Runalyze CSV splits do not contain full lap-level heart rate or power.",
+            "Workout prediction uses transparent workout-type conversion factors "
+            "and should carry less weight than a recent genuine race.",
+            "The current estimate represents ideal, flat conditions; scenario "
+            "forecasts for heat, hills and trails will be added separately.",
         ]
 
         if warning:
@@ -522,8 +803,12 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             status=EvidenceStatus.AVAILABLE,
             confidence=confidence,
             sample_size=len(candidates),
-            predicted_seconds=None,
-            weight=0.0,
+            predicted_seconds=(
+                workout_prediction["central_seconds"]
+                if workout_prediction
+                else None
+            ),
+            weight=0.65 if workout_prediction else 0.0,
             metadata={
                 "activity_id": latest_session.activity_id,
                 "activity_date": latest_session.activity_date,
@@ -561,6 +846,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     "trust_score": best["trust_score"],
                 },
                 "top_workouts": top_workouts,
+                "workout_prediction": workout_prediction,
+                "prediction_confidence": prediction_confidence,
+                "recognition_confidence": recognition_confidence,
                 "trend": trend,
                 "latest_not_representative": not latest_is_representative,
                 "representative_warning": warning,
