@@ -17,6 +17,7 @@ from core.coaching import (
 )
 from core.database import get_active_goal, get_connection
 from core.evidence import EvidenceStatus
+from core.environment_forecast import build_environment_forecast
 from core.performance_dna import build_performance_dna
 
 
@@ -715,6 +716,41 @@ def render_daily_coach(
 
 
 
+
+def goal_distance_km(goal):
+    """Resolve a goal distance from whichever goal field is available."""
+    if goal is None:
+        return None
+
+    for key in (
+        "distance_km",
+        "goal_distance_km",
+        "target_distance_km",
+    ):
+        value = goal.get(key)
+
+        if value is not None:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            if value > 0:
+                return value
+
+    goal_name = str(goal.get("goal_name") or "").lower()
+
+    if "marathon" in goal_name and "half" not in goal_name:
+        return 42.195
+    if "half" in goal_name:
+        return 21.0975
+    if "10k" in goal_name or "10 km" in goal_name:
+        return 10.0
+    if "5k" in goal_name or "5 km" in goal_name:
+        return 5.0
+
+    return None
+
 def render_capability_card(capability):
     st.markdown("## Current capability")
 
@@ -789,6 +825,68 @@ def render_capability_card(capability):
 
         st.markdown("**Limitations**")
         for limitation in capability.limitations:
+            st.write(f"• {limitation}")
+
+
+def render_environment_forecast(forecast):
+    st.markdown("## Performance forecast")
+
+    if not forecast.available:
+        st.info(forecast.summary)
+        return
+
+    render_html(
+        f"""
+        <div class="pp-card">
+            <div class="pp-card-label">Environment Engine</div>
+            <div class="pp-card-title">
+                {safe_text(forecast.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(forecast.summary)}
+            </div>
+        </div>
+        """
+    )
+
+    scenario_columns = st.columns(3)
+
+    for index, scenario in enumerate(forecast.scenarios):
+        column = scenario_columns[index % 3]
+
+        with column:
+            st.markdown(f"**{scenario.label}**")
+            st.metric(
+                "Expected",
+                format_clock(scenario.central_seconds),
+            )
+            st.caption(
+                f"{format_clock(scenario.low_seconds)}–"
+                f"{format_clock(scenario.high_seconds)} · "
+                f"{scenario.adjustment_percent:+.1f}%"
+            )
+
+            if scenario.pace_seconds_per_km is not None:
+                st.caption(
+                    "Goal pace "
+                    + format_pace_value(
+                        scenario.pace_seconds_per_km
+                    )
+                )
+
+            st.caption(scenario.description)
+            st.caption(
+                f"Forecast confidence {scenario.confidence:.0%}"
+            )
+
+    with st.expander("How environmental forecasts work"):
+        st.write(
+            "Capability represents the athlete's underlying fitness. "
+            "The Environment Engine changes only the expected realised "
+            "time under different conditions."
+        )
+
+        for limitation in forecast.limitations:
             st.write(f"• {limitation}")
 
 def render_goal_card(goal, prediction):
@@ -1868,6 +1966,10 @@ def show_dashboard():
             else None
         ),
     )
+    environment_forecast = build_environment_forecast(
+        capability,
+        distance_km=goal_distance_km(goal),
+    )
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
@@ -1911,6 +2013,7 @@ def show_dashboard():
     )
 
     render_capability_card(capability)
+    render_environment_forecast(environment_forecast)
 
     st.markdown("## Goal and context")
 
