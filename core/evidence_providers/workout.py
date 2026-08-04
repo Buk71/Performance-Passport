@@ -24,6 +24,7 @@ from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
+from core.workout_library import upsert_workout
 from core.workout_phases import (
     phases_to_dicts,
     reconstruct_workout_phases,
@@ -859,6 +860,48 @@ def _combine_workout_predictions(
     }
 
 
+WORKOUT_LIBRARY_DECODER_VERSION = 1
+
+
+def _workout_signature(
+    phase_metadata: dict,
+    workout_type: str,
+) -> str:
+    """
+    Create a stable, human-readable workout fingerprint.
+
+    Examples:
+        threshold_1-short_intervals_10
+        long_intervals_5
+    """
+    parts = []
+
+    for phase in phase_metadata.get("phases", []):
+        phase_type = str(phase.get("phase_type") or "unknown")
+        if phase_type in {"warmup", "cooldown", "recovery"}:
+            continue
+
+        rep_count = int(phase.get("rep_count") or 1)
+        average_distance = phase.get("average_rep_distance_km")
+
+        if average_distance is not None:
+            distance_m = int(round(float(average_distance) * 1000 / 25) * 25)
+            parts.append(f"{phase_type}_{rep_count}x{distance_m}m")
+        else:
+            parts.append(f"{phase_type}_{rep_count}")
+
+    if not parts:
+        safe_type = (
+            (workout_type or "structured_workout")
+            .strip()
+            .lower()
+            .replace(" ", "_")
+        )
+        parts.append(safe_type)
+
+    return "-".join(parts)
+
+
 class WorkoutEvidenceProvider(EvidenceProvider):
     key = "workout"
     title = "Workout Coach"
@@ -945,6 +988,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
         session_counts = Counter()
         candidates = []
+        library_records_written = 0
+        library_write_errors = 0
 
         for row in rows:
             facts = ActivityFacts(
@@ -1001,6 +1046,49 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "raw_json_text": row[15],
                 "easy_pace_s_per_km": easy_pace_s_per_km,
             }
+
+            phase_components, phase_metadata = _group_work_components(
+                workout,
+                row[15],
+                easy_pace_s_per_km,
+            )
+            item["phase_components"] = phase_components
+            item["phase_metadata"] = phase_metadata
+
+            try:
+                upsert_workout(
+                    activity_id=session.activity_id,
+                    athlete_id=session.athlete_id,
+                    activity_date=(
+                        session.activity_date[:10]
+                        if session.activity_date
+                        else None
+                    ),
+                    session_type=(
+                        workout.workout_type
+                        or session.session_type.value
+                    ),
+                    workout_signature=_workout_signature(
+                        phase_metadata,
+                        workout.workout_type,
+                    ),
+                    phases=phase_metadata.get("phases", []),
+                    execution_score=workout.execution_score,
+                    recognition_confidence=workout.confidence,
+                    phase_confidence=float(
+                        phase_metadata.get("confidence") or 0.0
+                    ),
+                    source=str(
+                        phase_metadata.get("source")
+                        or "runalyze_csv"
+                    ),
+                    decoder_version=WORKOUT_LIBRARY_DECODER_VERSION,
+                )
+                library_records_written += 1
+            except Exception:
+                # Library persistence must never stop the coach from working.
+                library_write_errors += 1
+
             item["trust_score"] = _trust_score(
                 session,
                 workout,
@@ -1242,13 +1330,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                         else None
                     ),
                 },
-                "workout_phases": (
-                    _group_work_components(
-                        best_workout,
-                        best.get("raw_json_text"),
-                        best.get("easy_pace_s_per_km"),
-                    )[1]
-                ),
+                "workout_phases": best.get("phase_metadata", {}),
                 "best_evidence": {
                     "date": (
                         best_session.activity_date[:10]
@@ -1267,6 +1349,11 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "latest_not_representative": not latest_is_representative,
                 "representative_warning": warning,
                 "recognised_workout_count": len(candidates),
+                "workout_library": {
+                    "records_written": library_records_written,
+                    "write_errors": library_write_errors,
+                    "decoder_version": WORKOUT_LIBRARY_DECODER_VERSION,
+                },
                 "session_counts": dict(session_counts),
                 "strengths": strengths,
                 "limitations": limitations,
