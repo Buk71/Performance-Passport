@@ -713,6 +713,65 @@ def render_evidence_card(item):
                 for limitation in limitations:
                     st.write(f"• {limitation}")
 
+            latest_workout = item.metadata.get("latest_workout")
+            best_evidence = item.metadata.get("best_evidence")
+            top_workouts = item.metadata.get("top_workouts", [])
+
+            if latest_workout and best_evidence:
+                st.markdown("**Workout Coach evidence selection**")
+                st.write(
+                    f"Latest: {latest_workout.get('description', '—')} · "
+                    f"{latest_workout.get('date', '—')} · "
+                    f"trust {latest_workout.get('trust_score', 0):.0f}/100"
+                )
+                st.write(
+                    f"Best current evidence: "
+                    f"{best_evidence.get('description', '—')} · "
+                    f"{best_evidence.get('date', '—')} · "
+                    f"trust {best_evidence.get('trust_score', 0):.0f}/100"
+                )
+
+                warning = item.metadata.get("representative_warning")
+                if warning:
+                    st.warning(warning)
+
+            if top_workouts:
+                st.markdown("**Strongest five recent workouts**")
+                for workout_item in top_workouts:
+                    execution = workout_item.get("execution_score")
+                    execution_text = (
+                        f" · execution {execution:.0f}/100"
+                        if execution is not None
+                        else ""
+                    )
+                    st.write(
+                        f"{workout_item.get('rank', '—')}. "
+                        f"{workout_item.get('date', '—')} · "
+                        f"{workout_item.get('description', '—')} · "
+                        f"trust {workout_item.get('trust_score', 0):.0f}/100"
+                        f"{execution_text}"
+                    )
+                    reasons = workout_item.get("trust_reasons", [])
+                    if reasons:
+                        st.caption("Why trusted: " + "; ".join(reasons))
+
+            workout_trend = item.metadata.get("trend")
+            if isinstance(workout_trend, dict):
+                st.markdown("**Comparable workout trend**")
+                st.write(
+                    f"{workout_trend.get('label', '—')} "
+                    f"({str(workout_trend.get('confidence', 'Limited')).lower()} "
+                    f"confidence; {workout_trend.get('sample_size', 0)} "
+                    "comparable session(s))"
+                )
+                change = workout_trend.get("change_seconds_per_km")
+                if change is not None:
+                    direction = "faster" if change > 0 else "slower"
+                    st.write(
+                        f"Recent comparable rep pace is "
+                        f"{abs(change):.1f} sec/km {direction}."
+                    )
+
             workout_json = item.metadata.get("workout_json")
             if workout_json:
                 st.markdown("**Workout structure**")
