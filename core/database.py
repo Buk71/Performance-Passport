@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 def get_connection():
@@ -613,6 +613,96 @@ def migrate_to_schema_v5(cursor):
     infer_athlete_sport_mappings(cursor)
     set_schema_version(cursor, 5)
 
+
+def create_workout_library_tables(cursor):
+    """
+    Create the permanent workout knowledge-base tables.
+
+    These tables store normalised workout intelligence separately from raw
+    activities so future decoders can rebuild the library without changing
+    or losing the original activity data.
+    """
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workout_library (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_id INTEGER NOT NULL UNIQUE,
+            athlete_id INTEGER NOT NULL,
+            activity_date TEXT,
+            session_type TEXT NOT NULL,
+            workout_signature TEXT NOT NULL,
+            phase_json TEXT NOT NULL,
+            execution_score REAL,
+            recognition_confidence REAL NOT NULL DEFAULT 0,
+            phase_confidence REAL NOT NULL DEFAULT 0,
+            source TEXT NOT NULL,
+            decoder_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(activity_id) REFERENCES activities(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workout_library_athlete_date
+        ON workout_library(athlete_id, activity_date DESC)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workout_library_signature
+        ON workout_library(athlete_id, workout_signature)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workout_race_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workout_id INTEGER NOT NULL,
+            race_activity_id INTEGER NOT NULL,
+            days_after INTEGER NOT NULL,
+            race_distance_km REAL,
+            race_time_s REAL,
+            link_confidence REAL NOT NULL DEFAULT 0,
+            similarity_score REAL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(workout_id) REFERENCES workout_library(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(race_activity_id) REFERENCES activities(id)
+                ON DELETE CASCADE,
+            UNIQUE(workout_id, race_activity_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workout_race_links_workout
+        ON workout_race_links(workout_id)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workout_race_links_race
+        ON workout_race_links(race_activity_id)
+        """
+    )
+
+
+def migrate_to_schema_v6(cursor):
+    """Add the workout intelligence library and race-link foundation."""
+    create_workout_library_tables(cursor)
+    set_schema_version(cursor, 6)
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -636,11 +726,16 @@ def initialise_database():
 
     if schema_version < 5:
         migrate_to_schema_v5(cursor)
+        schema_version = 5
+
+    if schema_version < 6:
+        migrate_to_schema_v6(cursor)
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
+    create_workout_library_tables(cursor)
 
     backfill_missing_athlete_ids(cursor)
 

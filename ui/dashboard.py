@@ -34,6 +34,20 @@ SPORT_MAP = {
 }
 
 
+def format_pace_value(seconds_per_km):
+    if seconds_per_km is None:
+        return "—"
+
+    minutes = int(seconds_per_km // 60)
+    seconds = int(round(seconds_per_km % 60))
+
+    if seconds == 60:
+        minutes += 1
+        seconds = 0
+
+    return f"{minutes}:{seconds:02d}/km"
+
+
 def athlete_full_name(first_name, last_name):
     return f"{first_name or ''} {last_name or ''}".strip()
 
@@ -778,6 +792,62 @@ def render_evidence_card(item):
                             f"{estimate.get('quality', 0):.0%} · "
                             f"trust {estimate.get('trust_score', 0):.0f}/100"
                         )
+
+                        component_summary = estimate.get(
+                            "component_summary"
+                        )
+                        if component_summary:
+                            st.caption(
+                                "Components: " + component_summary
+                            )
+
+                        for component in estimate.get("components", []):
+                            pace_seconds = component.get(
+                                "average_pace_s_per_km"
+                            )
+                            pace_text = (
+                                format_pace_value(pace_seconds)
+                                if pace_seconds is not None
+                                else "—"
+                            )
+                            st.write(
+                                f"• {component.get('label', 'Component')}: "
+                                f"{component.get('rep_count', 0)} reps · "
+                                f"{component.get('average_rep_distance_km', 0):.2f} km "
+                                f"average · {pace_text} · component estimate "
+                                f"{format_clock(component.get('predicted_seconds'))}"
+                            )
+
+            phase_engine = item.metadata.get("workout_phases")
+            if isinstance(phase_engine, dict):
+                st.markdown("**Reconstructed workout phases**")
+                st.caption(
+                    f"Source: {phase_engine.get('source', 'unknown')} · "
+                    f"confidence {phase_engine.get('confidence', 0):.0%}"
+                )
+
+                for phase in phase_engine.get("phases", []):
+                    pace_text = format_pace_value(
+                        phase.get("pace_s_per_km")
+                    )
+                    recovery = phase.get("recovery_duration_s")
+                    recovery_text = (
+                        f" · recovery {recovery:.0f}s"
+                        if recovery is not None
+                        else ""
+                    )
+                    st.write(
+                        f"• **{phase.get('label', 'Phase')}** · "
+                        f"{phase.get('rep_count', 1)} block(s) · "
+                        f"{phase.get('distance_km', 0):.2f} km · "
+                        f"{format_clock(phase.get('duration_s'))} · "
+                        f"{pace_text}{recovery_text}"
+                    )
+
+                limitations = phase_engine.get("limitations", [])
+                if limitations:
+                    for limitation in limitations:
+                        st.caption("Limitation: " + limitation)
 
             if top_workouts:
                 st.markdown("**Strongest five recent workouts**")

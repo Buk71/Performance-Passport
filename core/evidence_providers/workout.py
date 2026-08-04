@@ -17,13 +17,17 @@ from __future__ import annotations
 from collections import Counter
 import datetime
 import math
-from statistics import mean
+from statistics import mean, median
 
 from core.database import get_athlete_sport_roles, get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
+from core.workout_phases import (
+    phases_to_dicts,
+    reconstruct_workout_phases,
+)
 from core.workouts import get_or_decode_workout
 
 
@@ -39,6 +43,101 @@ def _as_date(value: str | None) -> datetime.date | None:
         return datetime.date.fromisoformat(value[:10])
     except (TypeError, ValueError):
         return None
+
+
+def _estimate_easy_pace(
+    rows,
+    reference_date: datetime.date,
+) -> tuple[float | None, int]:
+    """
+    Estimate the athlete's current easy pace from recent genuine easy runs.
+
+    The estimate is deliberately conservative:
+    - running activities only (already filtered by the query);
+    - 4-20 km;
+    - mostly continuous;
+    - average HR below 95% of LT1;
+    - no race/workout wording;
+    - last 180 days, with a 365-day fallback.
+    """
+    excluded_words = (
+        "race",
+        "parkrun",
+        "threshold",
+        "tempo",
+        "interval",
+        "reps",
+        "fartlek",
+        "track",
+        "vo2",
+        "hill reps",
+    )
+
+    def candidates(window_days):
+        values = []
+
+        for row in rows:
+            activity_date = _as_date(row[2])
+
+            if activity_date is None:
+                continue
+
+            age_days = (reference_date - activity_date).days
+
+            if age_days < 0 or age_days > window_days:
+                continue
+
+            title = (row[3] or "").lower()
+
+            if any(word in title for word in excluded_words):
+                continue
+
+            distance_km = (
+                float(row[5]) if row[5] is not None else None
+            )
+            moving_time_s = (
+                float(row[6]) if row[6] is not None else None
+            )
+            elapsed_time_s = (
+                float(row[7]) if row[7] is not None else None
+            )
+            avg_hr = float(row[8]) if row[8] is not None else None
+            lt1_hr = float(row[16]) if row[16] is not None else None
+
+            if (
+                distance_km is None
+                or moving_time_s is None
+                or distance_km < 4.0
+                or distance_km > 20.0
+                or moving_time_s < 1200
+                or moving_time_s > 9000
+            ):
+                continue
+
+            if elapsed_time_s and elapsed_time_s > 0:
+                moving_ratio = moving_time_s / elapsed_time_s
+                if moving_ratio < 0.95:
+                    continue
+
+            if avg_hr and lt1_hr and avg_hr > lt1_hr * 0.95:
+                continue
+
+            pace = moving_time_s / distance_km
+
+            if 240 <= pace <= 420:
+                values.append(pace)
+
+        return values
+
+    values = candidates(180)
+
+    if len(values) < 8:
+        values = candidates(365)
+
+    if len(values) < 4:
+        return None, len(values)
+
+    return round(median(values), 1), len(values)
 
 
 def _explicit_workout_title(title: str) -> bool:
@@ -305,49 +404,270 @@ def _prediction_factor(
     return factors[nearest]
 
 
+def _work_splits(workout) -> list[dict]:
+    return [
+        split
+        for split in workout.recognition_json.get("work_splits", [])
+        if float(split.get("distance_km") or 0.0) > 0
+        and float(split.get("duration_s") or 0.0) > 0
+    ]
+
+
 def _total_work_distance_km(workout) -> float:
-    work_splits = workout.recognition_json.get("work_splits", [])
     return sum(
         float(split.get("distance_km") or 0.0)
-        for split in work_splits
+        for split in _work_splits(workout)
     )
 
 
-def _workout_prediction_quality(item, goal_distance_km: float) -> float:
-    """
-    Return prediction-specific quality.
+def _group_work_components(
+    workout,
+    raw_json_text: str | None = None,
+    easy_pace_s_per_km: float | None = None,
+) -> tuple[list[dict], dict]:
+    phase_result = reconstruct_workout_phases(
+        raw_json_text,
+        easy_pace_s_per_km=easy_pace_s_per_km,
+    )
+    components = []
 
-    Recognition confidence answers "is this a real workout?" Prediction
-    quality additionally asks whether its structure and volume are suitable
-    for estimating the selected race distance.
-    """
+    for phase in phase_result.phases:
+        if phase.phase_type not in {
+            "threshold",
+            "long_intervals",
+            "short_intervals",
+        }:
+            continue
+
+        components.append(
+            {
+                "component_type": phase.phase_type,
+                "label": phase.label,
+                "rep_count": phase.rep_count,
+                "average_rep_distance_km": (
+                    phase.average_rep_distance_km
+                    or (
+                        phase.distance_km / phase.rep_count
+                        if phase.rep_count
+                        else phase.distance_km
+                    )
+                ),
+                "total_work_distance_km": phase.distance_km,
+                "average_pace_s_per_km": phase.pace_s_per_km,
+                "recovery_duration_s": phase.recovery_duration_s,
+                "source": phase.source,
+                "confidence": phase.confidence,
+            }
+        )
+
+    if components:
+        return components, {
+            "source": phase_result.source,
+            "confidence": phase_result.confidence,
+            "summary": phase_result.summary,
+            "reasons": list(phase_result.reasons),
+            "limitations": list(phase_result.limitations),
+            "phases": phases_to_dicts(phase_result),
+        }
+
+    # Conservative fallback to the legacy component grouping.
+    splits = sorted(
+        _work_splits(workout),
+        key=lambda split: float(split.get("distance_km") or 0.0),
+    )
+    families: list[list[dict]] = []
+
+    for split in splits:
+        distance = float(split["distance_km"])
+        placed = False
+
+        for family in families:
+            centre = mean(
+                float(item["distance_km"])
+                for item in family
+            )
+            tolerance = max(centre * 0.18, 0.07)
+
+            if abs(distance - centre) <= tolerance:
+                family.append(split)
+                placed = True
+                break
+
+        if not placed:
+            families.append([split])
+
+    for family in families:
+        total_distance = sum(
+            float(split["distance_km"])
+            for split in family
+        )
+        total_time = sum(
+            float(split["duration_s"])
+            for split in family
+        )
+
+        if total_distance <= 0 or total_time <= 0:
+            continue
+
+        average_distance = total_distance / len(family)
+
+        if average_distance >= 1.20:
+            component_type = "threshold"
+            label = "Long threshold blocks"
+        elif average_distance >= 0.65:
+            component_type = "long_intervals"
+            label = "Long intervals"
+        elif average_distance >= 0.25:
+            component_type = "short_intervals"
+            label = "Short intervals"
+        else:
+            continue
+
+        components.append(
+            {
+                "component_type": component_type,
+                "label": label,
+                "rep_count": len(family),
+                "average_rep_distance_km": round(
+                    average_distance,
+                    3,
+                ),
+                "total_work_distance_km": round(
+                    total_distance,
+                    3,
+                ),
+                "average_pace_s_per_km": round(
+                    total_time / total_distance,
+                    1,
+                ),
+                "recovery_duration_s": None,
+                "source": "legacy_csv_fallback",
+                "confidence": 0.55,
+            }
+        )
+
+    return components, {
+        "source": "legacy_csv_fallback",
+        "confidence": 0.55,
+        "summary": "Legacy component grouping",
+        "reasons": [],
+        "limitations": [
+            "The phase engine could not reconstruct a complete workout."
+        ],
+        "phases": [],
+    }
+
+
+COMPONENT_FACTORS = {
+    "threshold": {
+        5.0: 0.94,
+        10.0: 0.98,
+        16.09344: 1.02,
+        21.0975: 1.05,
+        42.195: 1.16,
+    },
+    "long_intervals": {
+        5.0: 1.00,
+        10.0: 1.05,
+        16.09344: 1.10,
+        21.0975: 1.14,
+        42.195: 1.27,
+    },
+    "short_intervals": {
+        5.0: 1.04,
+        10.0: 1.10,
+        16.09344: 1.17,
+        21.0975: 1.22,
+        42.195: 1.38,
+    },
+    "strides": {
+        5.0: 1.10,
+        10.0: 1.20,
+        16.09344: 1.28,
+        21.0975: 1.34,
+        42.195: 1.50,
+    },
+}
+
+
+def _component_prediction(
+    component: dict,
+    goal_distance_km: float,
+) -> dict:
+    goal_key = _nearest_goal_distance(goal_distance_km)
+    factor = COMPONENT_FACTORS[
+        component["component_type"]
+    ][goal_key]
+
+    predicted_seconds = (
+        component["average_pace_s_per_km"]
+        * factor
+        * goal_distance_km
+    )
+
+    volume_target = {
+        "threshold": min(max(goal_distance_km * 0.25, 2.5), 8.0),
+        "long_intervals": min(max(goal_distance_km * 0.20, 2.5), 7.0),
+        "short_intervals": min(max(goal_distance_km * 0.12, 2.0), 5.0),
+        "strides": 2.0,
+    }[component["component_type"]]
+
+    volume_quality = min(
+        component["total_work_distance_km"] / volume_target,
+        1.0,
+    )
+
+    type_quality = {
+        "threshold": 1.00,
+        "long_intervals": 0.90,
+        "short_intervals": 0.82,
+        "strides": 0.45,
+    }[component["component_type"]]
+
+    quality = (
+        volume_quality * 0.55
+        + type_quality * 0.45
+    )
+
+    return {
+        **component,
+        "factor": round(factor, 3),
+        "predicted_seconds": round(predicted_seconds, 1),
+        "quality": round(quality, 4),
+    }
+
+
+def _workout_prediction_quality(item, goal_distance_km: float) -> float:
     workout = item["workout"]
-    work_distance = _total_work_distance_km(workout)
     execution = (
         workout.execution_score / 100.0
         if workout.execution_score is not None
         else 0.55
     )
 
-    volume_target = min(max(goal_distance_km * 0.45, 3.0), 12.0)
-    volume_quality = min(work_distance / volume_target, 1.0)
+    components, phase_metadata = _group_work_components(
+        workout,
+        item.get("raw_json_text"),
+        item.get("easy_pace_s_per_km"),
+    )
 
-    type_quality = {
-        "Long threshold repetitions": 1.00,
-        "Continuous sustained effort": 0.95,
-        "Mile repetitions": 0.92,
-        "Long intervals": 0.86,
-        "Mixed interval session": 0.78,
-        "Short intervals": 0.70,
-    }.get(workout.workout_type, 0.68)
+    if components:
+        component_quality = max(
+            _component_prediction(
+                component,
+                goal_distance_km,
+            )["quality"]
+            for component in components
+        )
+    else:
+        component_quality = 0.40
 
     return max(
         0.20,
         min(
-            workout.confidence * 0.30
+            workout.confidence * 0.35
             + execution * 0.25
-            + volume_quality * 0.25
-            + type_quality * 0.20,
+            + component_quality * 0.40,
             1.0,
         ),
     )
@@ -355,18 +675,80 @@ def _workout_prediction_quality(item, goal_distance_km: float) -> float:
 
 def _predict_from_workout(item, goal_distance_km: float) -> dict | None:
     workout = item["workout"]
-    rep_pace = workout.average_rep_pace_s_per_km
+    components, phase_metadata = _group_work_components(
+        workout,
+        item.get("raw_json_text"),
+        item.get("easy_pace_s_per_km"),
+    )
 
-    if rep_pace is None or rep_pace <= 0:
+    if not components:
+        rep_pace = workout.average_rep_pace_s_per_km
+
+        if rep_pace is None or rep_pace <= 0:
+            return None
+
+        factor = _prediction_factor(
+            workout.workout_type,
+            goal_distance_km,
+        )
+        component_estimates = [
+            {
+                "component_type": "generic",
+                "label": workout.workout_type,
+                "rep_count": workout.rep_count,
+                "average_rep_distance_km":
+                    workout.average_rep_distance_km,
+                "total_work_distance_km":
+                    _total_work_distance_km(workout),
+                "average_pace_s_per_km": round(rep_pace, 1),
+                "factor": round(factor, 3),
+                "predicted_seconds": round(
+                    rep_pace * factor * goal_distance_km,
+                    1,
+                ),
+                "quality": 0.55,
+            }
+        ]
+    else:
+        component_estimates = [
+            _component_prediction(
+                component,
+                goal_distance_km,
+            )
+            for component in components
+            if component["component_type"] != "strides"
+        ]
+
+    if not component_estimates:
         return None
 
-    factor = _prediction_factor(
-        workout.workout_type,
+    total_component_weight = sum(
+        component["quality"]
+        * max(component["total_work_distance_km"], 0.5)
+        for component in component_estimates
+    )
+
+    if total_component_weight <= 0:
+        return None
+
+    predicted_seconds = sum(
+        component["predicted_seconds"]
+        * component["quality"]
+        * max(component["total_work_distance_km"], 0.5)
+        for component in component_estimates
+    ) / total_component_weight
+
+    quality = _workout_prediction_quality(
+        item,
         goal_distance_km,
     )
-    race_pace = rep_pace * factor
-    predicted_seconds = race_pace * goal_distance_km
-    quality = _workout_prediction_quality(item, goal_distance_km)
+
+    component_summary = " + ".join(
+        f"{component['rep_count']} x "
+        f"{component['average_rep_distance_km']:.2f} km "
+        f"{component['label'].lower()}"
+        for component in component_estimates
+    )
 
     return {
         "activity_id": item["session"].activity_id,
@@ -378,12 +760,16 @@ def _predict_from_workout(item, goal_distance_km: float) -> dict | None:
         "title": item["session"].title,
         "description": workout.description,
         "workout_type": workout.workout_type,
-        "rep_pace_s_per_km": round(rep_pace, 1),
-        "factor": round(factor, 3),
+        "component_summary": component_summary,
+        "components": component_estimates,
+        "phase_engine": phase_metadata,
         "predicted_seconds": round(predicted_seconds, 1),
         "quality": round(quality, 4),
         "trust_score": item["trust_score"],
-        "work_distance_km": round(_total_work_distance_km(workout), 2),
+        "work_distance_km": round(
+            _total_work_distance_km(workout),
+            2,
+        ),
     }
 
 
@@ -469,7 +855,7 @@ def _combine_workout_predictions(
         "estimate_count": len(estimates),
         "estimates": estimates,
         "conditions": "Ideal, flat conditions",
-        "model_version": 1,
+        "model_version": 2,
     }
 
 
@@ -553,6 +939,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             default=datetime.date.today(),
         )
 
+        easy_pace_s_per_km, easy_pace_sample_size = (
+            _estimate_easy_pace(rows, reference_date)
+        )
+
         session_counts = Counter()
         candidates = []
 
@@ -608,6 +998,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "session": session,
                 "workout": workout,
                 "activity_date": activity_date,
+                "raw_json_text": row[15],
+                "easy_pace_s_per_km": easy_pace_s_per_km,
             }
             item["trust_score"] = _trust_score(
                 session,
@@ -787,8 +1179,13 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         limitations = [
             "Trends compare only sessions with similar workout type and rep distance.",
             "Runalyze CSV splits do not contain full lap-level heart rate or power.",
-            "Workout prediction uses transparent workout-type conversion factors "
-            "and should carry less weight than a recent genuine race.",
+            "Warm-up, cool-down and recovery splits are excluded from "
+            "work pace when they are within 12% of the athlete's current "
+            "easy pace.",
+            "Remaining faster splits are grouped by similar distance before "
+            "threshold, long-interval and short-interval predictions are combined.",
+            "Transparent component conversion factors are still less reliable "
+            "than a recent genuine race and therefore carry lower weight.",
             "The current estimate represents ideal, flat conditions; scenario "
             "forecasts for heat, hills and trails will be added separately.",
         ]
@@ -835,6 +1232,23 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     "trust_score": latest["trust_score"],
                     "representative": latest_is_representative,
                 },
+                "easy_pace_filter": {
+                    "easy_pace_s_per_km": easy_pace_s_per_km,
+                    "sample_size": easy_pace_sample_size,
+                    "work_cutoff_ratio": 0.88,
+                    "work_cutoff_s_per_km": (
+                        easy_pace_s_per_km * 0.88
+                        if easy_pace_s_per_km is not None
+                        else None
+                    ),
+                },
+                "workout_phases": (
+                    _group_work_components(
+                        best_workout,
+                        best.get("raw_json_text"),
+                        best.get("easy_pace_s_per_km"),
+                    )[1]
+                ),
                 "best_evidence": {
                     "date": (
                         best_session.activity_date[:10]
