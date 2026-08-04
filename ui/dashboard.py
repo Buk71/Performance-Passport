@@ -345,6 +345,21 @@ def status_label(status):
     return "Unavailable"
 
 
+
+def greeting_for_current_time(now=None):
+    """Return a local, time-aware greeting."""
+    current = now or datetime.datetime.now()
+    hour = current.hour
+
+    if 5 <= hour < 12:
+        return "Good morning"
+    if 12 <= hour < 17:
+        return "Good afternoon"
+    if 17 <= hour < 22:
+        return "Good evening"
+
+    return "Hello"
+
 def render_header(first_name, goal):
     if goal is None:
         intro = (
@@ -363,7 +378,7 @@ def render_header(first_name, goal):
         <div class="pp-page-header">
             <div class="pp-page-eyebrow">Coach</div>
             <div class="pp-page-title">
-                Good morning, {safe_text(first_name)}.
+                {safe_text(greeting_for_current_time())}, {safe_text(first_name)}.
             </div>
             <div class="pp-page-intro">{intro}</div>
         </div>
@@ -759,8 +774,12 @@ def render_evidence_card(item):
                     "match_count",
                     0,
                 )
-                linked_count = historical_similarity.get(
-                    "linked_history_count",
+                distinct_workouts = historical_similarity.get(
+                    "distinct_workout_count",
+                    0,
+                )
+                distinct_races = historical_similarity.get(
+                    "distinct_race_count",
                     0,
                 )
                 similarity_confidence = historical_similarity.get(
@@ -768,16 +787,20 @@ def render_evidence_card(item):
                     0,
                 )
 
-                similarity_columns = st.columns(3)
+                similarity_columns = st.columns(4)
                 similarity_columns[0].metric(
-                    "Similar matches",
+                    "Strong matches",
                     match_count,
                 )
                 similarity_columns[1].metric(
-                    "Linked history",
-                    linked_count,
+                    "Workouts searched",
+                    distinct_workouts,
                 )
                 similarity_columns[2].metric(
+                    "Linked races",
+                    distinct_races,
+                )
+                similarity_columns[3].metric(
                     "Match confidence",
                     f"{similarity_confidence:.0%}",
                 )
@@ -786,8 +809,8 @@ def render_evidence_card(item):
 
                 if matches:
                     st.caption(
-                        "These matches are inspection evidence only in "
-                        "v0.8.3; they do not change the prediction yet."
+                        "These matches explain the athlete's historical "
+                        "workout evidence."
                     )
 
                     for index, match in enumerate(

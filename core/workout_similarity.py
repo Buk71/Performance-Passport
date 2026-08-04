@@ -73,6 +73,8 @@ class SimilarityResult:
     current_activity_id: int
     match_count: int
     linked_history_count: int
+    distinct_workout_count: int
+    distinct_race_count: int
     confidence: float
     matches: tuple[SimilarWorkoutMatch, ...]
     limitations: tuple[str, ...]
@@ -452,6 +454,8 @@ def find_similar_linked_workouts(
             current_activity_id=current_activity_id,
             match_count=0,
             linked_history_count=0,
+            distinct_workout_count=0,
+            distinct_race_count=0,
             confidence=0.0,
             matches=(),
             limitations=(
@@ -569,11 +573,20 @@ def find_similar_linked_workouts(
             "race effort that are not yet normalised here.",
         )
 
+    distinct_workout_count = len(
+        {int(row[0]) for row in rows}
+    )
+    distinct_race_count = len(
+        {int(row[5]) for row in rows}
+    )
+
     return SimilarityResult(
         athlete_id=athlete_id,
         current_activity_id=current_activity_id,
         match_count=len(selected),
         linked_history_count=len(rows),
+        distinct_workout_count=distinct_workout_count,
+        distinct_race_count=distinct_race_count,
         confidence=round(confidence, 4),
         matches=selected,
         limitations=limitations,
@@ -880,6 +893,8 @@ def similarity_result_to_dict(result: SimilarityResult) -> dict[str, Any]:
         "current_activity_id": result.current_activity_id,
         "match_count": result.match_count,
         "linked_history_count": result.linked_history_count,
+        "distinct_workout_count": result.distinct_workout_count,
+        "distinct_race_count": result.distinct_race_count,
         "confidence": result.confidence,
         "limitations": list(result.limitations),
         "matches": [
