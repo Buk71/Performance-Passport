@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from core.athlete_dna import build_athlete_dna
 from core.evidence import EvidenceBundle, EvidenceItem, EvidenceStatus
 
 
@@ -50,6 +51,9 @@ class PerformanceDNA:
     system_scores: dict[str, float]
     workout_archetype: str | None
     workout_dna_confidence: float
+    athlete_dna_confidence: float
+    athlete_profile_label: str
+    system_confidence: dict[str, float]
     available_coach_count: int
     total_coach_count: int
 
@@ -351,47 +355,23 @@ def build_performance_dna(
             f"{'es are' if remaining != 1 else ' is'} still being connected."
         )
 
+    athlete_dna = build_athlete_dna(
+        evidence_bundle,
+        consensus_prediction_s=consensus_prediction_s,
+    )
+    system_scores = athlete_dna.system_scores
     workout_item = item_by_key.get("workout")
     workout_dna = (
         workout_item.metadata.get("best_workout_dna", {})
         if workout_item is not None
         else {}
     )
-
-    raw_system_scores = workout_dna.get("stimulus_scores", {})
-    system_scores = {
-        "threshold": float(raw_system_scores.get("threshold", 0) or 0),
-        "speed": float(raw_system_scores.get("speed", 0) or 0),
-        "endurance": float(raw_system_scores.get("endurance", 0) or 0),
-        "aerobic": float(raw_system_scores.get("aerobic", 0) or 0),
-    }
     workout_archetype = workout_dna.get("archetype")
     workout_dna_confidence = float(
         workout_dna.get("confidence", 0) or 0
     )
 
-    if any(system_scores.values()):
-        strongest_system = max(
-            system_scores,
-            key=system_scores.get,
-        )
-        weakest_system = min(
-            system_scores,
-            key=system_scores.get,
-        )
-
-        label_map = {
-            "threshold": "Threshold",
-            "speed": "Speed / VO₂",
-            "endurance": "Endurance",
-            "aerobic": "Aerobic",
-        }
-
-        summary += (
-            f" Current Workout DNA is strongest in "
-            f"{label_map[strongest_system]} and weakest in "
-            f"{label_map[weakest_system]}."
-        )
+    summary += " " + athlete_dna.summary
 
     return PerformanceDNA(
         athlete_id=evidence_bundle.athlete_id,
@@ -409,6 +389,9 @@ def build_performance_dna(
         system_scores=system_scores,
         workout_archetype=workout_archetype,
         workout_dna_confidence=workout_dna_confidence,
+        athlete_dna_confidence=athlete_dna.overall_confidence,
+        athlete_profile_label=athlete_dna.profile_label,
+        system_confidence=athlete_dna.system_confidence,
         available_coach_count=available_count,
         total_coach_count=len(verdicts),
     )
@@ -430,6 +413,9 @@ def performance_dna_to_dict(
         "system_scores": dna.system_scores,
         "workout_archetype": dna.workout_archetype,
         "workout_dna_confidence": dna.workout_dna_confidence,
+        "athlete_dna_confidence": dna.athlete_dna_confidence,
+        "athlete_profile_label": dna.athlete_profile_label,
+        "system_confidence": dna.system_confidence,
         "verdicts": [
             {
                 "key": verdict.key,

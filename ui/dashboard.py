@@ -447,7 +447,7 @@ def render_coaching_meeting(performance_dna, prediction):
     )
 
     if any(performance_dna.system_scores.values()):
-        st.markdown("### Current performance systems")
+        st.markdown("### Athlete Performance DNA")
 
         system_labels = {
             "threshold": "❤️ Threshold",
@@ -457,15 +457,11 @@ def render_coaching_meeting(performance_dna, prediction):
         }
 
         st.caption(
-            (
-                f"Workout archetype: {performance_dna.workout_archetype} · "
-                f"DNA confidence {performance_dna.workout_dna_confidence:.0%}"
-            )
-            if performance_dna.workout_archetype
-            else (
-                f"Workout DNA confidence "
-                f"{performance_dna.workout_dna_confidence:.0%}"
-            )
+            f"{performance_dna.athlete_profile_label} · "
+            f"aggregated confidence "
+            f"{performance_dna.athlete_dna_confidence:.0%}. "
+            "Scores combine specialist coaches, long-term history and "
+            "Workout DNA, so one session cannot redefine the athlete."
         )
 
         system_columns = st.columns(4)
@@ -486,6 +482,15 @@ def render_coaching_meeting(performance_dna, prediction):
                 )
                 st.progress(
                     min(max(score / 100.0, 0.0), 1.0)
+                )
+                system_confidence = (
+                    performance_dna.system_confidence.get(
+                        system_key,
+                        0,
+                    )
+                )
+                st.caption(
+                    f"Evidence confidence {system_confidence:.0%}"
                 )
 
     st.markdown("### Today's coaching meeting")
