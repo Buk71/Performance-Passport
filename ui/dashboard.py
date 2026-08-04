@@ -5,6 +5,7 @@ import textwrap
 import streamlit as st
 
 from core.coach_brain import CoachBrain
+from core.coach_consensus import build_coach_consensus
 from core.coaching import (
     METRES_PER_MILE,
     RunProfile,
@@ -397,7 +398,11 @@ def coach_status_icon(status):
     }.get(status, "⚪")
 
 
-def render_coaching_meeting(performance_dna, prediction):
+def render_coaching_meeting(
+    performance_dna,
+    prediction,
+    coach_consensus,
+):
     """Render the shared Personal Performance DNA view."""
     render_html(
         f"""
@@ -526,46 +531,83 @@ def render_coaching_meeting(performance_dna, prediction):
     st.markdown("### 🎯 Goal Coach consensus")
 
     if prediction.available:
-        st.success(
-            f"Current consensus capability: "
-            f"**{format_clock(prediction.predicted_seconds)}**. "
-            f"The team confidence is "
-            f"**{performance_dna.overall_confidence:.0%}**."
+        consensus_columns = st.columns(3)
+        consensus_columns[0].metric(
+            "Consensus capability",
+            format_clock(prediction.predicted_seconds),
         )
+        consensus_columns[1].metric(
+            "Consensus confidence",
+            f"{coach_consensus.confidence:.0%}",
+        )
+        consensus_columns[2].metric(
+            "Lead opinion",
+            coach_consensus.lead_coach or "Building",
+        )
+
+        if coach_consensus.status == "aligned":
+            st.success(coach_consensus.headline)
+        elif coach_consensus.status == "mixed":
+            st.warning(coach_consensus.headline)
+        else:
+            st.info(coach_consensus.headline)
+
+        if coach_consensus.summary:
+            st.write(coach_consensus.summary)
+
+        if coach_consensus.positions:
+            with st.expander("How the coaches reached consensus"):
+                for position in coach_consensus.positions:
+                    difference = position.difference_seconds
+                    if abs(difference) < 0.5:
+                        difference_text = "matches consensus"
+                    elif difference < 0:
+                        difference_text = (
+                            f"{abs(difference):.0f}s faster than consensus"
+                        )
+                    else:
+                        difference_text = (
+                            f"{difference:.0f}s slower than consensus"
+                        )
+
+                    st.write(
+                        f"**{position.title}: "
+                        f"{format_clock(position.predicted_seconds)}** · "
+                        f"{difference_text} · "
+                        f"{position.confidence:.0%} confidence"
+                    )
+
+                for note in coach_consensus.notes:
+                    st.caption("Consensus note: " + note)
     else:
         st.info(
             "The Goal Coach is waiting for enough specialist evidence "
             "before giving a consensus capability."
         )
 
-    if performance_dna.strongest_signal:
-        message = (
-            "Strongest specialist evidence: "
-            f"{performance_dna.strongest_signal}."
+    if coach_consensus.strongest_system:
+        label_map = {
+            "threshold": "Threshold",
+            "speed": "Speed / VO₂",
+            "endurance": "Endurance",
+            "aerobic": "Aerobic",
+        }
+        strongest_label = label_map[
+            coach_consensus.strongest_system
+        ]
+        priority_label = (
+            label_map[coach_consensus.development_priority]
+            if coach_consensus.development_priority
+            else "Still learning"
         )
 
-        if any(performance_dna.system_scores.values()):
-            strongest_system = max(
-                performance_dna.system_scores,
-                key=performance_dna.system_scores.get,
-            )
-            weakest_system = min(
-                performance_dna.system_scores,
-                key=performance_dna.system_scores.get,
-            )
-            label_map = {
-                "threshold": "Threshold",
-                "speed": "Speed / VO₂",
-                "endurance": "Endurance",
-                "aerobic": "Aerobic",
-            }
-            message += (
-                f" Workout DNA is currently strongest in "
-                f"{label_map[strongest_system]} and weakest in "
-                f"{label_map[weakest_system]}."
-            )
+        st.caption(
+            f"Current athlete strength: {strongest_label}. "
+            f"Current development priority: {priority_label}. "
+            "A training recommendation will wait for Readiness Coach "
+            "rather than being invented from profile scores alone."
+        )
 
-        st.caption(message)
 
 def render_daily_coach(
     first_name,
@@ -1721,6 +1763,14 @@ def show_dashboard():
             else None
         ),
     )
+    coach_consensus = build_coach_consensus(
+        performance_dna,
+        consensus_prediction_s=(
+            prediction.predicted_seconds
+            if prediction.available
+            else None
+        ),
+    )
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
@@ -1760,6 +1810,7 @@ def show_dashboard():
     render_coaching_meeting(
         performance_dna,
         prediction,
+        coach_consensus,
     )
 
     st.markdown("## Goal and context")
