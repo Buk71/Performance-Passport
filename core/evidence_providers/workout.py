@@ -25,6 +25,10 @@ from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
 from core.workout_library import upsert_workout
+from core.workout_similarity import (
+    find_similar_linked_workouts,
+    similarity_result_to_dict,
+)
 from core.workout_race_linker import refresh_workout_race_links
 from core.workout_phases import (
     phases_to_dicts,
@@ -1152,6 +1156,27 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
         best = strongest[0]
 
+        try:
+            historical_similarity = find_similar_linked_workouts(
+                athlete_id=context.athlete_id,
+                current_activity_id=best["session"].activity_id,
+                limit=10,
+            )
+            historical_similarity_metadata = (
+                similarity_result_to_dict(historical_similarity)
+            )
+        except Exception as error:
+            historical_similarity_metadata = {
+                "match_count": 0,
+                "linked_history_count": 0,
+                "confidence": 0.0,
+                "matches": [],
+                "limitations": [
+                    "Historical similarity could not be calculated: "
+                    f"{type(error).__name__}"
+                ],
+            }
+
         goal = context.goal or {}
         goal_distance_km = (
             float(goal["distance_m"]) / 1000.0
@@ -1351,6 +1376,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 },
                 "top_workouts": top_workouts,
                 "workout_prediction": workout_prediction,
+                "historical_similarity":
+                    historical_similarity_metadata,
                 "prediction_confidence": prediction_confidence,
                 "recognition_confidence": recognition_confidence,
                 "trend": trend,

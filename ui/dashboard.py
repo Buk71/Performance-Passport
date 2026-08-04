@@ -749,6 +749,92 @@ def render_evidence_card(item):
                 if warning:
                     st.warning(warning)
 
+            historical_similarity = item.metadata.get(
+                "historical_similarity"
+            )
+            if isinstance(historical_similarity, dict):
+                st.markdown("**Historical workout matches**")
+
+                match_count = historical_similarity.get(
+                    "match_count",
+                    0,
+                )
+                linked_count = historical_similarity.get(
+                    "linked_history_count",
+                    0,
+                )
+                similarity_confidence = historical_similarity.get(
+                    "confidence",
+                    0,
+                )
+
+                similarity_columns = st.columns(3)
+                similarity_columns[0].metric(
+                    "Similar matches",
+                    match_count,
+                )
+                similarity_columns[1].metric(
+                    "Linked history",
+                    linked_count,
+                )
+                similarity_columns[2].metric(
+                    "Match confidence",
+                    f"{similarity_confidence:.0%}",
+                )
+
+                matches = historical_similarity.get("matches", [])
+
+                if matches:
+                    st.caption(
+                        "These matches are inspection evidence only in "
+                        "v0.8.3; they do not change the prediction yet."
+                    )
+
+                    for index, match in enumerate(
+                        matches[:5],
+                        start=1,
+                    ):
+                        race_distance = match.get(
+                            "race_distance_km",
+                            0,
+                        )
+                        st.write(
+                            f"**{index}. "
+                            f"{match.get('workout_date', '—')} · "
+                            f"{match.get('similarity', 0):.0%} similar**"
+                        )
+                        st.write(
+                            f"Race {match.get('days_after', 0)} days later: "
+                            f"{race_distance:.2f} km in "
+                            f"{format_clock(match.get('race_time_s'))} "
+                            f"({match.get('race_date', '—')})"
+                        )
+
+                        reasons = match.get("reasons", [])
+                        if reasons:
+                            st.caption(
+                                "Why it matched: "
+                                + "; ".join(reasons)
+                            )
+
+                        differences = match.get("differences", [])
+                        if differences:
+                            st.caption(
+                                "Main differences: "
+                                + "; ".join(differences)
+                            )
+                else:
+                    st.info(
+                        "No sufficiently similar linked historical "
+                        "workout was found yet."
+                    )
+
+                for limitation in historical_similarity.get(
+                    "limitations",
+                    [],
+                ):
+                    st.caption("Similarity note: " + limitation)
+
             workout_prediction = item.metadata.get(
                 "workout_prediction"
             )
