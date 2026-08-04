@@ -4,6 +4,7 @@ import textwrap
 
 import streamlit as st
 
+from core.capability import build_capability
 from core.coach_brain import CoachBrain
 from core.coach_consensus import build_coach_consensus
 from core.coaching import (
@@ -712,6 +713,83 @@ def render_daily_coach(
                 for limitation in limitations:
                     st.write(f"• {limitation}")
 
+
+
+def render_capability_card(capability):
+    st.markdown("## Current capability")
+
+    if not capability.available:
+        st.info(capability.explanation)
+        return
+
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero pp-card-accent">
+            <div class="pp-card-label">Capability Engine</div>
+            <div class="pp-card-title">
+                {safe_text(capability.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(capability.explanation)}
+            </div>
+        </div>
+        """
+    )
+
+    columns = st.columns(4)
+    columns[0].metric(
+        "Most likely",
+        format_clock(capability.central_seconds),
+    )
+    columns[1].metric(
+        "Likely range",
+        (
+            f"{format_clock(capability.low_seconds)}–"
+            f"{format_clock(capability.high_seconds)}"
+        ),
+    )
+    columns[2].metric(
+        "Capability confidence",
+        f"{capability.confidence:.0%}",
+    )
+
+    if capability.target_probability is not None:
+        columns[3].metric(
+            "Goal probability",
+            f"{capability.target_probability:.0%}",
+        )
+    else:
+        columns[3].metric(
+            "Goal probability",
+            "No timed target",
+        )
+
+    if capability.target_gap_seconds is not None:
+        gap = capability.target_gap_seconds
+        if abs(gap) < 0.5:
+            gap_text = "Capability matches the target."
+        elif gap < 0:
+            gap_text = (
+                f"Current capability is {abs(gap):.0f} seconds "
+                "inside the target."
+            )
+        else:
+            gap_text = (
+                f"The target is {gap:.0f} seconds ahead of the "
+                "central capability estimate."
+            )
+        st.caption(gap_text)
+
+    with st.expander("Why this capability estimate?"):
+        for item in capability.evidence:
+            st.write(f"✓ {item}")
+
+        st.markdown("**Current interpretation**")
+        st.write(capability.explanation)
+
+        st.markdown("**Limitations**")
+        for limitation in capability.limitations:
+            st.write(f"• {limitation}")
 
 def render_goal_card(goal, prediction):
     if goal is None:
@@ -1771,6 +1849,25 @@ def show_dashboard():
             else None
         ),
     )
+    capability = build_capability(
+        predicted_seconds=(
+            prediction.predicted_seconds
+            if prediction.available
+            else None
+        ),
+        prediction_confidence=(
+            prediction.confidence
+            if prediction.available
+            else 0.0
+        ),
+        performance_dna=performance_dna,
+        coach_consensus=coach_consensus,
+        target_seconds=(
+            goal["target_time_s"]
+            if goal is not None
+            else None
+        ),
+    )
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
@@ -1812,6 +1909,8 @@ def show_dashboard():
         prediction,
         coach_consensus,
     )
+
+    render_capability_card(capability)
 
     st.markdown("## Goal and context")
 
