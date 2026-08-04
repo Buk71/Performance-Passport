@@ -15,6 +15,7 @@ from core.coaching import (
 )
 from core.database import get_active_goal, get_connection
 from core.evidence import EvidenceStatus
+from core.performance_dna import build_performance_dna
 
 
 SPORT_MAP = {
@@ -385,6 +386,118 @@ def render_header(first_name, goal):
         """
     )
 
+
+
+def coach_status_icon(status):
+    return {
+        "strong": "🟢",
+        "steady": "🟡",
+        "limited": "🟠",
+        "building": "⚪",
+    }.get(status, "⚪")
+
+
+def render_coaching_meeting(performance_dna, prediction):
+    """Render the shared Personal Performance DNA view."""
+    render_html(
+        f"""
+        <div class="pp-card pp-card-hero">
+            <div class="pp-card-label">Personal Performance DNA</div>
+            <div class="pp-card-title">
+                {safe_text(performance_dna.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(performance_dna.summary)}
+            </div>
+
+            <div style="
+                display:grid;
+                grid-template-columns:repeat(3, minmax(0, 1fr));
+                gap:0.8rem;
+                margin-top:1rem;
+                padding-top:0.9rem;
+                border-top:1px solid var(--pp-border);
+            ">
+                <div>
+                    <div class="pp-stat-label">Coaches connected</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {performance_dna.available_coach_count}/
+                        {performance_dna.total_coach_count}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Team confidence</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {performance_dna.overall_confidence:.0%}
+                    </div>
+                </div>
+                <div>
+                    <div class="pp-stat-label">Consensus</div>
+                    <div class="pp-stat-value" style="font-size:1rem;">
+                        {safe_text(
+                            performance_dna.consensus_status
+                            .replace("_", " ")
+                            .title()
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+    st.markdown("### Today's coaching meeting")
+
+    for verdict in performance_dna.verdicts:
+        left, middle, right = st.columns([0.48, 0.27, 0.25])
+
+        with left:
+            st.markdown(
+                f"{coach_status_icon(verdict.status)} "
+                f"**{verdict.icon} {verdict.title}**"
+            )
+            st.caption(verdict.evidence_summary)
+
+        with middle:
+            st.write(verdict.verdict)
+            if verdict.available:
+                st.caption(f"Confidence {verdict.confidence:.0%}")
+            else:
+                st.caption("No invented opinion")
+
+        with right:
+            if verdict.predicted_seconds is not None:
+                st.metric(
+                    "Goal view",
+                    format_clock(verdict.predicted_seconds),
+                )
+            elif verdict.available:
+                st.write(verdict.signal)
+            else:
+                st.write("Building")
+
+    st.markdown("### 🎯 Goal Coach consensus")
+
+    if prediction.available:
+        st.success(
+            f"Current consensus capability: "
+            f"**{format_clock(prediction.predicted_seconds)}**. "
+            f"The team confidence is "
+            f"**{performance_dna.overall_confidence:.0%}**."
+        )
+    else:
+        st.info(
+            "The Goal Coach is waiting for enough specialist evidence "
+            "before giving a consensus capability."
+        )
+
+    if performance_dna.strongest_signal:
+        st.caption(
+            "Strongest current signal: "
+            f"{performance_dna.strongest_signal}. "
+            "This is a first shared DNA view; deeper threshold, easy-run, "
+            "endurance and readiness comparisons come next."
+        )
 
 def render_daily_coach(
     first_name,
@@ -1412,6 +1525,14 @@ def show_dashboard():
     evidence_bundle = brain.build_evidence()
     prediction = brain.goal_prediction()
     brain_brief = brain.morning_brief()
+    performance_dna = build_performance_dna(
+        evidence_bundle,
+        consensus_prediction_s=(
+            prediction.predicted_seconds
+            if prediction.available
+            else None
+        ),
+    )
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
@@ -1445,6 +1566,12 @@ def show_dashboard():
         brain_brief=brain_brief,
         evidence_bundle=evidence_bundle,
         latest_activity_date=latest_activity_date,
+    )
+
+    st.markdown("## Coaching team")
+    render_coaching_meeting(
+        performance_dna,
+        prediction,
     )
 
     st.markdown("## Goal and context")
