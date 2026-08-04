@@ -194,6 +194,106 @@ def _aggregate_phase(
     )
 
 
+
+def _find_alternating_float_pattern(
+    meaningful: list[Split],
+) -> dict | None:
+    """
+    Recognise continuous alternating work/float sessions.
+
+    Example:
+        6 x 800 m at HM pace with 800 m float recoveries
+
+    Both the work and float laps can be faster than easy pace, so this pattern
+    must be detected before the easy-pace work filter is applied.
+    """
+    candidates = [
+        split
+        for split in meaningful
+        if 0.45 <= split.distance_km <= 1.15
+        and split.duration_s >= 75
+        and split.pace_s_per_km is not None
+    ]
+
+    if len(candidates) < 8:
+        return None
+
+    best = None
+
+    # Search contiguous candidate windows. Programmed workouts may have a
+    # warm-up or cool-down immediately outside the alternating sequence.
+    for start in range(len(candidates)):
+        for end in range(start + 8, len(candidates) + 1):
+            window = candidates[start:end]
+
+            indexes = [split.index for split in window]
+            if any(
+                following - previous > 2
+                for previous, following in zip(indexes, indexes[1:])
+            ):
+                continue
+
+            distances = [split.distance_km for split in window]
+            average_distance = mean(distances)
+
+            if average_distance <= 0:
+                continue
+
+            if any(
+                abs(distance - average_distance) / average_distance > 0.28
+                for distance in distances
+            ):
+                continue
+
+            odd = window[0::2]
+            even = window[1::2]
+
+            if min(len(odd), len(even)) < 4:
+                continue
+
+            odd_pace = mean(split.pace_s_per_km for split in odd)
+            even_pace = mean(split.pace_s_per_km for split in even)
+
+            if odd_pace <= even_pace:
+                work = odd
+                floats = even
+                work_pace = odd_pace
+                float_pace = even_pace
+            else:
+                work = even
+                floats = odd
+                work_pace = even_pace
+                float_pace = odd_pace
+
+            pace_gap = (float_pace - work_pace) / work_pace
+
+            # Floats should be meaningfully slower, but still running.
+            if pace_gap < 0.07 or pace_gap > 0.45:
+                continue
+
+            balance = min(len(work), len(floats)) / max(
+                len(work),
+                len(floats),
+            )
+            score = (
+                min(len(work), len(floats)) * 10
+                + balance * 5
+                - abs(average_distance - 0.8)
+            )
+
+            if best is None or score > best["score"]:
+                best = {
+                    "work": work,
+                    "floats": floats,
+                    "average_distance_km": average_distance,
+                    "work_pace_s_per_km": work_pace,
+                    "float_pace_s_per_km": float_pace,
+                    "pace_gap": pace_gap,
+                    "score": score,
+                }
+
+    return best
+
 def _find_repeated_short_family(
     meaningful: list[Split],
 ) -> list[Split]:
@@ -376,10 +476,134 @@ def reconstruct_csv_phases(
         work_candidates = meaningful
         easy_like = []
 
+    float_pattern = _find_alternating_float_pattern(meaningful)
     short_reps = _find_repeated_short_family(work_candidates)
     phases: list[WorkoutPhase] = []
     reasons = []
     limitations = []
+
+    if float_pattern:
+        work_splits = list(float_pattern["work"])
+        float_splits = list(float_pattern["floats"])
+        first_pattern_index = min(
+            split.index for split in work_splits + float_splits
+        )
+        last_pattern_index = max(
+            split.index for split in work_splits + float_splits
+        )
+
+        warmup_candidates = [
+            split
+            for split in meaningful
+            if split.index < first_pattern_index
+        ]
+        cooldown_candidates = [
+            split
+            for split in meaningful
+            if split.index > last_pattern_index
+        ]
+
+        if warmup_candidates:
+            phases.append(
+                _aggregate_phase(
+                    phase_type="warmup",
+                    label="Warm-up",
+                    source="runalyze_csv",
+                    confidence=0.78,
+                    splits=warmup_candidates,
+                    rep_count=1,
+                )
+            )
+
+        average_float_duration = mean(
+            split.duration_s for split in float_splits
+        )
+
+        phases.append(
+            _aggregate_phase(
+                phase_type="threshold",
+                label="Alternating threshold work reps",
+                source="runalyze_csv",
+                confidence=0.94,
+                splits=work_splits,
+                rep_count=len(work_splits),
+                recovery_duration_s=average_float_duration,
+                metadata={
+                    "workout_archetype": "threshold_with_float",
+                    "float_rep_count": len(float_splits),
+                    "average_float_distance_km": round(
+                        mean(split.distance_km for split in float_splits),
+                        3,
+                    ),
+                    "average_float_pace_s_per_km": round(
+                        float_pattern["float_pace_s_per_km"],
+                        1,
+                    ),
+                    "pace_gap_percent": round(
+                        float_pattern["pace_gap"] * 100,
+                        1,
+                    ),
+                },
+            )
+        )
+
+        phases.append(
+            _aggregate_phase(
+                phase_type="recovery",
+                label="Active float recoveries",
+                source="runalyze_csv",
+                confidence=0.94,
+                splits=float_splits,
+                rep_count=len(float_splits),
+                metadata={
+                    "recovery_style": "float",
+                    "workout_archetype": "threshold_with_float",
+                },
+            )
+        )
+
+        if cooldown_candidates:
+            phases.append(
+                _aggregate_phase(
+                    phase_type="cooldown",
+                    label="Cool-down",
+                    source="runalyze_csv",
+                    confidence=0.70,
+                    splits=cooldown_candidates,
+                    rep_count=1,
+                )
+            )
+
+        distance_m = round(
+            float_pattern["average_distance_km"] * 1000 / 25
+        ) * 25
+        summary = (
+            f"{len(work_splits)} x {distance_m} m threshold "
+            f"with {len(float_splits)} x {distance_m} m float"
+        )
+
+        reasons.extend(
+            [
+                "Recognised an alternating equal-distance work/float pattern.",
+                f"Work laps were {float_pattern['pace_gap'] * 100:.0f}% "
+                "faster than float laps.",
+                "Float laps were retained as active recovery rather than "
+                "misclassified as additional work reps.",
+            ]
+        )
+
+        return WorkoutPhaseResult(
+            phases=tuple(phases),
+            source="runalyze_csv",
+            confidence=0.94,
+            summary=summary,
+            reasons=tuple(reasons),
+            limitations=(
+                "CSV reconstruction infers work versus float from the "
+                "alternating pace pattern; FIT workout steps will take "
+                "priority when available.",
+            ),
+        )
 
     if short_reps:
         first_rep = min(split.index for split in short_reps)

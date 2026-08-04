@@ -22,11 +22,13 @@ from statistics import mean, median
 from core.database import get_athlete_sport_roles, get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
+from core.pb_shape import build_pb_shape, pb_shape_to_dict
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
 from core.workout_library import upsert_workout
 from core.workout_similarity import (
     find_similar_linked_workouts,
+    predict_from_similarity,
     similarity_result_to_dict,
 )
 from core.workout_race_linker import refresh_workout_race_links
@@ -865,7 +867,7 @@ def _combine_workout_predictions(
     }
 
 
-WORKOUT_LIBRARY_DECODER_VERSION = 1
+WORKOUT_LIBRARY_DECODER_VERSION = 2
 
 
 def _workout_signature(
@@ -1031,13 +1033,33 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
             workout = get_or_decode_workout(row[0], row[15])
 
-            if workout.workout_type in ("No split data", "Unclassified"):
-                continue
+            phase_components, phase_metadata = _group_work_components(
+                workout,
+                row[15],
+                easy_pace_s_per_km,
+            )
+            phase_establishes_workout = (
+                float(phase_metadata.get("confidence") or 0.0) >= 0.65
+                and any(
+                    component.get("component_type")
+                    in {
+                        "threshold",
+                        "long_intervals",
+                        "short_intervals",
+                    }
+                    for component in phase_components
+                )
+            )
 
             accepted = (
                 session.session_type == SessionType.STRUCTURED_WORKOUT
                 or _explicit_workout_title(session.title)
-                or _programmed_structure_evidence(workout)
+                or (
+                    workout.workout_type
+                    not in ("No split data", "Unclassified")
+                    and _programmed_structure_evidence(workout)
+                )
+                or phase_establishes_workout
             )
 
             if not accepted:
@@ -1052,11 +1074,6 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "easy_pace_s_per_km": easy_pace_s_per_km,
             }
 
-            phase_components, phase_metadata = _group_work_components(
-                workout,
-                row[15],
-                easy_pace_s_per_km,
-            )
             item["phase_components"] = phase_components
             item["phase_metadata"] = phase_metadata
 
@@ -1183,10 +1200,70 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             if goal.get("distance_m")
             else None
         )
-        workout_prediction = _combine_workout_predictions(
+        formula_prediction = _combine_workout_predictions(
             strongest,
             goal_distance_km,
         )
+
+        try:
+            pb_shape_result = (
+                build_pb_shape(
+                    athlete_id=context.athlete_id,
+                    current_activity_id=best["session"].activity_id,
+                    goal_distance_km=goal_distance_km,
+                )
+                if goal_distance_km is not None
+                else None
+            )
+            pb_shape_prediction = (
+                pb_shape_to_dict(pb_shape_result)
+                if pb_shape_result is not None
+                else None
+            )
+        except Exception as error:
+            pb_shape_prediction = {
+                "central_seconds": None,
+                "confidence": 0.0,
+                "status": "error",
+                "matches": [],
+                "limitations": [
+                    "PB Shape could not be calculated: "
+                    f"{type(error).__name__}"
+                ],
+            }
+
+        similarity_prediction = (
+            predict_from_similarity(
+                historical_similarity,
+                goal_distance_km=goal_distance_km,
+            )
+            if (
+                goal_distance_km is not None
+                and "historical_similarity" in locals()
+            )
+            else None
+        )
+
+        # PB Shape is the most personal and explainable workout prediction.
+        # Historical similarity and formula logic remain fallbacks.
+        if (
+            pb_shape_prediction
+            and pb_shape_prediction.get("central_seconds") is not None
+            and pb_shape_prediction.get("pb_workout_count", 0) >= 1
+            and pb_shape_prediction.get("confidence", 0) >= 0.45
+        ):
+            workout_prediction = pb_shape_prediction
+            prediction_source = "pb_shape"
+        elif (
+            similarity_prediction
+            and similarity_prediction["distinct_race_count"] >= 2
+            and similarity_prediction["confidence"] >= 0.55
+        ):
+            workout_prediction = similarity_prediction
+            prediction_source = "historical_similarity"
+        else:
+            workout_prediction = formula_prediction
+            prediction_source = "formula_fallback"
 
         comparable = [
             item for item in recent_candidates if _comparable(best, item)
@@ -1230,9 +1307,16 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             )
 
         if workout_prediction:
+            prediction_label = (
+                "PB Shape prediction"
+                if prediction_source == "pb_shape"
+                else "Historical workout prediction"
+                if prediction_source == "historical_similarity"
+                else "Formula fallback prediction"
+            )
             summary_parts.append(
-                f"Workout-derived goal prediction: "
-                f"{int(round(workout_prediction['central_seconds'] // 60))}:"
+                f"{prediction_label}: "
+                f"{int(workout_prediction['central_seconds'] // 60)}:"
                 f"{int(round(workout_prediction['central_seconds'] % 60)):02d} "
                 f"under ideal, flat conditions."
             )
@@ -1307,6 +1391,11 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             "threshold, long-interval and short-interval predictions are combined.",
             "Transparent component conversion factors are still less reliable "
             "than a recent genuine race and therefore carry lower weight.",
+            "Historical similarity becomes the primary estimate only when "
+            "at least two distinct linked race outcomes provide moderate evidence.",
+            "Controlled race intent is not yet explicit, so the historical "
+            "model gently favours stronger outcomes and remains lower-weighted "
+            "than strong Race Coach evidence.",
             "The current estimate represents ideal, flat conditions; scenario "
             "forecasts for heat, hills and trails will be added separately.",
         ]
@@ -1326,7 +1415,21 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 if workout_prediction
                 else None
             ),
-            weight=0.65 if workout_prediction else 0.0,
+            weight=(
+                0.65
+                if (
+                    workout_prediction
+                    and prediction_source == "pb_shape"
+                )
+                else 0.55
+                if (
+                    workout_prediction
+                    and prediction_source == "historical_similarity"
+                )
+                else 0.25
+                if workout_prediction
+                else 0.0
+            ),
             metadata={
                 "activity_id": latest_session.activity_id,
                 "activity_date": latest_session.activity_date,
@@ -1376,6 +1479,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 },
                 "top_workouts": top_workouts,
                 "workout_prediction": workout_prediction,
+                "prediction_source": prediction_source,
+                "pb_shape_prediction": pb_shape_prediction,
+                "similarity_prediction": similarity_prediction,
+                "formula_prediction": formula_prediction,
                 "historical_similarity":
                     historical_similarity_metadata,
                 "prediction_confidence": prediction_confidence,

@@ -580,6 +580,300 @@ def find_similar_linked_workouts(
     )
 
 
+
+RIEGEL_EXPONENT = 1.06
+
+
+def _equivalent_time(
+    *,
+    race_time_s: float,
+    race_distance_km: float,
+    goal_distance_km: float,
+) -> float | None:
+    """Convert a race outcome to the selected goal distance."""
+    if (
+        race_time_s <= 0
+        or race_distance_km <= 0
+        or goal_distance_km <= 0
+    ):
+        return None
+
+    return race_time_s * math.pow(
+        goal_distance_km / race_distance_km,
+        RIEGEL_EXPONENT,
+    )
+
+
+def _weighted_quantile(
+    values: list[tuple[float, float]],
+    quantile: float,
+) -> float | None:
+    if not values:
+        return None
+
+    ordered = sorted(values, key=lambda item: item[0])
+    total_weight = sum(max(weight, 0.0) for _, weight in ordered)
+
+    if total_weight <= 0:
+        return None
+
+    target = max(0.0, min(quantile, 1.0)) * total_weight
+    cumulative = 0.0
+
+    for value, weight in ordered:
+        cumulative += max(weight, 0.0)
+
+        if cumulative >= target:
+            return value
+
+    return ordered[-1][0]
+
+
+def predict_from_similarity(
+    result: SimilarityResult,
+    *,
+    goal_distance_km: float,
+) -> dict[str, Any] | None:
+    """
+    Produce an athlete-specific prediction from linked historical outcomes.
+
+    One race may be linked to several preceding workouts. To prevent that
+    single race being counted repeatedly, only the strongest workout match
+    for each distinct race is retained.
+
+    The central estimate uses the weighted 45th percentile rather than the
+    simple mean. This gently favours stronger performances and reduces the
+    damage caused by controlled or non-all-out races until the future
+    Effort & Intent Engine can identify them explicitly.
+    """
+    if goal_distance_km <= 0 or not result.matches:
+        return None
+
+    best_by_race: dict[int, SimilarWorkoutMatch] = {}
+
+    for match in result.matches:
+        existing = best_by_race.get(match.race_activity_id)
+
+        if existing is None:
+            best_by_race[match.race_activity_id] = match
+            continue
+
+        existing_rank = (
+            existing.similarity
+            * (0.80 + 0.20 * existing.link_confidence)
+        )
+        new_rank = (
+            match.similarity
+            * (0.80 + 0.20 * match.link_confidence)
+        )
+
+        if new_rank > existing_rank:
+            best_by_race[match.race_activity_id] = match
+
+    outcomes = []
+
+    for match in best_by_race.values():
+        equivalent = _equivalent_time(
+            race_time_s=match.race_time_s,
+            race_distance_km=match.race_distance_km,
+            goal_distance_km=goal_distance_km,
+        )
+
+        if equivalent is None:
+            continue
+
+        # Similarity dominates. Link confidence supports the ranking.
+        weight = (
+            math.pow(max(match.similarity, 0.01), 3.0)
+            * (0.70 + 0.30 * match.link_confidence)
+        )
+
+        outcomes.append(
+            {
+                "race_activity_id": match.race_activity_id,
+                "workout_activity_id": match.workout_activity_id,
+                "workout_date": match.workout_date,
+                "race_date": match.race_date,
+                "race_title": match.race_title,
+                "race_distance_km": match.race_distance_km,
+                "race_time_s": match.race_time_s,
+                "equivalent_goal_time_s": round(equivalent, 1),
+                "days_after": match.days_after,
+                "similarity": match.similarity,
+                "link_confidence": match.link_confidence,
+                "weight": round(weight, 5),
+                "reasons": list(match.reasons),
+                "differences": list(match.differences),
+            }
+        )
+
+    if not outcomes:
+        return None
+
+    weighted_values = [
+        (outcome["equivalent_goal_time_s"], outcome["weight"])
+        for outcome in outcomes
+    ]
+
+    central = _weighted_quantile(weighted_values, 0.45)
+    faster_bound = _weighted_quantile(weighted_values, 0.20)
+    slower_bound = _weighted_quantile(weighted_values, 0.75)
+
+    if central is None:
+        return None
+
+    # Ensure the displayed range remains useful with very small samples.
+    minimum_half_range = max(central * 0.012, 8.0)
+
+    low = (
+        min(faster_bound, central - minimum_half_range)
+        if faster_bound is not None
+        else central - minimum_half_range
+    )
+    high = (
+        max(slower_bound, central + minimum_half_range)
+        if slower_bound is not None
+        else central + minimum_half_range
+    )
+
+    distinct_races = len(outcomes)
+    average_similarity = sum(
+        outcome["similarity"] * outcome["weight"]
+        for outcome in outcomes
+    ) / sum(outcome["weight"] for outcome in outcomes)
+    average_link = sum(
+        outcome["link_confidence"] * outcome["weight"]
+        for outcome in outcomes
+    ) / sum(outcome["weight"] for outcome in outcomes)
+
+    sample_factor = min(distinct_races / 5.0, 1.0)
+
+    confidence = min(
+        average_similarity * 0.55
+        + average_link * 0.20
+        + sample_factor * 0.25,
+        0.92,
+    )
+
+    reliability = (
+        "Strong"
+        if distinct_races >= 5 and confidence >= 0.75
+        else "Moderate"
+        if distinct_races >= 2 and confidence >= 0.55
+        else "Limited"
+    )
+
+    return {
+        "central_seconds": round(central, 1),
+        "low_seconds": round(max(low, 1.0), 1),
+        "high_seconds": round(max(high, central), 1),
+        "confidence": round(confidence, 4),
+        "reliability": reliability,
+        "goal_distance_km": round(goal_distance_km, 4),
+        "distinct_race_count": distinct_races,
+        "linked_match_count": result.match_count,
+        "outcomes": sorted(
+            outcomes,
+            key=lambda item: item["weight"],
+            reverse=True,
+        ),
+        "method": (
+            "Historical workout similarity with distinct-race "
+            "deduplication and controlled-race guardrail"
+        ),
+        "model_version": 1,
+        "limitations": [
+            "Race intent is not yet explicitly known.",
+            "The central estimate gently favours stronger linked outcomes "
+            "so controlled races do not drag the prediction down as much.",
+            "Heat, hills, trail surface and taper are not yet normalised.",
+        ],
+    }
+
+
+def compare_workout_phase_json(
+    current_phase_json: str | None,
+    candidate_phase_json: str | None,
+    *,
+    current_execution_score: float | None = None,
+    candidate_execution_score: float | None = None,
+) -> dict[str, Any]:
+    """
+    Compare two stored workout phase payloads.
+
+    This public helper lets PB Shape and future coaches use the same
+    transparent workout fingerprint as Historical Similarity.
+    """
+    current = _quality_features(
+        _safe_phases(current_phase_json),
+        current_execution_score,
+    )
+    candidate = _quality_features(
+        _safe_phases(candidate_phase_json),
+        candidate_execution_score,
+    )
+
+    similarity, reasons, differences, feature_scores = _compare_features(
+        current,
+        candidate,
+    )
+
+    pace_ratios = []
+    volume_ratios = []
+
+    for phase_type in sorted(
+        current["phase_types"] & candidate["phase_types"]
+    ):
+        current_phase = current["by_type"][phase_type]
+        candidate_phase = candidate["by_type"][phase_type]
+
+        current_pace = current_phase.get("pace_s_per_km")
+        candidate_pace = candidate_phase.get("pace_s_per_km")
+
+        if (
+            current_pace is not None
+            and candidate_pace is not None
+            and current_pace > 0
+            and candidate_pace > 0
+        ):
+            weight = max(
+                min(
+                    current_phase.get("distance_km", 0.0),
+                    candidate_phase.get("distance_km", 0.0),
+                ),
+                0.25,
+            )
+            pace_ratios.append(
+                (current_pace / candidate_pace, weight)
+            )
+
+        current_volume = current_phase.get("distance_km", 0.0)
+        candidate_volume = candidate_phase.get("distance_km", 0.0)
+
+        if current_volume > 0 and candidate_volume > 0:
+            volume_ratios.append(
+                (
+                    current_volume / candidate_volume,
+                    max(min(current_volume, candidate_volume), 0.25),
+                )
+            )
+
+    def weighted_ratio(values):
+        if not values:
+            return None
+
+        total_weight = sum(weight for _, weight in values)
+        return sum(value * weight for value, weight in values) / total_weight
+
+    return {
+        "similarity": similarity,
+        "reasons": reasons,
+        "differences": differences,
+        "feature_scores": feature_scores,
+        "pace_ratio": weighted_ratio(pace_ratios),
+        "volume_ratio": weighted_ratio(volume_ratios),
+    }
+
 def similarity_result_to_dict(result: SimilarityResult) -> dict[str, Any]:
     return {
         "athlete_id": result.athlete_id,

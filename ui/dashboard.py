@@ -839,7 +839,19 @@ def render_evidence_card(item):
                 "workout_prediction"
             )
             if workout_prediction:
-                st.markdown("**Workout-derived race prediction**")
+                prediction_source = item.metadata.get(
+                    "prediction_source",
+                    "formula_fallback",
+                )
+                source_label = (
+                    "PB Shape prediction"
+                    if prediction_source == "pb_shape"
+                    else "Historical similarity prediction"
+                    if prediction_source == "historical_similarity"
+                    else "Formula fallback prediction"
+                )
+
+                st.markdown(f"**{source_label}**")
                 prediction_columns = st.columns(3)
                 prediction_columns[0].metric(
                     "Central estimate",
@@ -858,51 +870,162 @@ def render_evidence_card(item):
                     "Prediction confidence",
                     f"{workout_prediction.get('confidence', 0):.0%}",
                 )
-                st.caption(
-                    f"{workout_prediction.get('conditions', 'Ideal conditions')} · "
-                    f"based on {workout_prediction.get('estimate_count', 0)} "
-                    "representative workout estimate(s). Recognition confidence "
-                    "and prediction confidence are deliberately separate."
-                )
+                if prediction_source == "pb_shape":
+                    st.caption(
+                        "Compared with the athlete's recognised workouts "
+                        "7-28 days before their PB at this goal distance."
+                    )
+                elif prediction_source == "historical_similarity":
+                    st.caption(
+                        "Ideal, flat conditions · based on "
+                        f"{workout_prediction.get('distinct_race_count', 0)} "
+                        "distinct historical race outcome(s) following similar "
+                        "workouts. Recognition and prediction confidence remain "
+                        "separate."
+                    )
+                else:
+                    st.caption(
+                        f"{workout_prediction.get('conditions', 'Ideal conditions')} · "
+                        f"based on {workout_prediction.get('estimate_count', 0)} "
+                        "representative workout estimate(s). Recognition confidence "
+                        "and prediction confidence are deliberately separate."
+                    )
 
-                with st.expander("How each workout predicted the goal"):
-                    for estimate in workout_prediction.get("estimates", []):
-                        st.write(
-                            f"**{estimate.get('date', '—')} · "
-                            f"{estimate.get('description', '—')}**"
-                        )
-                        st.write(
-                            f"Estimate: "
-                            f"{format_clock(estimate.get('predicted_seconds'))} · "
-                            f"prediction quality "
-                            f"{estimate.get('quality', 0):.0%} · "
-                            f"trust {estimate.get('trust_score', 0):.0f}/100"
-                        )
+                if prediction_source == "pb_shape":
+                    st.markdown("**PB benchmark**")
+                    pb_columns = st.columns(3)
+                    pb_columns[0].metric(
+                        "PB",
+                        format_clock(
+                            workout_prediction.get("pb_time_s")
+                        ),
+                    )
+                    pb_columns[1].metric(
+                        "PB date",
+                        workout_prediction.get("pb_date", "—"),
+                    )
+                    shape_percent = workout_prediction.get(
+                        "current_shape_percent"
+                    )
+                    pb_columns[2].metric(
+                        "Current PB shape",
+                        (
+                            f"{shape_percent:.1f}%"
+                            if shape_percent is not None
+                            else "—"
+                        ),
+                    )
 
-                        component_summary = estimate.get(
-                            "component_summary"
-                        )
-                        if component_summary:
-                            st.caption(
-                                "Components: " + component_summary
-                            )
-
-                        for component in estimate.get("components", []):
-                            pace_seconds = component.get(
-                                "average_pace_s_per_km"
-                            )
-                            pace_text = (
-                                format_pace_value(pace_seconds)
-                                if pace_seconds is not None
-                                else "—"
+                    with st.expander(
+                        "Workouts behind the PB Shape comparison"
+                    ):
+                        for match in workout_prediction.get(
+                            "matches",
+                            [],
+                        ):
+                            st.write(
+                                f"**{match.get('date', '—')} · "
+                                f"{match.get('similarity', 0):.0%} similar**"
                             )
                             st.write(
-                                f"• {component.get('label', 'Component')}: "
-                                f"{component.get('rep_count', 0)} reps · "
-                                f"{component.get('average_rep_distance_km', 0):.2f} km "
-                                f"average · {pace_text} · component estimate "
-                                f"{format_clock(component.get('predicted_seconds'))}"
+                                "PB-shape equivalent: "
+                                f"{format_clock(match.get('estimated_seconds'))}"
                             )
+                            reasons = match.get("reasons", [])
+                            if reasons:
+                                st.caption(
+                                    "Why matched: " + "; ".join(reasons)
+                                )
+                            differences = match.get("differences", [])
+                            if differences:
+                                st.caption(
+                                    "Differences: "
+                                    + "; ".join(differences)
+                                )
+
+                        for limitation in workout_prediction.get(
+                            "limitations",
+                            [],
+                        ):
+                            st.caption("PB Shape note: " + limitation)
+
+                elif prediction_source == "historical_similarity":
+                    with st.expander(
+                        "Historical outcomes behind this prediction"
+                    ):
+                        for outcome in workout_prediction.get(
+                            "outcomes",
+                            [],
+                        ):
+                            st.write(
+                                f"**Workout {outcome.get('workout_date', '—')} · "
+                                f"{outcome.get('similarity', 0):.0%} similar**"
+                            )
+                            st.write(
+                                f"Race {outcome.get('days_after', 0)} days later: "
+                                f"{outcome.get('race_distance_km', 0):.2f} km in "
+                                f"{format_clock(outcome.get('race_time_s'))} · "
+                                "goal-distance equivalent "
+                                f"{format_clock(outcome.get('equivalent_goal_time_s'))}"
+                            )
+                            reasons = outcome.get("reasons", [])
+                            if reasons:
+                                st.caption(
+                                    "Why matched: " + "; ".join(reasons)
+                                )
+
+                        for limitation in workout_prediction.get(
+                            "limitations",
+                            [],
+                        ):
+                            st.caption("Prediction note: " + limitation)
+                else:
+                    with st.expander(
+                        "How each workout predicted the goal"
+                    ):
+                        for estimate in workout_prediction.get(
+                            "estimates",
+                            [],
+                        ):
+                            st.write(
+                                f"**{estimate.get('date', '—')} · "
+                                f"{estimate.get('description', '—')}**"
+                            )
+                            st.write(
+                                f"Estimate: "
+                                f"{format_clock(estimate.get('predicted_seconds'))} · "
+                                f"prediction quality "
+                                f"{estimate.get('quality', 0):.0%} · "
+                                f"trust {estimate.get('trust_score', 0):.0f}/100"
+                            )
+
+                            component_summary = estimate.get(
+                                "component_summary"
+                            )
+                            if component_summary:
+                                st.caption(
+                                    "Components: " + component_summary
+                                )
+
+                            for component in estimate.get(
+                                "components",
+                                [],
+                            ):
+                                pace_seconds = component.get(
+                                    "average_pace_s_per_km"
+                                )
+                                pace_text = (
+                                    format_pace_value(pace_seconds)
+                                    if pace_seconds is not None
+                                    else "—"
+                                )
+                                st.write(
+                                    f"• {component.get('label', 'Component')}: "
+                                    f"{component.get('rep_count', 0)} reps · "
+                                    f"{component.get('average_rep_distance_km', 0):.2f} km "
+                                    f"average · {pace_text} · component estimate "
+                                    f"{format_clock(component.get('predicted_seconds'))}"
+                                )
 
             phase_engine = item.metadata.get("workout_phases")
             if isinstance(phase_engine, dict):
