@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.capability import Capability
+from core.environment_profile import PersonalEnvironmentProfile
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,7 @@ def build_environment_forecast(
     capability: Capability,
     *,
     distance_km: float | None,
+    personal_profile: PersonalEnvironmentProfile | None = None,
 ) -> EnvironmentForecast:
     if not capability.available or capability.central_seconds is None:
         return EnvironmentForecast(
@@ -146,6 +148,30 @@ def build_environment_forecast(
 
     for definition in SCENARIOS:
         adjustment = float(definition["adjustment"])
+        personal_multiplier = 1.0
+        personal_confidence = 0.0
+
+        if personal_profile is not None:
+            if definition["key"] in {"warm", "hot"}:
+                personal_multiplier = personal_profile.heat_multiplier
+                personal_confidence = personal_profile.heat_confidence
+            elif definition["key"] == "hilly":
+                personal_multiplier = personal_profile.hill_multiplier
+                personal_confidence = personal_profile.hill_confidence
+            elif definition["key"] == "trail":
+                personal_multiplier = personal_profile.trail_multiplier
+                personal_confidence = personal_profile.trail_confidence
+
+        if personal_confidence > 0:
+            # Blend personal response with the generic model. Strong evidence
+            # can contribute up to 75% of the final scenario adjustment.
+            blend = min(personal_confidence * 0.75, 0.75)
+            adjusted_multiplier = (
+                1.0 * (1.0 - blend)
+                + personal_multiplier * blend
+            )
+            adjustment *= adjusted_multiplier
+
         multiplier = 1.0 + adjustment
         central = baseline * multiplier
         low = baseline_low * multiplier
@@ -156,10 +182,13 @@ def build_environment_forecast(
             0.97,
         )
 
+        personalised = personal_confidence >= 0.25
         notes = [
             (
-                "Generic scenario adjustment only; personal response is not "
-                "yet learned."
+                "Personal historical response blended with the generic model."
+                if personalised
+                else "Generic scenario adjustment retained while personal "
+                "evidence builds."
             )
         ]
 
@@ -196,7 +225,7 @@ def build_environment_forecast(
                 ),
                 adjustment_percent=round(adjustment * 100, 1),
                 confidence=round(confidence, 4),
-                personalised=False,
+                personalised=personalised,
                 notes=tuple(notes),
             )
         )
@@ -209,11 +238,14 @@ def build_environment_forecast(
         headline="How current capability changes with conditions",
         summary=(
             "The athlete's underlying capability stays the same; each "
-            "scenario estimates how conditions may change the realised time."
+            "scenario estimates how conditions may change the realised time. "
+            "Where enough comparable history exists, personal response is "
+            "blended with the generic model."
         ),
         confidence=capability.confidence,
         limitations=(
-            "Adjustments are generic in version 1.",
+            "Personal adjustments remain conservative and are blended "
+            "with generic assumptions.",
             "Humidity, dew point, wind, exact elevation and technical trail "
             "difficulty are not yet entered separately.",
             "Future versions will learn each athlete's personal heat, hill "

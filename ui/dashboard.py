@@ -18,6 +18,7 @@ from core.coaching import (
 from core.database import get_active_goal, get_connection
 from core.evidence import EvidenceStatus
 from core.environment_forecast import build_environment_forecast
+from core.environment_profile import build_personal_environment_profile
 from core.performance_dna import build_performance_dna
 
 
@@ -828,6 +829,45 @@ def render_capability_card(capability):
             st.write(f"• {limitation}")
 
 
+
+def render_personal_environment_profile(profile):
+    st.markdown("### Personal environment response")
+
+    columns = st.columns(3)
+    columns[0].metric(
+        "Heat response",
+        f"{profile.heat_multiplier:.2f}× generic",
+    )
+    columns[0].caption(
+        f"{profile.heat_sample_size} comparable pairs · "
+        f"{profile.heat_confidence:.0%} confidence"
+    )
+
+    columns[1].metric(
+        "Hill response",
+        f"{profile.hill_multiplier:.2f}× generic",
+    )
+    columns[1].caption(
+        f"{profile.hill_sample_size} comparable pairs · "
+        f"{profile.hill_confidence:.0%} confidence"
+    )
+
+    columns[2].metric(
+        "Trail response",
+        f"{profile.trail_multiplier:.2f}× generic",
+    )
+    columns[2].caption(
+        f"{profile.trail_sample_size} comparable pairs · "
+        f"{profile.trail_confidence:.0%} confidence"
+    )
+
+    with st.expander("Why these personal environment scores?"):
+        for reason in profile.reasons:
+            st.write(f"✓ {reason}")
+
+        for limitation in profile.limitations:
+            st.write(f"• {limitation}")
+
 def render_environment_forecast(forecast):
     st.markdown("## Performance forecast")
 
@@ -878,6 +918,8 @@ def render_environment_forecast(forecast):
             st.caption(
                 f"Forecast confidence {scenario.confidence:.0%}"
             )
+            if scenario.personalised:
+                st.caption("✓ Personal response applied")
 
     with st.expander("How environmental forecasts work"):
         st.write(
@@ -885,6 +927,9 @@ def render_environment_forecast(forecast):
             "The Environment Engine changes only the expected realised "
             "time under different conditions."
         )
+
+        if "personal_environment_profile" in globals():
+            pass
 
         for limitation in forecast.limitations:
             st.write(f"• {limitation}")
@@ -1966,13 +2011,18 @@ def show_dashboard():
             else None
         ),
     )
+    thresholds = get_athlete_thresholds(athlete_id)
+    run_profiles = get_run_profiles(athlete_id, thresholds)
+
+    personal_environment_profile = build_personal_environment_profile(
+        run_profiles,
+        athlete_id=athlete_id,
+    )
     environment_forecast = build_environment_forecast(
         capability,
         distance_km=goal_distance_km(goal),
+        personal_profile=personal_environment_profile,
     )
-
-    thresholds = get_athlete_thresholds(athlete_id)
-    run_profiles = get_run_profiles(athlete_id, thresholds)
 
     current_baseline = build_baseline(
         runs=run_profiles,
@@ -2013,6 +2063,9 @@ def show_dashboard():
     )
 
     render_capability_card(capability)
+    render_personal_environment_profile(
+        personal_environment_profile
+    )
     render_environment_forecast(environment_forecast)
 
     st.markdown("## Goal and context")
