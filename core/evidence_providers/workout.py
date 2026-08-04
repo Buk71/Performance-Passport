@@ -25,6 +25,7 @@ from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
 from core.workout_library import upsert_workout
+from core.workout_race_linker import refresh_workout_race_links
 from core.workout_phases import (
     phases_to_dicts,
     reconstruct_workout_phases,
@@ -1098,6 +1099,13 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             item["trust_reasons"] = _reason_for_trust(item)
             candidates.append(item)
 
+        try:
+            race_link_summary = refresh_workout_race_links(
+                context.athlete_id
+            )
+        except Exception:
+            race_link_summary = None
+
         if not candidates:
             return EvidenceItem(
                 key=self.key,
@@ -1354,6 +1362,21 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     "write_errors": library_write_errors,
                     "decoder_version": WORKOUT_LIBRARY_DECODER_VERSION,
                 },
+                "workout_race_links": (
+                    {
+                        "workout_count":
+                            race_link_summary.workout_count,
+                        "race_candidate_count":
+                            race_link_summary.race_candidate_count,
+                        "links_written":
+                            race_link_summary.links_written,
+                        "links_deleted":
+                            race_link_summary.links_deleted,
+                        "errors": race_link_summary.errors,
+                    }
+                    if race_link_summary is not None
+                    else None
+                ),
                 "session_counts": dict(session_counts),
                 "strengths": strengths,
                 "limitations": limitations,
