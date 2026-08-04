@@ -25,6 +25,7 @@ from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.pb_shape import build_pb_shape, pb_shape_to_dict
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
+from core.workout_dna import build_workout_dna, workout_dna_to_dict
 from core.workout_library import upsert_workout
 from core.workout_similarity import (
     find_similar_linked_workouts,
@@ -1077,6 +1078,24 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             item["phase_components"] = phase_components
             item["phase_metadata"] = phase_metadata
 
+            workout_dna = build_workout_dna(
+                phases=phase_metadata.get("phases", []),
+                activity_id=session.activity_id,
+                athlete_id=session.athlete_id,
+                execution_score=workout.execution_score,
+                recognition_confidence=workout.confidence,
+                phase_confidence=float(
+                    phase_metadata.get("confidence") or 0.0
+                ),
+                source=str(
+                    phase_metadata.get("source")
+                    or "runalyze_csv"
+                ),
+            )
+            item["workout_dna"] = workout_dna_to_dict(
+                workout_dna
+            )
+
             try:
                 upsert_workout(
                     activity_id=session.activity_id,
@@ -1347,6 +1366,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     "average_rep_pace_s_per_km":
                         workout.average_rep_pace_s_per_km,
                     "trust_reasons": item["trust_reasons"],
+                    "workout_dna": item.get("workout_dna"),
                 }
             )
 
@@ -1373,6 +1393,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
         strengths = [
             f"{len(candidates)} recognised workout(s) in the athlete history",
+            (
+                "Best current workout DNA: "
+                f"{best.get('workout_dna', {}).get('primary_label', 'Unknown')}"
+            ),
             f"Strongest {len(strongest)} recent workout(s) were ranked by "
             "recency, structure, recognition and execution",
             f"Best evidence trust score {best['trust_score']:.0f}/100",
@@ -1467,6 +1491,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     ),
                 },
                 "workout_phases": best.get("phase_metadata", {}),
+                "latest_workout_dna": latest.get("workout_dna"),
+                "best_workout_dna": best.get("workout_dna"),
                 "best_evidence": {
                     "date": (
                         best_session.activity_date[:10]

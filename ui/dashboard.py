@@ -971,6 +971,126 @@ def render_evidence_card(item):
                 ):
                     st.caption("Similarity note: " + limitation)
 
+            best_workout_dna = item.metadata.get(
+                "best_workout_dna"
+            )
+            latest_workout_dna = item.metadata.get(
+                "latest_workout_dna"
+            )
+
+            if isinstance(best_workout_dna, dict):
+                st.markdown("**Workout DNA**")
+
+                dna_columns = st.columns(4)
+                dna_columns[0].metric(
+                    "Primary intent",
+                    best_workout_dna.get(
+                        "primary_label",
+                        "Unknown",
+                    ),
+                )
+                dna_columns[1].metric(
+                    "Archetype",
+                    best_workout_dna.get(
+                        "archetype",
+                        "Structured workout",
+                    ),
+                )
+                dna_columns[2].metric(
+                    "DNA confidence",
+                    f"{best_workout_dna.get('confidence', 0):.0%}",
+                )
+                dna_columns[3].metric(
+                    "Execution",
+                    (
+                        f"{best_workout_dna.get('execution_quality'):.0f}/100"
+                        if best_workout_dna.get("execution_quality")
+                        is not None
+                        else "—"
+                    ),
+                )
+
+                st.caption(
+                    "Workout DNA describes the physiological purpose of the "
+                    "best current evidence, rather than only its lap pattern."
+                )
+
+                stimulus_scores = best_workout_dna.get(
+                    "stimulus_scores",
+                    {},
+                )
+
+                labels = {
+                    "threshold": "❤️ Threshold",
+                    "speed": "⚡ Speed / VO₂",
+                    "endurance": "🧱 Endurance",
+                    "aerobic": "😊 Aerobic",
+                }
+
+                for system_key in (
+                    "threshold",
+                    "speed",
+                    "endurance",
+                    "aerobic",
+                ):
+                    score = float(
+                        stimulus_scores.get(system_key, 0) or 0
+                    )
+                    st.write(
+                        f"{labels[system_key]} — **{score:.0f}/100**"
+                    )
+                    st.progress(
+                        min(max(score / 100.0, 0.0), 1.0)
+                    )
+
+                secondary = best_workout_dna.get(
+                    "secondary_systems",
+                    [],
+                )
+                if secondary:
+                    st.caption(
+                        "Secondary systems: "
+                        + ", ".join(
+                            system.replace("_", " ").title()
+                            for system in secondary
+                        )
+                    )
+
+                with st.expander("Why this Workout DNA?"):
+                    reasons = best_workout_dna.get(
+                        "reasons",
+                        [],
+                    )
+                    limitations = best_workout_dna.get(
+                        "limitations",
+                        [],
+                    )
+
+                    if reasons:
+                        st.markdown("**Evidence**")
+                        for reason in reasons:
+                            st.write(f"✓ {reason}")
+
+                    if limitations:
+                        st.markdown("**Limitations**")
+                        for limitation in limitations:
+                            st.write(f"• {limitation}")
+
+                    if (
+                        isinstance(latest_workout_dna, dict)
+                        and latest_workout_dna.get("activity_id")
+                        != best_workout_dna.get("activity_id")
+                    ):
+                        st.markdown("**Latest versus best evidence**")
+                        st.write(
+                            "Latest workout intent: "
+                            f"{latest_workout_dna.get('primary_label', 'Unknown')}"
+                        )
+                        st.write(
+                            "Best current evidence intent: "
+                            f"{best_workout_dna.get('primary_label', 'Unknown')}"
+                        )
+
             workout_prediction = item.metadata.get(
                 "workout_prediction"
             )
