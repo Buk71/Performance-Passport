@@ -786,8 +786,8 @@ def render_capability_card(capability):
         ),
     )
     columns[2].metric(
-        "Capability confidence",
-        f"{capability.confidence:.0%}",
+        "Evidence strength",
+        confidence_label(capability.confidence),
     )
 
     if capability.target_probability is not None:
@@ -818,6 +818,11 @@ def render_capability_card(capability):
         st.caption(gap_text)
 
     with st.expander("Why this capability estimate?"):
+        st.write(
+            f"**Calculated confidence:** "
+            f"{capability.confidence:.0%}"
+        )
+
         for item in capability.evidence:
             st.write(f"✓ {item}")
 
@@ -830,43 +835,162 @@ def render_capability_card(capability):
 
 
 
+
+def confidence_label(confidence):
+    if confidence >= 0.85:
+        return "Very strong evidence"
+    if confidence >= 0.70:
+        return "Strong evidence"
+    if confidence >= 0.50:
+        return "Moderate evidence"
+    if confidence >= 0.25:
+        return "Early evidence"
+    return "Still learning"
+
+
+def response_badge(multiplier, confidence):
+    if confidence < 0.25:
+        return "Still learning"
+
+    difference = abs(multiplier - 1.0)
+
+    if difference < 0.08:
+        return "About average"
+
+    if multiplier < 0.70:
+        return "Exceptional"
+    if multiplier < 0.88:
+        return "Very good"
+    if multiplier < 1.0:
+        return "Better than average"
+    if multiplier <= 1.15:
+        return "Slightly more affected"
+    if multiplier <= 1.35:
+        return "More affected"
+    return "Significantly more affected"
+
+
+def environment_coaching_text(
+    *,
+    condition,
+    multiplier,
+    confidence,
+):
+    if confidence < 0.25:
+        return (
+            f"Performance Passport is still learning how {condition} "
+            "affects you."
+        )
+
+    difference_percent = abs(multiplier - 1.0) * 100
+
+    if difference_percent < 5:
+        return (
+            f"{condition.title()} appears to affect you about as much as "
+            "the standard runner model expects."
+        )
+
+    if multiplier < 1.0:
+        return (
+            f"You appear to cope with {condition} around "
+            f"{difference_percent:.0f}% better than the standard model."
+        )
+
+    return (
+        f"{condition.title()} appears to affect you around "
+        f"{difference_percent:.0f}% more than the standard model."
+    )
+
+
+def environment_sample_text(
+    *,
+    sample_size,
+    confidence,
+):
+    if confidence < 0.25:
+        return (
+            f"{sample_size} comparable examples available · "
+            "more evidence needed"
+        )
+
+    return (
+        f"{sample_size} comparable examples · "
+        f"{confidence_label(confidence)}"
+    )
+
 def render_personal_environment_profile(profile):
-    st.markdown("### Personal environment response")
+    st.markdown("### 🌍 Environmental profile")
+    st.caption(
+        "How your historical runs suggest you respond to heat, hills and "
+        "trail compared with the standard forecast model."
+    )
+
+    conditions = (
+        {
+            "label": "🔥 Heat",
+            "name": "heat",
+            "multiplier": profile.heat_multiplier,
+            "sample_size": profile.heat_sample_size,
+            "confidence": profile.heat_confidence,
+        },
+        {
+            "label": "⛰️ Hills",
+            "name": "hills",
+            "multiplier": profile.hill_multiplier,
+            "sample_size": profile.hill_sample_size,
+            "confidence": profile.hill_confidence,
+        },
+        {
+            "label": "🌲 Trail",
+            "name": "trail",
+            "multiplier": profile.trail_multiplier,
+            "sample_size": profile.trail_sample_size,
+            "confidence": profile.trail_confidence,
+        },
+    )
 
     columns = st.columns(3)
-    columns[0].metric(
-        "Heat response",
-        f"{profile.heat_multiplier:.2f}× generic",
-    )
-    columns[0].caption(
-        f"{profile.heat_sample_size} comparable pairs · "
-        f"{profile.heat_confidence:.0%} confidence"
-    )
 
-    columns[1].metric(
-        "Hill response",
-        f"{profile.hill_multiplier:.2f}× generic",
-    )
-    columns[1].caption(
-        f"{profile.hill_sample_size} comparable pairs · "
-        f"{profile.hill_confidence:.0%} confidence"
-    )
+    for column, condition in zip(columns, conditions):
+        with column:
+            st.markdown(f"**{condition['label']}**")
+            badge = response_badge(
+                condition["multiplier"],
+                condition["confidence"],
+            )
+            st.markdown(f"### {badge}")
+            st.write(
+                environment_coaching_text(
+                    condition=condition["name"],
+                    multiplier=condition["multiplier"],
+                    confidence=condition["confidence"],
+                )
+            )
+            st.caption(
+                environment_sample_text(
+                    sample_size=condition["sample_size"],
+                    confidence=condition["confidence"],
+                )
+            )
 
-    columns[2].metric(
-        "Trail response",
-        f"{profile.trail_multiplier:.2f}× generic",
-    )
-    columns[2].caption(
-        f"{profile.trail_sample_size} comparable pairs · "
-        f"{profile.trail_confidence:.0%} confidence"
-    )
+    with st.expander("Why does the coach believe this?"):
+        st.write(
+            "The engine compares pace relative to heart rate across "
+            "similar historical runs. It keeps the calculations in the "
+            "background and blends personal evidence conservatively with "
+            "the standard forecast model."
+        )
 
-    with st.expander("Why these personal environment scores?"):
         for reason in profile.reasons:
             st.write(f"✓ {reason}")
 
         for limitation in profile.limitations:
             st.write(f"• {limitation}")
+
+        st.caption(
+            "Technical coefficients remain internal because they are model "
+            "inputs, not useful coaching language."
+        )
 
 def render_environment_forecast(forecast):
     st.markdown("## Performance forecast")
@@ -919,7 +1043,13 @@ def render_environment_forecast(forecast):
                 f"Forecast confidence {scenario.confidence:.0%}"
             )
             if scenario.personalised:
-                st.caption("✓ Personal response applied")
+                st.caption(
+                    "✓ Adjusted using your Environmental Profile"
+                )
+            else:
+                st.caption(
+                    "Standard model · personal evidence still building"
+                )
 
     with st.expander("How environmental forecasts work"):
         st.write(
