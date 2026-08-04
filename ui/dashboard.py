@@ -446,6 +446,48 @@ def render_coaching_meeting(performance_dna, prediction):
         """
     )
 
+    if any(performance_dna.system_scores.values()):
+        st.markdown("### Current performance systems")
+
+        system_labels = {
+            "threshold": "❤️ Threshold",
+            "speed": "⚡ Speed / VO₂",
+            "endurance": "🧱 Endurance",
+            "aerobic": "😊 Aerobic",
+        }
+
+        st.caption(
+            (
+                f"Workout archetype: {performance_dna.workout_archetype} · "
+                f"DNA confidence {performance_dna.workout_dna_confidence:.0%}"
+            )
+            if performance_dna.workout_archetype
+            else (
+                f"Workout DNA confidence "
+                f"{performance_dna.workout_dna_confidence:.0%}"
+            )
+        )
+
+        system_columns = st.columns(4)
+
+        for column, system_key in zip(
+            system_columns,
+            ("threshold", "speed", "endurance", "aerobic"),
+        ):
+            score = performance_dna.system_scores.get(
+                system_key,
+                0,
+            )
+
+            with column:
+                st.metric(
+                    system_labels[system_key],
+                    f"{score:.0f}/100",
+                )
+                st.progress(
+                    min(max(score / 100.0, 0.0), 1.0)
+                )
+
     st.markdown("### Today's coaching meeting")
 
     for verdict in performance_dna.verdicts:
@@ -492,12 +534,33 @@ def render_coaching_meeting(performance_dna, prediction):
         )
 
     if performance_dna.strongest_signal:
-        st.caption(
-            "Strongest current signal: "
-            f"{performance_dna.strongest_signal}. "
-            "This is a first shared DNA view; deeper threshold, easy-run, "
-            "endurance and readiness comparisons come next."
+        message = (
+            "Strongest specialist evidence: "
+            f"{performance_dna.strongest_signal}."
         )
+
+        if any(performance_dna.system_scores.values()):
+            strongest_system = max(
+                performance_dna.system_scores,
+                key=performance_dna.system_scores.get,
+            )
+            weakest_system = min(
+                performance_dna.system_scores,
+                key=performance_dna.system_scores.get,
+            )
+            label_map = {
+                "threshold": "Threshold",
+                "speed": "Speed / VO₂",
+                "endurance": "Endurance",
+                "aerobic": "Aerobic",
+            }
+            message += (
+                f" Workout DNA is currently strongest in "
+                f"{label_map[strongest_system]} and weakest in "
+                f"{label_map[weakest_system]}."
+            )
+
+        st.caption(message)
 
 def render_daily_coach(
     first_name,

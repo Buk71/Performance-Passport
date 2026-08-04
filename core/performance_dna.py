@@ -47,6 +47,9 @@ class PerformanceDNA:
     strongest_signal: str | None
     limiting_signal: str | None
     verdicts: tuple[CoachVerdict, ...]
+    system_scores: dict[str, float]
+    workout_archetype: str | None
+    workout_dna_confidence: float
     available_coach_count: int
     total_coach_count: int
 
@@ -348,6 +351,48 @@ def build_performance_dna(
             f"{'es are' if remaining != 1 else ' is'} still being connected."
         )
 
+    workout_item = item_by_key.get("workout")
+    workout_dna = (
+        workout_item.metadata.get("best_workout_dna", {})
+        if workout_item is not None
+        else {}
+    )
+
+    raw_system_scores = workout_dna.get("stimulus_scores", {})
+    system_scores = {
+        "threshold": float(raw_system_scores.get("threshold", 0) or 0),
+        "speed": float(raw_system_scores.get("speed", 0) or 0),
+        "endurance": float(raw_system_scores.get("endurance", 0) or 0),
+        "aerobic": float(raw_system_scores.get("aerobic", 0) or 0),
+    }
+    workout_archetype = workout_dna.get("archetype")
+    workout_dna_confidence = float(
+        workout_dna.get("confidence", 0) or 0
+    )
+
+    if any(system_scores.values()):
+        strongest_system = max(
+            system_scores,
+            key=system_scores.get,
+        )
+        weakest_system = min(
+            system_scores,
+            key=system_scores.get,
+        )
+
+        label_map = {
+            "threshold": "Threshold",
+            "speed": "Speed / VO₂",
+            "endurance": "Endurance",
+            "aerobic": "Aerobic",
+        }
+
+        summary += (
+            f" Current Workout DNA is strongest in "
+            f"{label_map[strongest_system]} and weakest in "
+            f"{label_map[weakest_system]}."
+        )
+
     return PerformanceDNA(
         athlete_id=evidence_bundle.athlete_id,
         overall_confidence=round(overall_confidence, 4),
@@ -361,6 +406,9 @@ def build_performance_dna(
             weakest.signal if weakest is not None else None
         ),
         verdicts=tuple(verdicts),
+        system_scores=system_scores,
+        workout_archetype=workout_archetype,
+        workout_dna_confidence=workout_dna_confidence,
         available_coach_count=available_count,
         total_coach_count=len(verdicts),
     )
@@ -379,6 +427,9 @@ def performance_dna_to_dict(
         "limiting_signal": dna.limiting_signal,
         "available_coach_count": dna.available_coach_count,
         "total_coach_count": dna.total_coach_count,
+        "system_scores": dna.system_scores,
+        "workout_archetype": dna.workout_archetype,
+        "workout_dna_confidence": dna.workout_dna_confidence,
         "verdicts": [
             {
                 "key": verdict.key,
