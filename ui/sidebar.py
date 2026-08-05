@@ -8,6 +8,7 @@ PRIMARY_NAVIGATION = [
     "Activities",
     "Progress",
     "Goal",
+    "Hall of Fame",
     "Passport",
 ]
 

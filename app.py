@@ -7,6 +7,7 @@ from ui.athletes import show_athletes_page
 from ui.dashboard import show_dashboard
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
+from ui.hall_of_fame import show_hall_of_fame_page
 from ui.sidebar import show_sidebar
 from ui.settings import show_settings_page
 
@@ -58,6 +59,9 @@ elif page == "Goal":
             "the next meaningful milestone."
         ),
     )
+
+elif page == "Hall of Fame":
+    show_hall_of_fame_page()
 
 elif page == "Passport":
     render_page_placeholder(

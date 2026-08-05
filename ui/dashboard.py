@@ -4,6 +4,8 @@ import textwrap
 
 import streamlit as st
 
+from ui.athlete_selection import render_athlete_selector
+
 from core.capability import build_capability
 from core.actionable_coaching import ActionableRecommendation
 from core.coach_brain import CoachBrain
@@ -2474,37 +2476,40 @@ def render_recent_activities(run_profiles):
 
 
 def show_dashboard():
-    athletes = get_athletes()
-
-    if not athletes:
-        st.warning("No athletes found. Add an athlete first.")
-        return
-
-    athlete_options = {
-        athlete_full_name(first_name, last_name): {
-            "id": athlete_id,
-            "first_name": first_name or "Athlete",
-        }
-        for athlete_id, first_name, last_name in athletes
-    }
-
-    athlete_names = list(athlete_options.keys())
-    initialise_selected_athlete(athlete_names)
-
     selector_col, _ = st.columns([0.35, 0.65])
 
     with selector_col:
-        st.selectbox(
-            "Athlete",
-            athlete_names,
-            key="athlete_selector_widget",
-            on_change=update_selected_athlete,
+        athlete_id = render_athlete_selector(
+            key="coach_athlete_selector",
+            label="Athlete",
             label_visibility="collapsed",
         )
 
-    selected_name = st.session_state.selected_athlete_name
-    selected = athlete_options[selected_name]
-    athlete_id = selected["id"]
+    if athlete_id is None:
+        st.warning("No athletes found. Add an athlete first.")
+        return
+
+    athlete_connection = get_connection()
+    athlete_cursor = athlete_connection.cursor()
+    athlete_cursor.execute(
+        """
+        SELECT first_name, last_name
+        FROM athletes
+        WHERE id = ?
+        """,
+        (athlete_id,),
+    )
+    athlete_row = athlete_cursor.fetchone()
+    athlete_connection.close()
+
+    if athlete_row is None:
+        st.warning("The selected athlete could not be found.")
+        return
+
+    selected = {
+        "first_name": athlete_row[0] or "Athlete",
+        "last_name": athlete_row[1] or "",
+    }
 
     evidence_connection = get_connection()
     athlete_evidence_profile = build_athlete_evidence_profile(
