@@ -57,6 +57,56 @@ def _format_date(value):
         return str(value)
 
 
+
+def _format_date_with_weekday(value):
+    if not value:
+        return "Unknown date"
+
+    try:
+        parsed = datetime.date.fromisoformat(str(value)[:10])
+        return parsed.strftime("%a %-d %b %Y")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _meaningful_title(title, category, activity_date):
+    text = str(title or "").strip()
+    generic = {
+        "",
+        "run",
+        "running",
+        "morning run",
+        "afternoon run",
+        "evening run",
+        "activity",
+    }
+
+    if text.lower() not in generic:
+        return text
+
+    generated = {
+        "Best Easy Run Ever": "Easy Run",
+        "Best Long Easy Run": "Long Easy Run",
+        "Best Hot Run": "Hot-Weather Run",
+        "Best Trail Run": "Trail Run",
+        "Hidden Gem": "Hidden Gem Run",
+    }.get(category, "Run")
+
+    return generated
+
+
+def _equipment_text(value):
+    if not value:
+        return None
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    return text
+
+
 def show_hall_of_fame_page():
     st.title("🏆 Hall of Fame")
     st.write(
@@ -112,6 +162,24 @@ def show_hall_of_fame_page():
         st.info("The coaching awards are still building.")
     else:
         for award in hall.awards:
+            display_title = _meaningful_title(
+                award.title,
+                award.category,
+                award.activity_date,
+            )
+            identity_parts = [
+                _format_date_with_weekday(award.activity_date),
+            ]
+
+            if award.route_name:
+                identity_parts.append(str(award.route_name))
+
+            subtitle = " · ".join(
+                part
+                for part in identity_parts
+                if part
+            )
+
             _render_html(
                 f"""
                 <div class="pp-card">
@@ -119,7 +187,10 @@ def show_hall_of_fame_page():
                         {_safe_text(award.category)}
                     </div>
                     <div class="pp-card-title">
-                        {_safe_text(award.title)}
+                        {_safe_text(display_title)}
+                    </div>
+                    <div class="pp-card-copy">
+                        {_safe_text(subtitle)}
                     </div>
                     <div class="pp-card-copy">
                         {_safe_text(award.reason)}
@@ -143,9 +214,21 @@ def show_hall_of_fame_page():
                 _format_distance_miles(award.distance_km),
             )
 
+            memory_parts = [
+                award.environment_note,
+            ]
+
+            if award.equipment_ids:
+                memory_parts.append(
+                    f"Shoes/equipment: {_equipment_text(award.equipment_ids)}"
+                )
+
             st.caption(
-                f"{_format_date(award.activity_date)} · "
-                f"{award.environment_note}"
+                " · ".join(
+                    part
+                    for part in memory_parts
+                    if part
+                )
             )
 
             with st.expander(f"Why {award.category.lower()}?"):
@@ -165,6 +248,13 @@ def show_hall_of_fame_page():
                 if award.elevation_m is not None:
                     st.write(
                         f"• Elevation gain: {award.elevation_m:.0f} m"
+                    )
+                if award.route_name:
+                    st.write(f"• Route/location: {award.route_name}")
+                if award.equipment_ids:
+                    st.write(
+                        f"• Shoes/equipment: "
+                        f"{_equipment_text(award.equipment_ids)}"
                     )
 
             st.divider()

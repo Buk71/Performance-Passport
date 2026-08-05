@@ -73,6 +73,8 @@ class HallRun:
     humidity: float | None
     wind_speed: float | None
     elevation_m: float | None
+    route_name: str | None
+    equipment_ids: str | None
     score: float
     category: str
     reason: str
@@ -140,6 +142,8 @@ def _activity_rows(athlete_id: int):
             temperature_c,
             humidity,
             wind_speed,
+            route_name,
+            equipment_ids,
             raw_json
         FROM activities
         WHERE athlete_id = ?
@@ -181,6 +185,8 @@ def _profiles(athlete_id: int) -> list[tuple[int, RunProfile, dict[str, Any]]]:
             temperature_c,
             humidity,
             wind_speed,
+            route_name,
+            equipment_ids,
             raw_json,
         ) = row
 
@@ -227,6 +233,8 @@ def _profiles(athlete_id: int) -> list[tuple[int, RunProfile, dict[str, Any]]]:
         metadata = {
             "elapsed_time_s": _safe_float(elapsed_time_s),
             "wind_speed": _safe_float(wind_speed),
+            "route_name": route_name,
+            "equipment_ids": equipment_ids,
             "raw_json": raw_json,
         }
         profiles.append((activity_id, profile, metadata))
@@ -339,6 +347,8 @@ def _hall_run(
         humidity=_safe_float(profile.humidity),
         wind_speed=metadata.get("wind_speed"),
         elevation_m=_safe_float(profile.elevation_m),
+        route_name=metadata.get("route_name"),
+        equipment_ids=metadata.get("equipment_ids"),
         score=round(score, 1),
         category=category,
         reason=reason,
