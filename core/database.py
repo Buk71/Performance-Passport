@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def get_connection():
@@ -701,7 +701,250 @@ def create_workout_library_tables(cursor):
 def migrate_to_schema_v6(cursor):
     """Add the workout intelligence library and race-link foundation."""
     create_workout_library_tables(cursor)
+    create_threshold_overrides_table(cursor)
     set_schema_version(cursor, 6)
+
+
+def create_threshold_overrides_table(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_threshold_overrides (
+            athlete_id INTEGER PRIMARY KEY,
+            lt1_hr INTEGER,
+            lt2_hr INTEGER,
+            max_hr INTEGER,
+            source TEXT,
+            tested_at TEXT,
+            notes TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+
+
+def migrate_to_schema_v7(cursor):
+    """Add verified manual physiological-threshold overrides."""
+    create_threshold_overrides_table(cursor)
+    set_schema_version(cursor, 7)
+
+
+def get_effective_athlete_thresholds(athlete_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_threshold_overrides_table(cursor)
+
+    cursor.execute(
+        """
+        SELECT
+            a.lt1_hr,
+            a.lt2_hr,
+            a.max_hr,
+            o.lt1_hr,
+            o.lt2_hr,
+            o.max_hr,
+            o.source,
+            o.tested_at,
+            o.notes,
+            COALESCE(o.enabled, 0)
+        FROM athletes a
+        LEFT JOIN athlete_threshold_overrides o
+          ON o.athlete_id = a.id
+        WHERE a.id = ?
+        """,
+        (athlete_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return {
+            "lt1_hr": None,
+            "lt2_hr": None,
+            "athlete_max_hr": None,
+            "source": "Not set",
+        }
+
+    (
+        calculated_lt1,
+        calculated_lt2,
+        calculated_max,
+        manual_lt1,
+        manual_lt2,
+        manual_max,
+        manual_source,
+        tested_at,
+        notes,
+        enabled,
+    ) = row
+
+    use_manual = bool(enabled)
+
+    return {
+        "lt1_hr": manual_lt1 if use_manual and manual_lt1 else calculated_lt1,
+        "lt2_hr": manual_lt2 if use_manual and manual_lt2 else calculated_lt2,
+        "athlete_max_hr": (
+            manual_max if use_manual and manual_max else calculated_max
+        ),
+        "source": manual_source if use_manual else "Calculated profile",
+        "tested_at": tested_at if use_manual else None,
+        "notes": notes if use_manual else None,
+    }
+
+
+def get_athletes_with_effective_thresholds():
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_threshold_overrides_table(cursor)
+
+    cursor.execute(
+        """
+        SELECT
+            a.id,
+            a.first_name,
+            a.last_name,
+            a.lt1_hr,
+            a.lt2_hr,
+            a.max_hr,
+            o.lt1_hr,
+            o.lt2_hr,
+            o.max_hr,
+            o.source,
+            o.tested_at,
+            o.notes,
+            COALESCE(o.enabled, 0)
+        FROM athletes a
+        LEFT JOIN athlete_threshold_overrides o
+          ON o.athlete_id = a.id
+        ORDER BY a.first_name, a.last_name, a.id
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    athletes = []
+
+    for row in rows:
+        (
+            athlete_id,
+            first_name,
+            last_name,
+            calculated_lt1,
+            calculated_lt2,
+            calculated_max,
+            manual_lt1,
+            manual_lt2,
+            manual_max,
+            override_source,
+            tested_at,
+            override_notes,
+            override_enabled,
+        ) = row
+
+        use_manual = bool(override_enabled)
+
+        athletes.append(
+            {
+                "id": athlete_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "calculated_lt1_hr": calculated_lt1,
+                "calculated_lt2_hr": calculated_lt2,
+                "calculated_max_hr": calculated_max,
+                "manual_lt1_hr": manual_lt1,
+                "manual_lt2_hr": manual_lt2,
+                "manual_max_hr": manual_max,
+                "override_source": override_source,
+                "tested_at": tested_at,
+                "override_notes": override_notes,
+                "override_enabled": use_manual,
+                "effective_lt1_hr": (
+                    manual_lt1 if use_manual and manual_lt1 else calculated_lt1
+                ),
+                "effective_lt2_hr": (
+                    manual_lt2 if use_manual and manual_lt2 else calculated_lt2
+                ),
+                "effective_max_hr": (
+                    manual_max if use_manual and manual_max else calculated_max
+                ),
+                "effective_source": (
+                    override_source if use_manual else "Calculated profile"
+                ),
+            }
+        )
+
+    return athletes
+
+
+def save_threshold_override(
+    athlete_id,
+    lt1_hr,
+    lt2_hr,
+    max_hr,
+    source,
+    tested_at,
+    notes,
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_threshold_overrides_table(cursor)
+
+    cursor.execute(
+        """
+        INSERT INTO athlete_threshold_overrides (
+            athlete_id,
+            lt1_hr,
+            lt2_hr,
+            max_hr,
+            source,
+            tested_at,
+            notes,
+            enabled,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(athlete_id) DO UPDATE SET
+            lt1_hr = excluded.lt1_hr,
+            lt2_hr = excluded.lt2_hr,
+            max_hr = excluded.max_hr,
+            source = excluded.source,
+            tested_at = excluded.tested_at,
+            notes = excluded.notes,
+            enabled = 1,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            athlete_id,
+            lt1_hr,
+            lt2_hr,
+            max_hr,
+            source,
+            tested_at,
+            notes,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_threshold_override(athlete_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_threshold_overrides_table(cursor)
+    cursor.execute(
+        """
+        UPDATE athlete_threshold_overrides
+        SET enabled = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE athlete_id = ?
+        """,
+        (athlete_id,),
+    )
+    conn.commit()
+    conn.close()
 
 def initialise_database():
     conn = get_connection()
@@ -730,6 +973,10 @@ def initialise_database():
 
     if schema_version < 6:
         migrate_to_schema_v6(cursor)
+        schema_version = 6
+
+    if schema_version < 7:
+        migrate_to_schema_v7(cursor)
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)

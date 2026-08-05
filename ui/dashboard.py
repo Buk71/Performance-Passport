@@ -16,13 +16,18 @@ from core.coaching import (
     equivalent_performance,
     seconds_to_pace,
 )
-from core.database import get_active_goal, get_connection
+from core.database import (
+    get_active_goal,
+    get_connection,
+    get_effective_athlete_thresholds,
+)
 from core.evidence import EvidenceStatus
 from core.environment_forecast import build_environment_forecast
 from core.environment_profile import build_personal_environment_profile
 from core.easy_run_coach import build_easy_run_coach
 from core.evidence_engine import build_athlete_evidence_profile
 from core.performance_dna import build_performance_dna
+from core.training_blueprint import build_training_blueprint
 
 
 SPORT_MAP = {
@@ -96,32 +101,7 @@ def get_athletes():
 
 
 def get_athlete_thresholds(athlete_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT lt1_hr, lt2_hr, max_hr
-        FROM athletes
-        WHERE id = ?
-        """,
-        (athlete_id,),
-    )
-    row = cursor.fetchone()
-    conn.close()
-
-    if row is None:
-        return {
-            "lt1_hr": None,
-            "lt2_hr": None,
-            "athlete_max_hr": None,
-        }
-
-    return {
-        "lt1_hr": row[0],
-        "lt2_hr": row[1],
-        "athlete_max_hr": row[2],
-    }
-
+    return get_effective_athlete_thresholds(athlete_id)
 
 def get_lifetime_summary(athlete_id):
     conn = get_connection()
@@ -756,6 +736,161 @@ def goal_distance_km(goal):
     return None
 
 
+
+
+def render_training_blueprint(blueprint, thresholds):
+    st.markdown("## 🧬 Coach Blueprints")
+
+    render_html(
+        f"""
+        <div class="pp-card">
+            <div class="pp-card-label">Coach Blueprints</div>
+            <div class="pp-card-title">
+                {safe_text(blueprint.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(blueprint.summary)}
+            </div>
+        </div>
+        """
+    )
+
+    threshold_source = thresholds.get(
+        "source",
+        "Calculated profile",
+    )
+    st.caption(
+        f"Physiological boundary source: {threshold_source}. "
+        "Each coach learns what your strongest historical sessions "
+        "usually look like."
+    )
+
+    available = [
+        category
+        for category in blueprint.categories
+        if category.sample_size >= 4
+    ]
+
+    if not available:
+        st.info(
+            "Each coach needs at least four comparable sessions before "
+            "showing a personal blueprint."
+        )
+        return
+
+    coach_order = (
+        ("Easy Coach", "😊"),
+        ("Threshold Coach", "❤️"),
+        ("Speed Coach", "⚡"),
+    )
+
+    for coach_name, coach_icon in coach_order:
+        categories = [
+            category
+            for category in available
+            if category.coach == coach_name
+        ]
+
+        if not categories:
+            continue
+
+        st.markdown(
+            f"### {coach_icon} {coach_name}"
+        )
+        st.caption(
+            "This is what your strongest historical sessions "
+            "in this area usually look like."
+        )
+
+        columns = st.columns(
+            min(len(categories), 3)
+        )
+
+        for column, category in zip(
+            columns,
+            categories,
+        ):
+            with column:
+                st.markdown(
+                    f"**{category.label}**"
+                )
+
+                if (
+                    category.hr_low is not None
+                    and category.hr_high is not None
+                ):
+                    st.metric(
+                        "HR sweet spot",
+                        (
+                            f"{category.hr_low}–"
+                            f"{category.hr_high} bpm"
+                        ),
+                    )
+                else:
+                    st.metric(
+                        "HR sweet spot",
+                        "Still learning",
+                    )
+
+                if (
+                    category.show_pace
+                    and category.pace_low_s_per_km
+                    is not None
+                    and category.pace_high_s_per_km
+                    is not None
+                ):
+                    # Stored internally as seconds per kilometre; shown to
+                    # the runner in the app's miles-first display.
+                    faster = min(
+                        category.pace_low_s_per_km,
+                        category.pace_high_s_per_km,
+                    )
+                    slower = max(
+                        category.pace_low_s_per_km,
+                        category.pace_high_s_per_km,
+                    )
+                    st.caption(
+                        "Adjusted pace sweet spot: "
+                        f"{format_pace_per_mile(faster)}–"
+                        f"{format_pace_per_mile(slower)}"
+                    )
+                elif not category.show_pace:
+                    st.caption(
+                        "Workout-average pace hidden because warm-up, "
+                        "recoveries and cool-down distort it."
+                    )
+
+                if (
+                    category.typical_distance_km
+                    is not None
+                ):
+                    distance_miles = (
+                        category.typical_distance_km
+                        / (METRES_PER_MILE / 1000)
+                    )
+                    st.caption(
+                        "Usually works well around "
+                        f"{distance_miles:.1f} miles"
+                    )
+
+                st.caption(
+                    f"{category.sample_size} comparable sessions · "
+                    f"{confidence_label(category.confidence)}"
+                )
+
+    with st.expander(
+        "How Coach Blueprints are calculated"
+    ):
+        st.write(
+            "Easy Coach ranks genuine running activities by "
+            "condition-adjusted speed per heartbeat, then studies the "
+            "best 30% of comparable runs. Threshold and Speed coaches "
+            "currently use recognised session history, HR and distance; "
+            "rep-level Workout DNA will refine them later."
+        )
+
+        for limitation in blueprint.limitations:
+            st.write(f"• {limitation}")
 
 def evidence_status_icon(status):
     return {
@@ -2386,6 +2521,10 @@ def show_dashboard():
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
+    training_blueprint = build_training_blueprint(
+        run_profiles,
+        athlete_id=athlete_id,
+    )
     easy_run_coach = build_easy_run_coach(
         run_profiles,
         evidence_profile=athlete_evidence_profile,
@@ -2475,6 +2614,10 @@ def show_dashboard():
         coach_consensus,
     )
 
+    render_training_blueprint(
+        training_blueprint,
+        thresholds,
+    )
     render_evidence_engine(athlete_evidence_profile)
     render_easy_run_coach(easy_run_coach)
     render_capability_card(capability)

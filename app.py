@@ -8,6 +8,7 @@ from ui.dashboard import show_dashboard
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.sidebar import show_sidebar
+from ui.settings import show_settings_page
 
 
 st.set_page_config(
@@ -79,11 +80,4 @@ elif page == "Diagnostics":
     show_diagnostics_page()
 
 elif page == "Settings":
-    render_page_placeholder(
-        title="Settings",
-        question="How should Performance Passport work for me?",
-        description=(
-            "Settings will manage athlete preferences, units, thresholds, "
-            "goals, environmental modelling and coaching presentation."
-        ),
-    )
+    show_settings_page()
