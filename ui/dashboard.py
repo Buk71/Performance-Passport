@@ -762,11 +762,12 @@ def render_easy_run_coach(result):
         return
 
     latest = result.latest
+    dimensions = latest.dimensions
 
     render_html(
         f"""
         <div class="pp-card pp-card-hero">
-            <div class="pp-card-label">Easy Run Coach</div>
+            <div class="pp-card-label">Easy Run Coach V2</div>
             <div class="pp-card-title">
                 {safe_text(result.headline)}
             </div>
@@ -777,28 +778,50 @@ def render_easy_run_coach(result):
         """
     )
 
-    columns = st.columns(4)
-    columns[0].metric(
+    top_columns = st.columns(4)
+    top_columns[0].metric(
+        "Training purpose",
+        latest.run_type,
+    )
+    top_columns[1].metric(
         "Verdict",
         latest.verdict,
     )
-    columns[1].metric(
+    top_columns[2].metric(
         "Historical rank",
         f"{latest.rank} of {latest.comparison_count}",
     )
-    columns[2].metric(
-        "Aerobic trend",
-        result.trend_label,
-        (
-            f"{result.trend_percent:+.1f}%"
-            if result.trend_percent is not None
-            else None
-        ),
-    )
-    columns[3].metric(
+    top_columns[3].metric(
         "Evidence strength",
         confidence_label(result.confidence),
     )
+
+    if latest.secondary_effect:
+        st.caption(
+            f"Secondary effect: {latest.secondary_effect}"
+        )
+
+    st.markdown("### Easy-run quality")
+
+    dimension_data = (
+        ("❤️ Aerobic control", dimensions.aerobic_control),
+        ("⚙️ Efficiency", dimensions.efficiency),
+        ("📊 Effort stability", dimensions.effort_stability),
+        ("🔋 Recovery value", dimensions.recovery_value),
+        ("🎯 Execution", dimensions.execution),
+    )
+
+    dimension_columns = st.columns(5)
+
+    for column, (label, score) in zip(
+        dimension_columns,
+        dimension_data,
+    ):
+        with column:
+            st.metric(label, f"{score:.0f}/100")
+            st.progress(
+                min(max(score / 100.0, 0.0), 1.0)
+            )
 
     st.caption(
         f"Latest suitable easy run: {latest.activity_date or 'Unknown date'} · "
@@ -809,15 +832,28 @@ def render_easy_run_coach(result):
         f"{latest.avg_hr:.0f} bpm"
     )
 
-    if result.best_ever:
-        st.success(
-            "🏆 This is currently your best recorded easy run by adjusted "
-            "aerobic efficiency."
-        )
-    elif result.best_this_year:
-        st.success(
-            "🏆 This is your strongest easy run of the current year."
-        )
+    if latest.achievements:
+        st.markdown("### Achievements")
+        for achievement in latest.achievements:
+            st.success(achievement)
+
+    st.markdown("### Coach's takeaway")
+    st.info(latest.takeaway)
+
+    trend_columns = st.columns(2)
+    trend_columns[0].metric(
+        "Aerobic trend",
+        result.trend_label,
+        (
+            f"{result.trend_percent:+.1f}%"
+            if result.trend_percent is not None
+            else None
+        ),
+    )
+    trend_columns[1].metric(
+        "Overall easy-run quality",
+        f"{dimensions.overall:.0f}/100",
+    )
 
     with st.expander("Why does Easy Run Coach believe this?"):
         for reason in latest.reasons:

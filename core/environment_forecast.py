@@ -98,6 +98,20 @@ SCENARIOS = (
         "confidence_modifier": 0.84,
     },
     {
+        "key": "windy",
+        "label": "💨 Windy",
+        "description": "Exposed course with a noticeable headwind component",
+        "adjustment": 0.022,
+        "confidence_modifier": 0.80,
+    },
+    {
+        "key": "strong_wind",
+        "label": "🌬️ Strong wind",
+        "description": "Sustained exposed headwind with limited shelter",
+        "adjustment": 0.045,
+        "confidence_modifier": 0.70,
+    },
+    {
         "key": "trail",
         "label": "🌲 Trail",
         "description": "Firm trail with uneven surface and turns",
@@ -246,8 +260,9 @@ def build_environment_forecast(
         limitations=(
             "Personal adjustments remain conservative and are blended "
             "with generic assumptions.",
-            "Humidity, dew point, wind, exact elevation and technical trail "
-            "difficulty are not yet entered separately.",
+            "Humidity, dew point, exact wind speed/direction, exact "
+            "elevation and technical trail difficulty are not yet entered "
+            "separately.",
             "Future versions will learn each athlete's personal heat, hill "
             "and surface response.",
         ),
