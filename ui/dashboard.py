@@ -5,6 +5,7 @@ import textwrap
 import streamlit as st
 
 from core.capability import build_capability
+from core.actionable_coaching import ActionableRecommendation
 from core.coach_brain import CoachBrain
 from core.coach_consensus import build_coach_consensus
 from core.coaching import (
@@ -942,8 +943,56 @@ def render_easy_run_coach(result):
         for achievement in latest.achievements:
             st.success(achievement)
 
-    st.markdown("### Coach's takeaway")
-    st.info(latest.takeaway)
+    recommendation = result.actionable_recommendation
+
+    st.markdown("### 🎯 Actionable coaching")
+
+    if recommendation is not None and recommendation.available:
+        render_html(
+            f"""
+            <div class="pp-card pp-card-accent">
+                <div class="pp-card-label">
+                    {safe_text(recommendation.impact_label)}
+                </div>
+                <div class="pp-card-title">
+                    {safe_text(recommendation.headline)}
+                </div>
+                <div class="pp-card-copy">
+                    {safe_text(recommendation.recommendation)}
+                </div>
+            </div>
+            """
+        )
+
+        action_columns = st.columns(3)
+        action_columns[0].metric(
+            recommendation.category,
+            f"{recommendation.current_score:.0f} → "
+            f"{recommendation.potential_score:.0f}",
+        )
+        action_columns[1].metric(
+            "Overall quality",
+            f"{recommendation.overall_current:.0f} → "
+            f"{recommendation.overall_potential:.0f}",
+        )
+        action_columns[2].metric(
+            "Recommendation confidence",
+            recommendation.confidence_label,
+        )
+
+        st.caption(recommendation.reason)
+
+        with st.expander("Evidence behind this recommendation"):
+            for evidence_item in recommendation.evidence:
+                st.write(f"✓ {evidence_item}")
+
+            for limitation in recommendation.limitations:
+                st.write(f"• {limitation}")
+    else:
+        st.info(
+            "Easy Run Coach is still gathering enough evidence to make a "
+            "specific recommendation."
+        )
 
     trend_columns = st.columns(2)
     trend_columns[0].metric(
@@ -2337,7 +2386,10 @@ def show_dashboard():
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
-    easy_run_coach = build_easy_run_coach(run_profiles)
+    easy_run_coach = build_easy_run_coach(
+        run_profiles,
+        evidence_profile=athlete_evidence_profile,
+    )
 
     performance_dna = build_performance_dna(
         evidence_bundle,

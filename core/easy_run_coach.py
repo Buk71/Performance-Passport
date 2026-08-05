@@ -31,7 +31,13 @@ import math
 import statistics
 from typing import Any, Iterable
 
+from core.actionable_coaching import (
+    ActionableRecommendation,
+    build_easy_run_opportunities,
+    choose_actionable_recommendation,
+)
 from core.coaching import RunProfile, equivalent_performance
+from core.evidence_engine import AthleteEvidenceProfile
 
 
 EXCLUDED_TITLE_WORDS = (
@@ -120,7 +126,8 @@ class EasyRunCoachResult:
     best_this_year: bool
     strengths: tuple[str, ...]
     limitations: tuple[str, ...]
-    model_version: int = 2
+    actionable_recommendation: ActionableRecommendation | None
+    model_version: int = 3
 
 
 def _safe_float(value: Any) -> float | None:
@@ -383,6 +390,7 @@ def build_easy_run_coach(
     runs: Iterable[RunProfile],
     *,
     reference_date: datetime.date | None = None,
+    evidence_profile: AthleteEvidenceProfile | None = None,
 ) -> EasyRunCoachResult:
     reference_date = reference_date or datetime.date.today()
     candidates = [run for run in runs if _is_easy_candidate(run)]
@@ -412,6 +420,7 @@ def build_easy_run_coach(
             limitations=(
                 "Easy Run Coach requires genuine easy runs with heart rate.",
             ),
+            actionable_recommendation=None,
         )
 
     scored = [(run, _efficiency(run)) for run in candidates]
@@ -660,6 +669,19 @@ def build_easy_run_coach(
         else f"{verdict} {run_type}"
     )
 
+    opportunities = build_easy_run_opportunities(
+        dimensions=dimensions,
+        avg_hr=float(latest_run.avg_hr),
+        lt1_hr=_safe_float(latest_run.lt1_hr),
+        comparison_count=len(scored),
+        evidence_profile=evidence_profile,
+    )
+    actionable_recommendation = choose_actionable_recommendation(
+        opportunities,
+        overall_current=dimensions.overall,
+        source="Easy Run Coach",
+    )
+
     return EasyRunCoachResult(
         available=True,
         confidence=round(confidence, 4),
@@ -682,8 +704,8 @@ def build_easy_run_coach(
             "Efficiency is a within-athlete pace-to-heart-rate comparison.",
             "Effort Stability currently uses HR spread as a proxy; true "
             "split-level cardiac drift comes next.",
-            "Wind is not yet available on individual historical activities.",
             "Easy Run Coach does not change race capability by a fixed number "
             "of seconds.",
         ),
+        actionable_recommendation=actionable_recommendation,
     )
