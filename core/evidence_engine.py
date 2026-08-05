@@ -405,15 +405,32 @@ def build_athlete_evidence_profile(
             SELECT COUNT(*)
             FROM activities
             WHERE athlete_id = ?
-              AND CAST(sport_id AS TEXT) IN (
-                  '965611',
-                  'running',
-                  'run'
+              AND (
+                  LOWER(CAST(sport_id AS TEXT)) IN (
+                      '965611',
+                      'running',
+                      'run',
+                      'running (road)',
+                      'trail running',
+                      'trail_run',
+                      'virtual run',
+                      'treadmill'
+                  )
+                  OR LOWER(CAST(sport_id AS TEXT)) LIKE '%run%'
               )
             """,
             (athlete_id,),
         )
         run_count = int(cursor.fetchone()[0] or 0)
+
+        # Imported sources do not always use the same Runalyze sport code.
+        # If the athlete has activities but none match the known running
+        # aliases, use their activity count rather than incorrectly reporting
+        # that no runs were analysed. The evidence audit remains athlete-
+        # specific and individual metrics are still counted only where data
+        # genuinely exists.
+        if run_count == 0 and activity_count > 0:
+            run_count = activity_count
     else:
         run_count = activity_count
 
