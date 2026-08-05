@@ -20,6 +20,7 @@ from core.evidence import EvidenceStatus
 from core.environment_forecast import build_environment_forecast
 from core.environment_profile import build_personal_environment_profile
 from core.easy_run_coach import build_easy_run_coach
+from core.evidence_engine import build_athlete_evidence_profile
 from core.performance_dna import build_performance_dna
 
 
@@ -753,6 +754,110 @@ def goal_distance_km(goal):
 
     return None
 
+
+
+def evidence_status_icon(status):
+    return {
+        "available": "🟢",
+        "developing": "🟡",
+        "limited": "🟠",
+        "unavailable": "⚪",
+    }.get(status, "⚪")
+
+
+def render_evidence_engine(profile):
+    st.markdown("## 📚 Coaching Evidence")
+
+    render_html(
+        f"""
+        <div class="pp-card">
+            <div class="pp-card-label">Evidence Engine</div>
+            <div class="pp-card-title">
+                {safe_text(profile.headline)}
+            </div>
+            <div class="pp-card-copy">
+                {safe_text(profile.summary)}
+            </div>
+        </div>
+        """
+    )
+
+    columns = st.columns(4)
+    columns[0].metric(
+        "Runs inspected",
+        f"{profile.run_count:,}",
+    )
+    columns[1].metric(
+        "Ready metrics",
+        profile.available_metric_count,
+    )
+    columns[2].metric(
+        "Developing",
+        profile.developing_metric_count,
+    )
+    columns[3].metric(
+        "Need more data",
+        profile.unavailable_metric_count,
+    )
+
+    ready = [
+        metric
+        for metric in profile.metrics
+        if metric.status == "available"
+    ]
+    developing = [
+        metric
+        for metric in profile.metrics
+        if metric.status in {"developing", "limited"}
+    ]
+    unavailable = [
+        metric
+        for metric in profile.metrics
+        if metric.status == "unavailable"
+    ]
+
+    if ready:
+        st.markdown("### Evidence ready for coaching")
+        ready_columns = st.columns(3)
+
+        for index, metric in enumerate(ready):
+            with ready_columns[index % 3]:
+                st.markdown(
+                    f"{evidence_status_icon(metric.status)} "
+                    f"**{metric.label}**"
+                )
+                st.caption(
+                    f"{metric.available_count:,} activities · "
+                    f"{metric.coverage:.0%} coverage"
+                )
+                st.write(metric.coaching_use)
+
+    with st.expander("Full evidence audit"):
+        for heading, group in (
+            ("Ready", ready),
+            ("Developing", developing),
+            ("Requires more data", unavailable),
+        ):
+            if not group:
+                continue
+
+            st.markdown(f"**{heading}**")
+
+            for metric in group:
+                st.write(
+                    f"{evidence_status_icon(metric.status)} "
+                    f"**{metric.label}** — "
+                    f"{metric.available_count:,}/"
+                    f"{metric.activity_count:,} activities"
+                )
+                st.caption(
+                    f"Source: {metric.source}. {metric.note}"
+                )
+
+        st.info(
+            "Actionable Coaching will only use metrics marked Ready, or "
+            "Developing metrics with an explicit lower-confidence label."
+        )
 
 def render_easy_run_coach(result):
     st.markdown("## 😊 Easy Run Coach")
@@ -2217,6 +2322,13 @@ def show_dashboard():
     selected = athlete_options[selected_name]
     athlete_id = selected["id"]
 
+    evidence_connection = get_connection()
+    athlete_evidence_profile = build_athlete_evidence_profile(
+        evidence_connection,
+        athlete_id=athlete_id,
+    )
+    evidence_connection.close()
+
     brain = CoachBrain(athlete_id)
     goal = get_active_goal(athlete_id)
     evidence_bundle = brain.build_evidence()
@@ -2311,6 +2423,7 @@ def show_dashboard():
         coach_consensus,
     )
 
+    render_evidence_engine(athlete_evidence_profile)
     render_easy_run_coach(easy_run_coach)
     render_capability_card(capability)
     render_personal_environment_profile(
