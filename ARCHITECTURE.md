@@ -222,3 +222,54 @@ Performance Passport should favour:
 The project should be understandable by its owner after months away from the codebase.
 
 When there is a choice between a simpler design and a more technically advanced design, the simpler design should normally be preferred unless there is a measurable benefit.
+
+
+---
+
+## Decision Engine – Sprint 13.1
+
+`core/decision_engine.py` is the shared deterministic decision layer.
+
+Single responsibility:
+
+**What should the coaching system prioritise next?**
+
+The Decision Engine consumes existing outputs from:
+
+- Performance DNA
+- Coach Consensus
+- Capability
+- Performance Recognition
+
+It does not re-analyse activity data and does not invent a second interpretation
+of the same run.
+
+It returns:
+
+- strongest current system;
+- primary development opportunity;
+- coaching signals;
+- recent direction;
+- provisional next-session family;
+- decision confidence;
+- supporting coaches;
+- evidence and limitations.
+
+### Readiness safeguard
+
+Sprint 13.1 does not yet include Readiness/Fatigue Coach. Therefore the Decision
+Engine may identify a development focus such as Threshold or Speed, but it must
+not confidently prescribe a hard session for tomorrow until readiness evidence
+is connected.
+
+### Coaching principles
+
+Performance Passport uses these decision principles:
+
+1. Every run has something to celebrate.
+2. Evidence before conclusions.
+3. Recognition before recommendation.
+4. Coaches explain why.
+5. Environmental context matters.
+6. Compare the athlete with themselves first.
+7. Simple for the runner, sophisticated underneath.

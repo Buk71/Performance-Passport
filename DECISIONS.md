@@ -347,3 +347,26 @@ Training quality metrics use moving time.
 Race and record performance should reflect the full time taken to complete the distance.
 
 Training quality analysis should focus on the active running portion of the session so that stops, pauses and non-running interruptions do not distort coaching insight.
+
+
+## Decision 013 – Shared Decision Engine
+
+**Status:** Accepted
+
+Performance Passport will use one deterministic Decision Engine to combine
+existing specialist evidence into a current coaching priority.
+
+The Decision Engine lives in `core/decision_engine.py` within the existing
+frozen architecture. No new folder or service layer is introduced.
+
+The engine does not replace Recognition, Performance DNA, Coach Consensus or
+Capability. It consumes their outputs and answers one question:
+
+**What should the coaching system prioritise next?**
+
+Hard-session timing remains provisional until Readiness/Fatigue evidence is
+connected.
+
+This prevents Hall of Fame, Goal Centre, Recommended Next Run and future
+planning features from inventing separate interpretations of the same athlete
+evidence.
