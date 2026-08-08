@@ -64,6 +64,9 @@ class JournalEntry:
     next_focus: str
     next_focus_detail: str
 
+    journal_title: str
+    what_changed: tuple[str, ...]
+
     coach_note: str
     evidence_confidence: float
 
@@ -285,28 +288,135 @@ def _coach_note(
 ) -> str:
     pieces = [recognition.positive_detail]
 
-    if opportunity_label:
-        pieces.append(
-            (
-                f"The bigger picture remains positive: "
-                f"{opportunity_label.lower()} is the clearest area where "
-                "the next gains can come from."
-            )
-        )
-
     if block is not None:
         pieces.append(
             (
-                f"Keep judging sessions by whether they move the "
+                f"This run should be judged by how well it moves "
                 f"{block.name} forward, not by pace alone."
             )
         )
-    else:
+
+    if opportunity_label:
         pieces.append(
-            "The run has added useful evidence for the next coaching decision."
+            (
+                f"The next gains are most likely to come from "
+                f"{opportunity_label.lower()} development."
+            )
         )
 
     return " ".join(pieces)
+
+
+def _journal_title(
+    recognition: Recognition,
+    *,
+    decision_direction: str | None,
+    block: TrainingBlock | None,
+) -> str:
+    key = recognition.celebration.lower()
+    factors = " ".join(recognition.environment_factors).lower()
+
+    if recognition.rank == 1 and recognition.total >= 3:
+        return "A new benchmark."
+
+    if "heat" in factors or "dew point" in factors:
+        if recognition.top_percent <= 10:
+            return "Winning in the heat."
+        return "Strong work in tough conditions."
+
+    if "trail" in factors or "off-road" in factors:
+        if recognition.top_percent <= 10:
+            return "A standout trail day."
+        return "Trail strength banked."
+
+    if "aerobic control" in key or "controlled effort" in key:
+        return "Patience paid off."
+
+    if recognition.category_key == "long_easy":
+        return "Endurance quietly building."
+
+    if recognition.category_key == "threshold":
+        return "Threshold work moving the needle."
+
+    if recognition.category_key in {"vo2", "speed"}:
+        return "Quality speed work banked."
+
+    if decision_direction in {"Improving", "Positive"}:
+        return "Momentum is building."
+
+    if block is not None:
+        return "Exactly what this block needed."
+
+    return "Another useful step forward."
+
+
+def _what_changed(
+    recognition: Recognition,
+    *,
+    decision,
+    block: TrainingBlock | None,
+) -> tuple[str, ...]:
+    items = []
+
+    if recognition.rank == 1 and recognition.total >= 3:
+        items.append(
+            f"🏆 New #1 {recognition.category_label} performance in your history."
+        )
+    elif recognition.top_percent <= 10:
+        items.append(
+            f"⭐ This run now sits in your top "
+            f"{max(int(round(recognition.top_percent)), 1)}% of "
+            f"{recognition.category_label} sessions."
+        )
+    elif recognition.rank_12m is not None and recognition.total_12m >= 3:
+        if recognition.rank_12m <= max(3, round(recognition.total_12m * 0.10)):
+            items.append(
+                f"📈 It is now #{recognition.rank_12m} of "
+                f"{recognition.total_12m} comparable sessions in the last 12 months."
+            )
+
+    if recognition.environment_adjustment_s_per_km >= 5:
+        context = ", ".join(recognition.environment_factors[:2])
+        if context:
+            items.append(
+                f"🌦️ The ranking improved after recognising {context}."
+            )
+        else:
+            items.append(
+                "🌦️ Environmental difficulty was significant enough to change "
+                "how the run is judged."
+            )
+
+    if recognition.moving_percent is not None and recognition.moving_percent >= 97:
+        items.append(
+            f"▶️ Continuity was strong at {recognition.moving_percent:.1f}% moving."
+        )
+
+    if recognition.trend_label in {"Trending stronger", "Positive trend"}:
+        items.append(
+            f"📈 {recognition.trend_label}: this run was stronger than your "
+            "recent comparable baseline."
+        )
+
+    if decision.primary_opportunity_label:
+        items.append(
+            f"🎯 The broader coaching priority remains "
+            f"{decision.primary_opportunity_label.lower()}."
+        )
+
+    if block is not None and block.current_phase:
+        items.append(
+            f"📅 This evidence now belongs to the {block.current_phase.lower()} "
+            f"phase of {block.name}."
+        )
+
+    if not items:
+        items.append(
+            "✨ This run added another useful piece of evidence to your personal "
+            "coaching picture."
+        )
+
+    return tuple(items[:4])
 
 
 def build_latest_journal_entry(
@@ -369,6 +479,17 @@ def build_latest_journal_entry(
             "specific session family."
         )
 
+    journal_title = _journal_title(
+        recognition,
+        decision_direction=decision.direction,
+        block=block,
+    )
+    what_changed = _what_changed(
+        recognition,
+        decision=decision,
+        block=block,
+    )
+
     return JournalEntry(
         athlete_id=athlete_id,
         activity_date=latest_run.activity_date,
@@ -382,6 +503,8 @@ def build_latest_journal_entry(
         block_progress_detail=block_detail,
         next_focus=next_focus,
         next_focus_detail=next_focus_detail,
+        journal_title=journal_title,
+        what_changed=what_changed,
         coach_note=_coach_note(
             recognition,
             opportunity_label=decision.primary_opportunity_label,

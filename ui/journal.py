@@ -71,6 +71,9 @@ def show_journal_page():
                 {_safe(_date_text(entry.activity_date))}
             </div>
             <div class="pp-card-title">
+                {_safe(entry.journal_title)}
+            </div>
+            <div class="pp-card-copy" style="font-weight:700; margin-top:0.25rem;">
                 {_safe(entry.activity_title)}
             </div>
             <div class="pp-card-copy">
@@ -113,6 +116,23 @@ def show_journal_page():
             entry.next_focus,
             entry.next_focus_detail,
         )
+
+    st.markdown("### 🔎 What changed today?")
+
+    changed_items = "".join(
+        f"<li>{_safe(item)}</li>"
+        for item in entry.what_changed
+    )
+
+    _html(
+        f"""
+        <div class="pp-card">
+            <ul style="margin:0; padding-left:1.2rem; line-height:1.7;">
+                {changed_items}
+            </ul>
+        </div>
+        """
+    )
 
     st.markdown("### 🧠 Coach's Note")
 
