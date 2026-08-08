@@ -349,24 +349,21 @@ Race and record performance should reflect the full time taken to complete the d
 Training quality analysis should focus on the active running portion of the session so that stops, pauses and non-running interruptions do not distort coaching insight.
 
 
-## Decision 013 – Shared Decision Engine
+## Decision 014 – Training Blocks as the Version 1.0 Organising Context
 
 **Status:** Accepted
 
-Performance Passport will use one deterministic Decision Engine to combine
-existing specialist evidence into a current coaching priority.
+Performance Passport will organise coaching around Training Blocks.
 
-The Decision Engine lives in `core/decision_engine.py` within the existing
-frozen architecture. No new folder or service layer is introduced.
+A Training Block is a purposeful period of training such as Base, 10K, Half
+Marathon, Speed Development or Recovery.
 
-The engine does not replace Recognition, Performance DNA, Coach Consensus or
-Capability. It consumes their outputs and answers one question:
+Goals belong to Training Blocks rather than replacing them.
 
-**What should the coaching system prioritise next?**
+The active Training Block provides context for future Decision Engine,
+Recommended Next Run, Dynamic Plan, Block Hall of Fame, Block Review and Coach
+Mode features.
 
-Hard-session timing remains provisional until Readiness/Fatigue evidence is
-connected.
-
-This prevents Hall of Fame, Goal Centre, Recommended Next Run and future
-planning features from inventing separate interpretations of the same athlete
-evidence.
+This preserves the architecture freeze: the feature is implemented through
+`core/training_blocks.py`, the existing database module and a UI page. No new
+top-level architecture is introduced.

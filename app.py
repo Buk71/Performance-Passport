@@ -8,7 +8,9 @@ from ui.dashboard import show_dashboard
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.hall_of_fame import show_hall_of_fame_page
+from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
+from ui.training_blocks import show_training_blocks_page
 from ui.settings import show_settings_page
 
 
@@ -49,16 +51,11 @@ elif page == "Progress":
         ),
     )
 
-elif page == "Goal":
-    render_page_placeholder(
-        title="Goal",
-        question="Am I getting closer?",
-        description=(
-            "Goal Progress will connect your training history to a chosen "
-            "objective, showing current prediction, strengths, limiters and "
-            "the next meaningful milestone."
-        ),
-    )
+elif page == "Goals":
+    show_goals_page()
+
+elif page == "Training Blocks":
+    show_training_blocks_page()
 
 elif page == "Hall of Fame":
     show_hall_of_fame_page()

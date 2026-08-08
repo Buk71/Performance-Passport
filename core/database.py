@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 
 def get_connection():
@@ -732,6 +732,58 @@ def migrate_to_schema_v7(cursor):
     set_schema_version(cursor, 7)
 
 
+
+def create_training_blocks_table(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS training_blocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            block_type TEXT NOT NULL DEFAULT 'General',
+            purpose TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            status TEXT NOT NULL DEFAULT 'Planned',
+            primary_focus TEXT,
+            current_phase TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_training_blocks_athlete_status
+        ON training_blocks (athlete_id, status, start_date)
+        """
+    )
+
+
+def migrate_to_schema_v8(cursor):
+    """Add Training Blocks and allow goals to belong to a block."""
+    create_training_blocks_table(cursor)
+
+    ensure_column(
+        cursor,
+        "goals",
+        "training_block_id",
+        "INTEGER REFERENCES training_blocks(id)",
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_goals_training_block
+        ON goals (training_block_id)
+        """
+    )
+
+    set_schema_version(cursor, 8)
+
+
 def get_effective_athlete_thresholds(athlete_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -977,9 +1029,14 @@ def initialise_database():
 
     if schema_version < 7:
         migrate_to_schema_v7(cursor)
+        schema_version = 7
+
+    if schema_version < 8:
+        migrate_to_schema_v8(cursor)
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
+    create_training_blocks_table(cursor)
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)

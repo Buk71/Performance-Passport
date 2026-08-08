@@ -4,368 +4,471 @@ import textwrap
 
 import streamlit as st
 
-from core.database import get_active_goal, get_connection, save_goal
+from core.database import get_connection, save_goal
+from core.training_blocks import (
+    BLOCK_FOCUSES,
+    BLOCK_PHASES,
+    BLOCK_TYPES,
+    get_active_training_block,
+    save_training_block,
+)
+from ui.athlete_selection import render_athlete_selector
 
 
-DISTANCE_OPTIONS = {
-    "5K": 5000.0,
-    "10K": 10000.0,
-    "10 Mile": 16093.44,
-    "Half Marathon": 21097.5,
-    "Marathon": 42195.0,
-    "Custom": None,
-}
-
-GOAL_TYPES = [
-    "Race time",
-    "Complete a distance",
-    "Improve aerobic fitness",
-    "General fitness",
-    "Custom",
-]
-
-
-def safe_text(value):
+def _safe(value):
     return html.escape(str(value or ""))
 
 
-def render_html(markup):
-    cleaned_markup = textwrap.dedent(markup).strip()
-    st.html(cleaned_markup)
+def _html(markup):
+    st.html(textwrap.dedent(markup).strip())
 
 
-def get_athletes():
+def _date_text(value):
+    if not value:
+        return "Not set"
+
+    try:
+        parsed = datetime.date.fromisoformat(str(value)[:10])
+        return parsed.strftime("%-d %b %Y")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _time_text(seconds):
+    if seconds is None:
+        return "—"
+
+    total = int(round(seconds))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    remaining = total % 60
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{remaining:02d}"
+
+    return f"{minutes}:{remaining:02d}"
+
+
+def _load_goals(athlete_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, first_name, last_name
-        FROM athletes
-        ORDER BY first_name, last_name
-        """
+        SELECT
+            id,
+            athlete_id,
+            training_block_id,
+            goal_name,
+            goal_type,
+            distance_m,
+            target_time_s,
+            target_date,
+            race_name,
+            priority,
+            status,
+            motivation
+        FROM goals
+        WHERE athlete_id = ?
+        ORDER BY
+            CASE priority
+                WHEN 'Primary' THEN 0
+                WHEN 'Secondary' THEN 1
+                ELSE 2
+            END,
+            CASE status
+                WHEN 'Active' THEN 0
+                WHEN 'Planned' THEN 1
+                ELSE 2
+            END,
+            target_date,
+            id
+        """,
+        (athlete_id,),
     )
     rows = cursor.fetchall()
     conn.close()
-    return rows
+
+    return [
+        {
+            "id": row[0],
+            "athlete_id": row[1],
+            "training_block_id": row[2],
+            "goal_name": row[3],
+            "goal_type": row[4],
+            "distance_m": row[5],
+            "target_time_s": row[6],
+            "target_date": row[7],
+            "race_name": row[8],
+            "priority": row[9],
+            "status": row[10],
+            "motivation": row[11],
+        }
+        for row in rows
+    ]
 
 
-def athlete_full_name(first_name, last_name):
-    return f"{first_name or ''} {last_name or ''}".strip()
+def _goal_distance_label(goal):
+    distance_m = goal.get("distance_m")
 
-def update_selected_athlete():
-    """Persist the athlete selected in the visible page widget."""
+    if distance_m:
+        if abs(distance_m - 5000) < 200:
+            return "5K"
+        if abs(distance_m - 10000) < 300:
+            return "10K"
+        if abs(distance_m - 21097.5) < 500:
+            return "Half Marathon"
+        if abs(distance_m - 42195) < 800:
+            return "Marathon"
 
-    st.session_state.selected_athlete_name = (
-        st.session_state.goal_athlete_selector_widget
-    )
+    goal_type = str(goal.get("goal_type") or "").lower()
 
+    if "half" in goal_type:
+        return "Half Marathon"
+    if "marathon" in goal_type:
+        return "Marathon"
+    if "10k" in goal_type:
+        return "10K"
+    if "5k" in goal_type:
+        return "5K"
 
-def initialise_selected_athlete(athlete_names):
-    """Set a valid shared athlete selection for all pages."""
-
-    if (
-        "selected_athlete_name" not in st.session_state
-        or st.session_state.selected_athlete_name not in athlete_names
-    ):
-        st.session_state.selected_athlete_name = athlete_names[0]
-
-    st.session_state.goal_athlete_selector_widget = (
-        st.session_state.selected_athlete_name
-    )
-
-def seconds_to_clock(total_seconds):
-    if total_seconds is None:
-        return None
-
-    total_seconds = int(total_seconds)
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-
-    if hours:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-
-    return f"{minutes}:{seconds:02d}"
+    return "General"
 
 
-def clock_to_seconds(hours, minutes, seconds):
-    return int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+def recommend_training_block(goal, today=None):
+    """
+    Recommend a sensible block structure from the goal.
 
+    This is deliberately transparent and deterministic. It is the first step
+    toward a future Decision-Engine recommendation that also uses readiness,
+    strengths, limiters and current training history.
+    """
+    today = today or datetime.date.today()
+    distance_label = _goal_distance_label(goal)
 
-def render_goal_summary(goal):
-    if goal is None:
-        render_html(
-            """
-            <div class="pp-card pp-card-hero pp-card-accent">
-                <div class="pp-card-label">Active goal</div>
-                <div class="pp-card-title">No goal configured yet</div>
-                <div class="pp-card-copy">
-                    Add an objective for this athlete. The Coach page will then
-                    show the real target rather than a placeholder.
-                </div>
-                <div style="margin-top:0.8rem;">
-                    <span class="pp-status pp-status-warning">
-                        Goal needed
-                    </span>
-                </div>
-            </div>
-            """
+    target_date = None
+    if goal.get("target_date"):
+        try:
+            target_date = datetime.date.fromisoformat(
+                str(goal["target_date"])[:10]
+            )
+        except (TypeError, ValueError):
+            target_date = None
+
+    if target_date is not None:
+        days = max((target_date - today).days, 14)
+        weeks = max(2, min(round(days / 7), 20))
+        end_date = target_date
+    else:
+        weeks = {
+            "5K": 10,
+            "10K": 12,
+            "Half Marathon": 14,
+            "Marathon": 16,
+        }.get(distance_label, 12)
+        end_date = today + datetime.timedelta(weeks=weeks)
+
+    if distance_label == "5K":
+        block_type = "5K"
+        focus = "Speed / VO₂"
+        phase = "Build"
+        purpose = (
+            "Improve speed and VO₂ while preserving aerobic strength and "
+            "threshold support."
         )
-        return
+    elif distance_label == "10K":
+        block_type = "10K"
+        focus = "Threshold"
+        phase = "Build"
+        purpose = (
+            "Develop threshold and 10K-specific strength while maintaining "
+            "aerobic durability and enough speed reserve."
+        )
+    elif distance_label == "Half Marathon":
+        block_type = "Half Marathon"
+        focus = "Endurance"
+        phase = "Build"
+        purpose = (
+            "Build endurance and threshold durability so goal pace becomes "
+            "sustainable for the full half-marathon distance."
+        )
+    elif distance_label == "Marathon":
+        block_type = "Marathon"
+        focus = "Endurance"
+        phase = "Base"
+        purpose = (
+            "Build endurance, durability and marathon-specific volume while "
+            "protecting recovery."
+        )
+    else:
+        block_type = "General"
+        focus = "Balanced"
+        phase = "Build"
+        purpose = (
+            "Build the fitness qualities most relevant to the selected goal "
+            "while maintaining overall running consistency."
+        )
 
-    target = seconds_to_clock(goal["target_time_s"]) or "Completion goal"
-    date_text = goal["target_date"] or "No target date"
-    race_text = goal["race_name"] or "No race selected"
+    return {
+        "name": f"{distance_label} Training Block",
+        "block_type": block_type,
+        "focus": focus,
+        "phase": phase,
+        "purpose": purpose,
+        "start_date": today,
+        "end_date": end_date,
+        "weeks": weeks,
+    }
 
-    render_html(
+
+def _render_goal(goal, athlete_id):
+    primary = goal["priority"] == "Primary"
+    title = f"{'⭐ ' if primary else ''}{goal['goal_name']}"
+
+    _html(
         f"""
-        <div class="pp-card pp-card-hero pp-card-accent">
-            <div class="pp-card-label">Active goal</div>
-            <div class="pp-card-title">{safe_text(goal["goal_name"])}</div>
-
-            <div style="
-                display:grid;
-                grid-template-columns:repeat(3, minmax(0, 1fr));
-                gap:1rem;
-                margin-top:1rem;
-            ">
-                <div>
-                    <div class="pp-stat-label">Target</div>
-                    <div class="pp-stat-value">{safe_text(target)}</div>
-                </div>
-                <div>
-                    <div class="pp-stat-label">Race</div>
-                    <div class="pp-stat-value" style="font-size:1rem;">
-                        {safe_text(race_text)}
-                    </div>
-                </div>
-                <div>
-                    <div class="pp-stat-label">Date</div>
-                    <div class="pp-stat-value" style="font-size:1rem;">
-                        {safe_text(date_text)}
-                    </div>
-                </div>
+        <div class="pp-card" style="margin-top:0.7rem;">
+            <div class="pp-card-label">
+                {_safe(goal['priority'])} goal · {_safe(goal['status'])}
             </div>
-
-            <div class="pp-card-copy" style="margin-top:1rem;">
-                Race prediction and goal probability are not calculated yet.
-                They will be added in Sprint D2.2.
-            </div>
-
-            <div style="margin-top:0.8rem;">
-                <span class="pp-status">Active</span>
+            <div class="pp-card-title">{_safe(title)}</div>
+            <div class="pp-card-copy">
+                {_safe(goal.get('race_name') or goal.get('goal_type') or 'Goal')}
+                {' · ' + _safe(_date_text(goal.get('target_date'))) if goal.get('target_date') else ''}
             </div>
         </div>
         """
     )
+
+    metrics = st.columns(3)
+    metrics[0].metric(
+        "Target",
+        _time_text(goal["target_time_s"])
+        if goal["target_time_s"]
+        else "Outcome goal",
+    )
+    metrics[1].metric(
+        "Distance",
+        _goal_distance_label(goal),
+    )
+    metrics[2].metric(
+        "Training Block",
+        "Attached" if goal["training_block_id"] else "Not yet",
+    )
+
+    recommendation = recommend_training_block(goal)
+
+    if not goal["training_block_id"]:
+        st.markdown("#### 📅 PP Recommended Training Block")
+
+        _html(
+            f"""
+            <div class="pp-card pp-card-accent">
+                <div class="pp-card-label">Recommended from this goal</div>
+                <div class="pp-card-title">{_safe(recommendation['name'])}</div>
+                <div class="pp-card-copy">
+                    {_safe(recommendation['purpose'])}
+                </div>
+                <div style="margin-top:0.7rem;">
+                    <span class="pp-status">{_safe(recommendation['weeks'])} weeks</span>
+                    <span class="pp-status">{_safe(recommendation['phase'])}</span>
+                    <span class="pp-status">{_safe(recommendation['focus'])}</span>
+                </div>
+            </div>
+            """
+        )
+
+        st.caption(
+            f"Suggested dates: {_date_text(recommendation['start_date'])} → "
+            f"{_date_text(recommendation['end_date'])}. "
+            "This first recommendation uses the goal distance and target date; "
+            "future versions will also use Decision Engine evidence."
+        )
+
+        if st.button(
+            "Create this Training Block",
+            key=f"create_recommended_block_{goal['id']}",
+        ):
+            block_id = save_training_block(
+                athlete_id=athlete_id,
+                name=recommendation["name"],
+                block_type=recommendation["block_type"],
+                purpose=recommendation["purpose"],
+                start_date=str(recommendation["start_date"]),
+                end_date=str(recommendation["end_date"]),
+                status="Active",
+                primary_focus=recommendation["focus"],
+                current_phase=recommendation["phase"],
+                notes=(
+                    f"Created from goal: {goal['goal_name']}"
+                ),
+            )
+
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE goals
+                SET training_block_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND athlete_id = ?
+                """,
+                (block_id, goal["id"], athlete_id),
+            )
+            conn.commit()
+            conn.close()
+
+            st.success("Recommended Training Block created and linked.")
+            st.rerun()
+
+
+def _new_goal_form(athlete_id):
+    with st.expander("➕ Add a goal"):
+        with st.form("new_goal_form"):
+            goal_name = st.text_input(
+                "Goal name",
+                placeholder="Sub 39 10K",
+            )
+
+            cols = st.columns(2)
+
+            with cols[0]:
+                goal_type = st.selectbox(
+                    "Goal type",
+                    [
+                        "5K",
+                        "10K",
+                        "Half Marathon",
+                        "Marathon",
+                        "Race",
+                        "Performance",
+                        "Other",
+                    ],
+                )
+                priority = st.selectbox(
+                    "Priority",
+                    ["Primary", "Secondary", "Future"],
+                )
+                target_date = st.date_input(
+                    "Target date",
+                    value=datetime.date.today()
+                    + datetime.timedelta(weeks=12),
+                )
+
+            with cols[1]:
+                race_name = st.text_input(
+                    "Race/event",
+                    placeholder="Optional",
+                )
+                target_time_text = st.text_input(
+                    "Target time (HH:MM:SS or MM:SS)",
+                    placeholder="39:00",
+                )
+                status = st.selectbox(
+                    "Status",
+                    ["Active", "Planned"],
+                )
+
+            motivation = st.text_area(
+                "Why this matters",
+                placeholder="Optional motivation or context.",
+            )
+
+            submitted = st.form_submit_button("Save goal")
+
+        if submitted:
+            if not goal_name.strip():
+                st.error("Please give the goal a name.")
+                return
+
+            target_seconds = None
+            text = target_time_text.strip()
+
+            if text:
+                try:
+                    parts = [int(part) for part in text.split(":")]
+                    if len(parts) == 2:
+                        target_seconds = parts[0] * 60 + parts[1]
+                    elif len(parts) == 3:
+                        target_seconds = (
+                            parts[0] * 3600
+                            + parts[1] * 60
+                            + parts[2]
+                        )
+                    else:
+                        raise ValueError
+                except ValueError:
+                    st.error(
+                        "Use MM:SS or HH:MM:SS for target time."
+                    )
+                    return
+
+            distance_m = {
+                "5K": 5000.0,
+                "10K": 10000.0,
+                "Half Marathon": 21097.5,
+                "Marathon": 42195.0,
+            }.get(goal_type)
+
+            save_goal(
+                athlete_id=athlete_id,
+                goal_name=goal_name.strip(),
+                goal_type=goal_type,
+                distance_m=distance_m,
+                target_time_s=target_seconds,
+                target_date=str(target_date),
+                race_name=race_name.strip() or None,
+                priority=priority,
+                status=status,
+                motivation=motivation.strip() or None,
+            )
+
+            st.success("Goal saved.")
+            st.rerun()
 
 
 def show_goals_page():
-    athletes = get_athletes()
-
-    if not athletes:
-        st.warning("No athletes found. Add an athlete first.")
-        return
-
-    athlete_options = {
-        athlete_full_name(first_name, last_name): athlete_id
-        for athlete_id, first_name, last_name in athletes
-    }
-
-    athlete_names = list(athlete_options.keys())
-    initialise_selected_athlete(athlete_names)
-
-    selector_col, _ = st.columns([0.35, 0.65])
-
-    with selector_col:
-        st.selectbox(
-            "Athlete",
-            athlete_names,
-            key="goal_athlete_selector_widget",
-            on_change=update_selected_athlete,
-            label_visibility="collapsed",
-        )
-
-    selected_name = st.session_state.selected_athlete_name
-
-    athlete_id = athlete_options[selected_name]
-    active_goal = get_active_goal(athlete_id)
-
-    render_html(
-        f"""
-        <div class="pp-page-header">
-            <div class="pp-page-eyebrow">Goal</div>
-            <div class="pp-page-title">{safe_text(selected_name)}'s objective</div>
-            <div class="pp-page-intro">
-                Set the outcome that matters most. Performance Passport will
-                use it to organise future predictions, progress and coaching.
-            </div>
-        </div>
-        """
+    st.title("🎯 Goals")
+    st.write(
+        "Goals define the outcome. Performance Passport can then recommend "
+        "the Training Block most likely to move you toward it."
     )
 
-    render_goal_summary(active_goal)
+    athlete_id = render_athlete_selector(
+        key="goals_athlete_selector",
+        label="Athlete",
+    )
 
-    st.markdown("## Configure goal")
+    if athlete_id is None:
+        st.info("Add an athlete before creating goals.")
+        return
 
-    default_type = active_goal["goal_type"] if active_goal else "Race time"
-    default_name = active_goal["goal_name"] if active_goal else ""
-    default_race = active_goal["race_name"] if active_goal else ""
-    default_motivation = active_goal["motivation"] if active_goal else ""
-    default_status = active_goal["status"] if active_goal else "Active"
-    default_priority = active_goal["priority"] if active_goal else "Primary"
+    goals = _load_goals(athlete_id)
+    active_block = get_active_training_block(athlete_id)
 
-    current_distance = active_goal["distance_m"] if active_goal else 10000.0
-    distance_label = "Custom"
-
-    for label, metres in DISTANCE_OPTIONS.items():
-        if metres is not None and current_distance is not None:
-            if abs(metres - current_distance) < 1:
-                distance_label = label
-                break
-
-    target_seconds = active_goal["target_time_s"] if active_goal else 0
-    target_hours = target_seconds // 3600
-    target_minutes = (target_seconds % 3600) // 60
-    target_secs = target_seconds % 60
-
-    target_date_value = None
-    if active_goal and active_goal["target_date"]:
-        try:
-            target_date_value = datetime.date.fromisoformat(
-                active_goal["target_date"]
-            )
-        except ValueError:
-            target_date_value = None
-
-    with st.form("goal_form"):
-        goal_type = st.selectbox(
-            "Goal type",
-            GOAL_TYPES,
-            index=GOAL_TYPES.index(default_type)
-            if default_type in GOAL_TYPES
-            else 0,
-        )
-
-        goal_name = st.text_input(
-            "Goal name",
-            value=default_name,
-            placeholder="e.g. Sub 39:00 10K",
-        )
-
-        distance_choice = st.selectbox(
-            "Distance",
-            list(DISTANCE_OPTIONS.keys()),
-            index=list(DISTANCE_OPTIONS.keys()).index(distance_label),
-        )
-
-        custom_distance_km = None
-        if distance_choice == "Custom":
-            custom_distance_km = st.number_input(
-                "Custom distance (km)",
-                min_value=0.1,
-                value=(current_distance or 10000.0) / 1000,
-                step=0.1,
-            )
-
+    if active_block:
         st.caption(
-            "Enter a target time for race-time goals. Leave it at zero for "
-            "completion, fitness or non-time goals."
+            f"Current Training Block: {active_block.name}"
         )
 
-        time_col1, time_col2, time_col3 = st.columns(3)
-        with time_col1:
-            hours = st.number_input(
-                "Hours",
-                min_value=0,
-                max_value=24,
-                value=int(target_hours),
-            )
-        with time_col2:
-            minutes = st.number_input(
-                "Minutes",
-                min_value=0,
-                max_value=59,
-                value=int(target_minutes),
-            )
-        with time_col3:
-            seconds = st.number_input(
-                "Seconds",
-                min_value=0,
-                max_value=59,
-                value=int(target_secs),
-            )
-
-        race_name = st.text_input(
-            "Race or event (optional)",
-            value=default_race or "",
+    if not goals:
+        _html(
+            """
+            <div class="pp-card pp-card-accent">
+                <div class="pp-card-label">Goals</div>
+                <div class="pp-card-title">
+                    Start with the outcome
+                </div>
+                <div class="pp-card-copy">
+                    Set the thing you want to achieve. Performance Passport
+                    can then recommend the shape of the Training Block behind it.
+                </div>
+            </div>
+            """
         )
+        _new_goal_form(athlete_id)
+        return
 
-        target_date = st.date_input(
-            "Target date (optional)",
-            value=target_date_value,
-        )
+    for goal in goals:
+        _render_goal(goal, athlete_id)
 
-        motivation = st.text_area(
-            "Why does this matter? (optional)",
-            value=default_motivation or "",
-            placeholder="A short personal reason for choosing this goal",
-        )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            priority = st.selectbox(
-                "Priority",
-                ["Primary", "Secondary"],
-                index=0 if default_priority == "Primary" else 1,
-            )
-        with col2:
-            statuses = ["Active", "Planned", "Completed", "Paused"]
-            status = st.selectbox(
-                "Status",
-                statuses,
-                index=statuses.index(default_status)
-                if default_status in statuses
-                else 0,
-            )
-
-        submitted = st.form_submit_button(
-            "Save goal",
-            use_container_width=True,
-        )
-
-    if submitted:
-        if not goal_name.strip():
-            st.error("Please enter a goal name.")
-            return
-
-        distance_m = DISTANCE_OPTIONS[distance_choice]
-        if distance_choice == "Custom":
-            distance_m = float(custom_distance_km) * 1000
-
-        target_time_s = clock_to_seconds(hours, minutes, seconds)
-        if target_time_s <= 0:
-            target_time_s = None
-
-        target_date_text = (
-            target_date.isoformat()
-            if isinstance(target_date, datetime.date)
-            else None
-        )
-
-        save_goal(
-            athlete_id=athlete_id,
-            goal_name=goal_name.strip(),
-            goal_type=goal_type,
-            distance_m=distance_m,
-            target_time_s=target_time_s,
-            target_date=target_date_text,
-            race_name=race_name.strip() or None,
-            priority=priority,
-            status=status,
-            motivation=motivation.strip() or None,
-            goal_id=active_goal["id"] if active_goal else None,
-        )
-
-        st.success("Goal saved.")
-        st.rerun()
+    _new_goal_form(athlete_id)

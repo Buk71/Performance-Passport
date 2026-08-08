@@ -226,50 +226,28 @@ When there is a choice between a simpler design and a more technically advanced 
 
 ---
 
-## Decision Engine – Sprint 13.1
+## Training Blocks – v0.14
 
-`core/decision_engine.py` is the shared deterministic decision layer.
+Training Blocks are the organising context for Version 1.0.
 
-Single responsibility:
+Hierarchy:
 
-**What should the coaching system prioritise next?**
+Season → Training Block → Goals → Sessions → Recognition
 
-The Decision Engine consumes existing outputs from:
+A block stores:
 
-- Performance DNA
-- Coach Consensus
-- Capability
-- Performance Recognition
+- purpose;
+- dates;
+- status;
+- block type;
+- primary focus;
+- current phase;
+- goals belonging to the block.
 
-It does not re-analyse activity data and does not invent a second interpretation
-of the same run.
+The Block Engine lives in `core/training_blocks.py`.
 
-It returns:
+Training Blocks do not replace goals. A goal is an outcome; a Training Block is
+the period of coaching designed to pursue one or more outcomes.
 
-- strongest current system;
-- primary development opportunity;
-- coaching signals;
-- recent direction;
-- provisional next-session family;
-- decision confidence;
-- supporting coaches;
-- evidence and limitations.
-
-### Readiness safeguard
-
-Sprint 13.1 does not yet include Readiness/Fatigue Coach. Therefore the Decision
-Engine may identify a development focus such as Threshold or Speed, but it must
-not confidently prescribe a hard session for tomorrow until readiness evidence
-is connected.
-
-### Coaching principles
-
-Performance Passport uses these decision principles:
-
-1. Every run has something to celebrate.
-2. Evidence before conclusions.
-3. Recognition before recommendation.
-4. Coaches explain why.
-5. Environmental context matters.
-6. Compare the athlete with themselves first.
-7. Simple for the runner, sophisticated underneath.
+Future Decision Engine, Recommended Next Run and Dynamic Plan releases should
+consume the active Training Block as context before giving advice.
