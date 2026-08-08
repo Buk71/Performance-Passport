@@ -2532,93 +2532,242 @@ def render_recent_activities(
         wind_speed = timing.get("wind_speed")
 
         fact_bits = []
+
         if run.distance_km is not None and run.distance_km > 0:
-            fact_bits.append(f"📏 {format_distance_miles(run.distance_km)}")
+            fact_bits.append(
+                f"📏 {format_distance_miles(run.distance_km)}"
+            )
+
         if run.moving_time_seconds is not None:
-            fact_bits.append(f"⏱️ {format_duration(run.moving_time_seconds)}")
+            fact_bits.append(
+                f"⏱️ {format_duration(run.moving_time_seconds)}"
+            )
+
         if performance is not None:
-            fact_bits.append("⚡ " + format_pace_per_mile(performance.actual_pace_seconds_per_km))
+            fact_bits.append(
+                "⚡ "
+                + format_pace_per_mile(
+                    performance.actual_pace_seconds_per_km
+                )
+            )
+
         if run.avg_hr is not None:
             fact_bits.append(f"❤️ {run.avg_hr:.0f} bpm")
+
         if moving_percent is not None:
-            fact_bits.append(f"▶️ {moving_percent:.1f}% moving")
+            fact_bits.append(
+                f"▶️ {moving_percent:.1f}% moving"
+            )
 
         environment_bits = []
+
         if run.temperature_c is not None:
-            environment_bits.append(f"🌡️ {run.temperature_c:.0f}°C")
+            environment_bits.append(
+                f"🌡️ {run.temperature_c:.0f}°C"
+            )
+
         if run.humidity is not None:
-            environment_bits.append(f"💧 {run.humidity:.0f}% humidity")
-        if performance is not None and performance.adjustment.dew_point_c is not None:
-            environment_bits.append(f"💦 DP {performance.adjustment.dew_point_c:.0f}°C")
+            environment_bits.append(
+                f"💧 {run.humidity:.0f}% humidity"
+            )
+
+        if (
+            performance is not None
+            and performance.adjustment.dew_point_c is not None
+        ):
+            environment_bits.append(
+                f"💦 DP {performance.adjustment.dew_point_c:.0f}°C"
+            )
+
         if wind_speed is not None:
-            environment_bits.append(f"💨 {wind_speed:.0f} km/h")
+            environment_bits.append(
+                f"💨 {wind_speed:.0f} km/h"
+            )
+
         if run.elevation_m is not None and run.elevation_m > 0:
-            environment_bits.append(f"⛰️ {run.elevation_m:.0f} m")
+            environment_bits.append(
+                f"⛰️ {run.elevation_m:.0f} m"
+            )
 
         trail_found = False
+
         if recognition is not None:
             trail_found = any(
-                "trail" in factor.lower() or "off-road" in factor.lower()
+                (
+                    "trail" in factor.lower()
+                    or "off-road" in factor.lower()
+                )
                 for factor in recognition.environment_factors
             )
+
         if not trail_found:
             lower_title = str(title).lower()
-            trail_found = "trail" in lower_title or "off road" in lower_title or "off-road" in lower_title
+            trail_found = (
+                "trail" in lower_title
+                or "off road" in lower_title
+                or "off-road" in lower_title
+            )
+
         if trail_found:
             environment_bits.append("🌲 Trail")
 
         if recognition is not None:
-            celebration = f"{recognition.icon} {safe_text(recognition.celebration)}"
-            rank_bits = [f"#{recognition.rank} of {recognition.total} {recognition.category_label} sessions"]
+            celebration = (
+                f"{recognition.icon} "
+                f"{safe_text(recognition.celebration)}"
+            )
+
+            rank_bits = [
+                (
+                    f"#{recognition.rank} of {recognition.total} "
+                    f"{recognition.category_label} sessions"
+                )
+            ]
+
             if recognition.rank_12m is not None:
-                rank_bits.append(f"#{recognition.rank_12m} in the last 12 months")
-            if recognition.environment_adjustment_s_per_km >= 2:
-                rank_bits.append("conditions recognised in ranking")
-            if recognition.provisional:
-                rank_bits.append("provisional ranking")
+                rank_bits.append(
+                    f"#{recognition.rank_12m} in the last 12 months"
+                )
+
+            if recognition.rank_90d is not None:
+                rank_bits.append(
+                    f"#{recognition.rank_90d} in the last 90 days"
+                )
+
             recognition_detail = " · ".join(rank_bits)
-            positive_detail = recognition.positive_detail
+
+            secondary = [
+                achievement
+                for achievement in recognition.achievements
+                if achievement.label != recognition.celebration
+            ]
+
+            positive_bits = []
+
+            for achievement in secondary[:2]:
+                positive_bits.append(
+                    f"{achievement.icon} {achievement.label}"
+                )
+
+            if recognition.trend_label:
+                positive_bits.append(
+                    f"📈 {recognition.trend_label}"
+                )
+
+            positives = (
+                " · ".join(positive_bits)
+                if positive_bits
+                else recognition.positive_detail
+            )
+
+            evidence_bits = [
+                recognition.confidence_label,
+            ]
+
+            if (
+                recognition.environment_adjustment_s_per_km
+                >= 2
+            ):
+                evidence_bits.append(
+                    "conditions recognised"
+                )
+
+            if recognition.continuity_label:
+                evidence_bits.append(
+                    recognition.continuity_label
+                )
+
+            if recognition.provisional:
+                evidence_bits.append(
+                    "provisional until rep-level Workout DNA"
+                )
+
+            evidence_line = " · ".join(evidence_bits)
         else:
             celebration = "✨ Training banked"
             recognition_detail = sport_name
-            positive_detail = "Another session added to your training history."
+            positives = (
+                "Another session added to your training history."
+            )
+            evidence_line = "Recognition is still learning this session."
 
-        facts = " &nbsp; • &nbsp; ".join(safe_text(item) for item in fact_bits) or "Training session"
-        environment = " &nbsp; • &nbsp; ".join(safe_text(item) for item in dict.fromkeys(environment_bits)) or "🌤️ No environmental data recorded"
-        location = f"📍 {safe_text(route_name)}" if route_name else safe_text(sport_name)
+        facts = " &nbsp; • &nbsp; ".join(
+            safe_text(item)
+            for item in fact_bits
+        ) or "Training session"
+
+        environment = " &nbsp; • &nbsp; ".join(
+            safe_text(item)
+            for item in dict.fromkeys(environment_bits)
+        ) or "🌤️ No environmental data recorded"
+
+        location = (
+            f"📍 {safe_text(route_name)}"
+            if route_name
+            else safe_text(sport_name)
+        )
 
         cards.append(
             f"""
             <div class="pp-training-card">
                 <div class="pp-training-card-top">
                     <div>
-                        <div class="pp-training-date">{safe_text(format_date(run.activity_date))}</div>
-                        <div class="pp-training-title">{safe_text(title)}</div>
-                        <div class="pp-training-location">{location}</div>
+                        <div class="pp-training-date">
+                            {safe_text(format_date(run.activity_date))}
+                        </div>
+                        <div class="pp-training-title">
+                            {safe_text(title)}
+                        </div>
+                        <div class="pp-training-location">
+                            {location}
+                        </div>
                     </div>
-                    <div class="pp-training-badge">{celebration}</div>
+                    <div class="pp-training-badge">
+                        {celebration}
+                    </div>
                 </div>
-                <div class="pp-training-facts">{facts}</div>
-                <div class="pp-training-environment">{environment}</div>
+
+                <div class="pp-training-facts">
+                    {facts}
+                </div>
+
+                <div class="pp-training-environment">
+                    {environment}
+                </div>
+
                 <div class="pp-training-recognition">
                     <strong>{celebration}</strong>
                     <span>{safe_text(recognition_detail)}</span>
-                    <div class="pp-training-positive">{safe_text(positive_detail)}</div>
+                    <div class="pp-training-positive">
+                        {safe_text(positives)}
+                    </div>
+                    <div class="pp-training-positive">
+                        Evidence: {safe_text(evidence_line)}
+                    </div>
                 </div>
             </div>
             """
         )
 
     if not cards:
-        cards.append('<div class="pp-card-copy">No recent activities are available.</div>')
+        cards.append(
+            """
+            <div class="pp-card-copy">
+                No recent activities are available.
+            </div>
+            """
+        )
 
     render_html(
         f"""
         <div class="pp-card">
             <div class="pp-card-label">Latest training</div>
-            <div class="pp-card-title">Every run has something to celebrate</div>
+            <div class="pp-card-title">
+                Every run has something to celebrate
+            </div>
             <div class="pp-card-copy" style="margin-bottom:0.8rem;">
-                Key training facts, conditions and the strongest positive from each recent session.
+                Recognition first, ranking as evidence, then the other
+                positives the session earned.
             </div>
             {''.join(cards)}
         </div>

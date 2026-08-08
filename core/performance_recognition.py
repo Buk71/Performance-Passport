@@ -1,21 +1,30 @@
 """
-Performance Recognition Engine.
+Performance Recognition Engine 2.0.
 
 Recognition before recommendation.
 Every run deserves one genuine achievement before one clear improvement.
 
-The engine ranks running activities against the athlete's own comparable
-history. Environmental context is applied before ranking so raw pace does not
-unfairly penalise runs completed in difficult conditions.
+The engine has four jobs:
+1. classify each running activity into a runner-friendly category;
+2. rank it against the athlete's own comparable history;
+3. recognise difficult environmental context before judging raw pace;
+4. find the strongest genuine positive in the session.
 
-Environmental inputs currently recognised:
+Rankings are always calculated, but the user-facing headline is positive-first.
+The rank is evidence supporting the recognition rather than the judgement.
+
+Environmental inputs:
 - temperature;
-- humidity and derived dew point through the existing coaching engine;
+- humidity and dew point via the existing environmental model;
 - elevation gain;
 - wind speed, conservatively because direction is not stored;
-- trail/off-road surface when recognised from the activity title.
+- trail/off-road surface where the source/title supports it.
 
-Rankings are category-specific:
+Continuity inputs:
+- moving time versus elapsed time;
+- moving percentage where both are available.
+
+Categories:
 - Recovery
 - Easy
 - Long Easy
@@ -24,8 +33,8 @@ Rankings are category-specific:
 - Speed Development
 - Race
 
-Development-workout rankings are intentionally lower confidence until
-rep-level Workout DNA is connected.
+Structured-workout rankings remain provisional until rep-level Workout DNA is
+connected. The engine explicitly exposes that limitation rather than hiding it.
 """
 
 from __future__ import annotations
@@ -92,27 +101,58 @@ SPEED_WORDS = (
 
 
 @dataclass(frozen=True)
+class RecognitionAchievement:
+    key: str
+    label: str
+    detail: str
+    strength: float
+    icon: str
+
+
+@dataclass(frozen=True)
 class Recognition:
     key: str
     category_key: str
     category_label: str
     icon: str
+
     rank: int
     total: int
     percentile: float
     top_percent: float
+
     rank_12m: int | None
     total_12m: int
     rank_90d: int | None
     total_90d: int
+
     confidence: float
+    confidence_label: str
     celebration: str
     positive_detail: str
+    achievements: tuple[RecognitionAchievement, ...]
+
     actual_pace_s_per_km: float
     adjusted_pace_s_per_km: float
     environment_adjustment_s_per_km: float
     environment_factors: tuple[str, ...]
+
+    moving_percent: float | None
+    continuity_label: str | None
+
+    trend_label: str | None
+    trend_detail: str | None
+
     provisional: bool
+
+
+@dataclass(frozen=True)
+class _ActivityContext:
+    wind_speed: float | None
+    moving_time_s: float | None
+    elapsed_time_s: float | None
+    moving_percent: float | None
+    route_name: str | None
 
 
 @dataclass(frozen=True)
@@ -122,12 +162,16 @@ class _Candidate:
     category_key: str
     category_label: str
     icon: str
+
     signal: float
     actual_pace: float
     adjusted_pace: float
     environment_adjustment: float
     environment_factors: tuple[str, ...]
-    confidence: float
+
+    moving_percent: float | None
+
+    base_confidence: float
     provisional: bool
 
 
@@ -232,9 +276,9 @@ def _category(run: RunProfile) -> tuple[str, str, str] | None:
     return "steady", "Steady Run", "🏃"
 
 
-def _wind_lookup(
+def _activity_context_lookup(
     athlete_id: int,
-) -> dict[str, float]:
+) -> dict[str, _ActivityContext]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -243,10 +287,12 @@ def _wind_lookup(
             activity_date,
             title,
             distance_m,
-            wind_speed
+            moving_time_s,
+            elapsed_time_s,
+            wind_speed,
+            route_name
         FROM activities
         WHERE athlete_id = ?
-          AND wind_speed IS NOT NULL
         """,
         (athlete_id,),
     )
@@ -255,11 +301,19 @@ def _wind_lookup(
 
     lookup = {}
 
-    for activity_date, title, distance_value, wind_speed in rows:
+    for (
+        activity_date,
+        title,
+        distance_value,
+        moving_time_s,
+        elapsed_time_s,
+        wind_speed,
+        route_name,
+    ) in rows:
         distance = _safe_float(distance_value) or 0.0
 
-        # Current Runalyze rows store kilometres in the historical distance_m
-        # column; retain compatibility with genuine metre values.
+        # Historical Runalyze rows use km in distance_m. Preserve compatibility
+        # with future/other importers that genuinely store metres.
         distance_km = distance / 1000.0 if distance > 250 else distance
 
         key = "|".join(
@@ -269,10 +323,30 @@ def _wind_lookup(
                 f"{distance_km:.3f}",
             )
         )
-        wind = _safe_float(wind_speed)
 
-        if wind is not None:
-            lookup[key] = wind
+        moving = _safe_float(moving_time_s)
+        elapsed = _safe_float(elapsed_time_s)
+
+        moving_percent = None
+
+        if (
+            moving is not None
+            and elapsed is not None
+            and moving > 0
+            and elapsed > 0
+        ):
+            moving_percent = min(
+                max((moving / elapsed) * 100.0, 0.0),
+                100.0,
+            )
+
+        lookup[key] = _ActivityContext(
+            wind_speed=_safe_float(wind_speed),
+            moving_time_s=moving,
+            elapsed_time_s=elapsed,
+            moving_percent=moving_percent,
+            route_name=route_name,
+        )
 
     return lookup
 
@@ -281,7 +355,7 @@ def _trail_surface_penalty(run: RunProfile) -> tuple[float, str | None]:
     title = str(run.title or "").lower()
 
     if any(word in title for word in TRAIL_WORDS):
-        # Conservative proxy until explicit surface data is imported.
+        # Conservative until explicit surface data is available.
         return 6.0, "trail/off-road surface"
 
     return 0.0, None
@@ -296,8 +370,8 @@ def _elevation_penalty(run: RunProfile) -> tuple[float, str | None]:
 
     climbing_density = max(ascent / distance, 0.0)
 
-    # Total ascent cannot provide exact grade-adjusted pace. Use only a
-    # conservative recognition adjustment, capped so hills cannot dominate.
+    # Total ascent alone cannot support precise GAP. Recognition uses a small,
+    # capped allowance so hills are acknowledged without dominating the rank.
     penalty = min(climbing_density * 0.30, 15.0)
 
     if penalty < 1.0:
@@ -312,9 +386,7 @@ def _wind_penalty(
     if wind_speed is None or wind_speed < 10:
         return 0.0, None
 
-    # Direction is unknown, so only a small fraction of wind speed is used.
-    # This recognises exposed conditions without pretending every wind was a
-    # headwind.
+    # Direction is unavailable. Only recognise a conservative fraction.
     penalty = min((wind_speed - 10.0) * 0.18, 8.0)
 
     if penalty <= 0:
@@ -384,7 +456,7 @@ def _environment_adjusted_pace(
         + surface_penalty
     )
 
-    # Never let context create an implausible equivalent pace.
+    # Recognition should never manufacture implausible performances.
     total_penalty = min(
         total_penalty,
         actual * 0.18,
@@ -408,13 +480,13 @@ def _aerobic_control(run: RunProfile) -> float:
     ratio = avg_hr / lt1
 
     if ratio <= 0.90:
-        return 0.97
+        return 0.98
     if ratio <= 0.95:
-        return 0.94
+        return 0.95
     if ratio <= 0.99:
-        return 0.90
+        return 0.91
     if ratio <= 1.01:
-        return 0.84
+        return 0.85
     if ratio <= 1.03:
         return 0.74
     return 0.58
@@ -438,18 +510,17 @@ def _performance_signal(
             efficiency = (1000.0 / adjusted_pace) / avg_hr
             control = _aerobic_control(run)
 
-            # Efficiency drives the ordering; HR control prevents an
-            # accidentally hard "easy" run being rewarded for speed alone.
-            signal = efficiency * (0.78 + 0.22 * control)
+            # Efficiency drives the ordering. Control protects the purpose of
+            # an easy run from being rewarded simply for being run too hard.
+            signal = efficiency * (0.76 + 0.24 * control)
             return signal, 0.90, False
 
         return 1000.0 / adjusted_pace, 0.62, True
 
     if category_key == "race":
-        return 1000.0 / adjusted_pace, 0.86, False
+        return 1000.0 / adjusted_pace, 0.88, False
 
-    # Whole-activity pace for structured workouts includes recoveries.
-    # Allow a useful provisional ranking but state the limitation clearly.
+    # Whole-session averages include recoveries. Useful, but provisional.
     intensity = 1.0
 
     if avg_hr is not None and run.lt1_hr:
@@ -468,80 +539,324 @@ def _rank(
 ) -> tuple[int, int]:
     ordered = sorted(
         group,
-        key=lambda item: item.signal,
+        key=lambda item: (
+            item.signal,
+            item.adjusted_pace * -1,
+        ),
         reverse=True,
     )
+
     return ordered.index(candidate) + 1, len(ordered)
 
 
-def _celebration(
+def _confidence(
     *,
+    base_confidence: float,
+    total: int,
+    run: RunProfile,
+    environment_factors: tuple[str, ...],
+    moving_percent: float | None,
+    provisional: bool,
+) -> tuple[float, str]:
+    sample_factor = min(total / 25.0, 1.0)
+
+    data_points = 0
+    possible = 5
+
+    if run.avg_hr is not None:
+        data_points += 1
+    if run.temperature_c is not None:
+        data_points += 1
+    if run.humidity is not None:
+        data_points += 1
+    if run.elevation_m is not None:
+        data_points += 1
+    if moving_percent is not None:
+        data_points += 1
+
+    completeness = data_points / possible
+
+    confidence = (
+        base_confidence * 0.62
+        + sample_factor * 0.23
+        + completeness * 0.15
+    )
+
+    if provisional:
+        confidence = min(confidence, 0.64)
+
+    confidence = min(max(confidence, 0.0), 0.98)
+
+    if confidence >= 0.86:
+        label = "High confidence"
+    elif confidence >= 0.70:
+        label = "Good confidence"
+    elif confidence >= 0.52:
+        label = "Developing confidence"
+    else:
+        label = "Early evidence"
+
+    return round(confidence, 4), label
+
+
+def _continuity_achievement(
+    moving_percent: float | None,
+) -> RecognitionAchievement | None:
+    if moving_percent is None:
+        return None
+
+    if moving_percent >= 99.5:
+        return RecognitionAchievement(
+            key="continuous",
+            label="Excellent flow",
+            detail=f"{moving_percent:.1f}% of elapsed time was moving.",
+            strength=0.92,
+            icon="▶️",
+        )
+
+    if moving_percent >= 97.0:
+        return RecognitionAchievement(
+            key="minimal_interruptions",
+            label="Minimal interruptions",
+            detail=f"{moving_percent:.1f}% moving kept the session flowing.",
+            strength=0.76,
+            icon="▶️",
+        )
+
+    return None
+
+
+def _achievement_candidates(
+    *,
+    candidate: _Candidate,
     rank: int,
     total: int,
-    category_label: str,
-    environment_adjustment: float,
-    environment_factors: tuple[str, ...],
-    run: RunProfile,
-) -> tuple[str, str]:
+) -> list[RecognitionAchievement]:
+    achievements = []
+    run = candidate.run
+
     top_percent = (rank / total) * 100 if total else 100.0
 
     if rank == 1 and total >= 3:
-        return (
-            f"Best {category_label} ever",
-            "This is the strongest comparable session currently in your history.",
+        achievements.append(
+            RecognitionAchievement(
+                key="best_ever",
+                label=f"Best {candidate.category_label} ever",
+                detail=(
+                    "This is the strongest comparable session currently "
+                    "in your history."
+                ),
+                strength=1.00,
+                icon="🏆",
+            )
+        )
+    elif top_percent <= 5:
+        achievements.append(
+            RecognitionAchievement(
+                key="top_5",
+                label=f"Top 5% {candidate.category_label}",
+                detail="One of your standout sessions in this category.",
+                strength=0.97,
+                icon="⭐",
+            )
+        )
+    elif top_percent <= 10:
+        achievements.append(
+            RecognitionAchievement(
+                key="top_10",
+                label=f"Top 10% {candidate.category_label}",
+                detail=(
+                    "A genuinely strong session compared with your own "
+                    "history."
+                ),
+                strength=0.93,
+                icon="⭐",
+            )
+        )
+    elif top_percent <= 25:
+        achievements.append(
+            RecognitionAchievement(
+                key="top_25",
+                label=f"Top 25% {candidate.category_label}",
+                detail="Another high-quality session banked.",
+                strength=0.84,
+                icon="⭐",
+            )
         )
 
-    if top_percent <= 5:
-        return (
-            f"Top 5% {category_label}",
-            "One of your standout sessions in this category.",
-        )
-
-    if top_percent <= 10:
-        return (
-            f"Top 10% {category_label}",
-            "A genuinely strong session compared with your own history.",
-        )
-
-    if top_percent <= 25:
-        return (
-            f"Top 25% {category_label}",
-            "Another high-quality session banked.",
-        )
-
-    if environment_adjustment >= 8:
+    if candidate.environment_adjustment >= 10:
         context = (
-            ", ".join(environment_factors[:2])
-            if environment_factors
+            ", ".join(candidate.environment_factors[:2])
+            if candidate.environment_factors
             else "difficult conditions"
         )
-        return (
-            "Tough conditions handled well",
-            f"Your raw pace understated the run because of {context}.",
+        achievements.append(
+            RecognitionAchievement(
+                key="environment_resilience",
+                label="Strong conditions performance",
+                detail=(
+                    f"Your raw pace understated the run because of {context}."
+                ),
+                strength=0.91,
+                icon="🌦️",
+            )
+        )
+    elif candidate.environment_adjustment >= 5:
+        achievements.append(
+            RecognitionAchievement(
+                key="conditions_handled",
+                label="Conditions handled well",
+                detail=(
+                    "The environmental context is recognised before your "
+                    "performance is ranked."
+                ),
+                strength=0.76,
+                icon="🌦️",
+            )
         )
 
     avg_hr = _safe_float(run.avg_hr)
     lt1 = _safe_float(run.lt1_hr)
 
     if (
-        avg_hr is not None
+        candidate.category_key in {
+            "recovery",
+            "easy",
+            "long_easy",
+        }
+        and avg_hr is not None
         and lt1 is not None
-        and avg_hr <= lt1 * 0.95
     ):
-        return (
-            "Excellent aerobic control",
-            "You kept the effort comfortably controlled and protected the purpose of the run.",
+        ratio = avg_hr / lt1
+
+        if ratio <= 0.92:
+            achievements.append(
+                RecognitionAchievement(
+                    key="aerobic_control",
+                    label="Excellent aerobic control",
+                    detail=(
+                        "You kept the effort comfortably controlled and "
+                        "protected the purpose of the session."
+                    ),
+                    strength=0.88,
+                    icon="❤️",
+                )
+            )
+        elif ratio <= 0.98:
+            achievements.append(
+                RecognitionAchievement(
+                    key="controlled_effort",
+                    label="Well-controlled effort",
+                    detail=(
+                        "Heart rate stayed in a productive personal easy "
+                        "range."
+                    ),
+                    strength=0.74,
+                    icon="❤️",
+                )
+            )
+
+    continuity = _continuity_achievement(
+        candidate.moving_percent
+    )
+
+    if continuity is not None:
+        achievements.append(continuity)
+
+    if candidate.category_key == "long_easy":
+        achievements.append(
+            RecognitionAchievement(
+                key="endurance_banked",
+                label="Valuable endurance banked",
+                detail=(
+                    "Long-run consistency is one of the foundations of "
+                    "durable fitness."
+                ),
+                strength=0.70,
+                icon="🧱",
+            )
         )
 
-    if category_label == "Long Easy":
+    if not achievements:
+        achievements.append(
+            RecognitionAchievement(
+                key="consistency",
+                label="Another useful session banked",
+                detail=(
+                    "Consistency matters: this run adds another piece of "
+                    "evidence to your personal coaching picture."
+                ),
+                strength=0.55,
+                icon="✨",
+            )
+        )
+
+    achievements.sort(
+        key=lambda achievement: achievement.strength,
+        reverse=True,
+    )
+
+    return achievements
+
+
+def _trend(
+    candidate: _Candidate,
+    group: list[_Candidate],
+) -> tuple[str | None, str | None]:
+    dated = [
+        item
+        for item in group
+        if _date(item.run.activity_date) is not None
+    ]
+    dated.sort(
+        key=lambda item: _date(item.run.activity_date),
+        reverse=True,
+    )
+
+    if candidate not in dated:
+        return None, None
+
+    position = dated.index(candidate)
+
+    # We only call a trend when enough earlier comparable runs exist.
+    previous = dated[position + 1: position + 6]
+
+    if len(previous) < 3:
+        return None, None
+
+    previous_average = sum(
+        item.signal
+        for item in previous
+    ) / len(previous)
+
+    if previous_average <= 0:
+        return None, None
+
+    relative = (
+        candidate.signal - previous_average
+    ) / previous_average
+
+    if relative >= 0.04:
         return (
-            "Valuable endurance banked",
-            "Long-run consistency is one of the foundations of durable fitness.",
+            "Trending stronger",
+            "This performance is clearly above your previous five comparable sessions.",
+        )
+
+    if relative >= 0.015:
+        return (
+            "Positive trend",
+            "This performance is above your recent comparable-session average.",
+        )
+
+    if relative <= -0.05:
+        return (
+            "Building opportunity",
+            "Recent comparable sessions have been stronger, giving the coach useful evidence for the next improvement.",
         )
 
     return (
-        "Another useful session banked",
-        "Consistency matters: this run adds another piece of evidence to your personal coaching picture.",
+        "Consistent",
+        "This sits close to the level of your recent comparable sessions.",
     )
 
 
@@ -552,7 +867,7 @@ def build_recognition_index(
     reference_date: datetime.date | None = None,
 ) -> dict[str, Recognition]:
     reference_date = reference_date or datetime.date.today()
-    wind_lookup = _wind_lookup(athlete_id)
+    context_lookup = _activity_context_lookup(athlete_id)
     candidates = []
 
     for run in runs:
@@ -570,19 +885,31 @@ def build_recognition_index(
             continue
 
         key = recognition_key(run)
+        context = context_lookup.get(
+            key,
+            _ActivityContext(
+                wind_speed=None,
+                moving_time_s=None,
+                elapsed_time_s=None,
+                moving_percent=None,
+                route_name=None,
+            ),
+        )
+
         adjusted, environment_adjustment, environment_factors = (
             _environment_adjusted_pace(
                 run,
-                wind_speed=wind_lookup.get(key),
+                wind_speed=context.wind_speed,
             )
         )
+
         actual = (
             float(run.moving_time_seconds)
             / float(run.distance_km)
         )
 
         category_key, category_label, icon = category
-        signal, confidence, provisional = _performance_signal(
+        signal, base_confidence, provisional = _performance_signal(
             run,
             category_key=category_key,
             adjusted_pace=adjusted,
@@ -600,7 +927,8 @@ def build_recognition_index(
                 adjusted_pace=adjusted,
                 environment_adjustment=environment_adjustment,
                 environment_factors=environment_factors,
-                confidence=confidence,
+                moving_percent=context.moving_percent,
+                base_confidence=base_confidence,
                 provisional=provisional,
             )
         )
@@ -618,7 +946,6 @@ def build_recognition_index(
     for candidate in candidates:
         group = by_category[candidate.category_key]
         rank, total = _rank(candidate, group)
-        run_date = _date(candidate.run.activity_date)
 
         group_12m = []
         group_90d = []
@@ -653,13 +980,36 @@ def build_recognition_index(
         )
         top_percent = (rank / total) * 100.0
 
-        celebration, positive_detail = _celebration(
+        achievements = _achievement_candidates(
+            candidate=candidate,
             rank=rank,
             total=total,
-            category_label=candidate.category_label,
-            environment_adjustment=candidate.environment_adjustment,
-            environment_factors=candidate.environment_factors,
+        )
+        primary = achievements[0]
+
+        confidence, confidence_label = _confidence(
+            base_confidence=candidate.base_confidence,
+            total=total,
             run=candidate.run,
+            environment_factors=candidate.environment_factors,
+            moving_percent=candidate.moving_percent,
+            provisional=candidate.provisional,
+        )
+
+        if candidate.moving_percent is None:
+            continuity_label = None
+        elif candidate.moving_percent >= 99.5:
+            continuity_label = "Continuous"
+        elif candidate.moving_percent >= 97:
+            continuity_label = "Minimal interruptions"
+        elif candidate.moving_percent >= 92:
+            continuity_label = "Some interruptions"
+        else:
+            continuity_label = "Interrupted session"
+
+        trend_label, trend_detail = _trend(
+            candidate,
+            group,
         )
 
         result[candidate.key] = Recognition(
@@ -675,9 +1025,11 @@ def build_recognition_index(
             total_12m=len(group_12m),
             rank_90d=rank_90d,
             total_90d=len(group_90d),
-            confidence=round(candidate.confidence, 4),
-            celebration=celebration,
-            positive_detail=positive_detail,
+            confidence=confidence,
+            confidence_label=confidence_label,
+            celebration=primary.label,
+            positive_detail=primary.detail,
+            achievements=tuple(achievements[:4]),
             actual_pace_s_per_km=round(candidate.actual_pace, 1),
             adjusted_pace_s_per_km=round(candidate.adjusted_pace, 1),
             environment_adjustment_s_per_km=round(
@@ -685,6 +1037,14 @@ def build_recognition_index(
                 1,
             ),
             environment_factors=candidate.environment_factors,
+            moving_percent=(
+                round(candidate.moving_percent, 1)
+                if candidate.moving_percent is not None
+                else None
+            ),
+            continuity_label=continuity_label,
+            trend_label=trend_label,
+            trend_detail=trend_detail,
             provisional=candidate.provisional,
         )
 
