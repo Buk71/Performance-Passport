@@ -5,6 +5,7 @@ from config import APP_NAME, VERSION, VERSION_NAME
 
 PRIMARY_NAVIGATION = [
     "Coach",
+    "Journal",
     "Activities",
     "Progress",
     "Goals",
