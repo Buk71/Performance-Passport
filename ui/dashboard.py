@@ -29,6 +29,10 @@ from core.environment_profile import build_personal_environment_profile
 from core.easy_run_coach import build_easy_run_coach
 from core.evidence_engine import build_athlete_evidence_profile
 from core.performance_dna import build_performance_dna
+from core.performance_recognition import (
+    build_recognition_index,
+    recognition_key,
+)
 from core.training_blueprint import build_training_blueprint
 
 
@@ -104,6 +108,84 @@ def get_athletes():
 
 def get_athlete_thresholds(athlete_id):
     return get_effective_athlete_thresholds(athlete_id)
+
+def get_recent_activity_timing_context(athlete_id):
+    """Load display context not currently carried by RunProfile."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            activity_date,
+            title,
+            distance_m,
+            moving_time_s,
+            elapsed_time_s,
+            wind_speed,
+            route_name
+        FROM activities
+        WHERE athlete_id = ?
+        ORDER BY activity_datetime DESC
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    context = {}
+    for (
+        activity_date,
+        title,
+        distance_value,
+        moving_time_s,
+        elapsed_time_s,
+        wind_speed,
+        route_name,
+    ) in rows:
+        try:
+            distance_value = float(distance_value or 0.0)
+        except (TypeError, ValueError):
+            distance_value = 0.0
+
+        distance_km = (
+            distance_value / 1000.0
+            if distance_value > 250.0
+            else distance_value
+        )
+        key = "|".join(
+            (
+                str(activity_date or ""),
+                str(title or ""),
+                f"{distance_km:.3f}",
+            )
+        )
+
+        try:
+            moving = float(moving_time_s)
+        except (TypeError, ValueError):
+            moving = None
+        try:
+            elapsed = float(elapsed_time_s)
+        except (TypeError, ValueError):
+            elapsed = None
+        try:
+            wind = float(wind_speed)
+        except (TypeError, ValueError):
+            wind = None
+
+        if moving and elapsed and moving > 0 and elapsed > 0:
+            moving_percent = min(max((moving / elapsed) * 100.0, 0.0), 100.0)
+        else:
+            moving_percent = None
+
+        context[key] = {
+            "moving_time_s": moving,
+            "elapsed_time_s": elapsed,
+            "moving_percent": moving_percent,
+            "wind_speed": wind,
+            "route_name": route_name,
+        }
+    return context
 
 def get_lifetime_summary(athlete_id):
     conn = get_connection()
@@ -292,6 +374,21 @@ def format_clock(seconds):
         return f"{hours}:{minutes:02d}:{remaining_seconds:02d}"
 
     return f"{minutes}:{remaining_seconds:02d}"
+
+
+def format_duration(seconds):
+    if seconds is None:
+        return "—"
+
+    total = int(round(seconds))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    remaining = total % 60
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{remaining:02d}"
+
+    return f"{minutes}:{remaining:02d}"
 
 
 def format_distance_miles(distance_km):
@@ -2415,65 +2512,118 @@ def render_coach_evidence_panel(evidence_bundle):
 
 
 
-def render_recent_activities(run_profiles):
-    rows = []
+def render_recent_activities(
+    run_profiles,
+    recognition_index,
+    timing_context,
+):
+    cards = []
 
     for run in run_profiles[:5]:
         sport_name, fallback_title = get_sport_name(run.sport_id)
         performance = equivalent_performance(run)
+        key = recognition_key(run)
+        recognition = recognition_index.get(key)
+        timing = timing_context.get(key, {})
 
-        pace = (
-            format_pace_per_mile(performance.actual_pace_seconds_per_km)
-            if performance is not None
-            else "--"
-        )
+        title = run.title or fallback_title
+        route_name = timing.get("route_name")
+        moving_percent = timing.get("moving_percent")
+        wind_speed = timing.get("wind_speed")
 
-        rows.append(
+        fact_bits = []
+        if run.distance_km is not None and run.distance_km > 0:
+            fact_bits.append(f"📏 {format_distance_miles(run.distance_km)}")
+        if run.moving_time_seconds is not None:
+            fact_bits.append(f"⏱️ {format_duration(run.moving_time_seconds)}")
+        if performance is not None:
+            fact_bits.append("⚡ " + format_pace_per_mile(performance.actual_pace_seconds_per_km))
+        if run.avg_hr is not None:
+            fact_bits.append(f"❤️ {run.avg_hr:.0f} bpm")
+        if moving_percent is not None:
+            fact_bits.append(f"▶️ {moving_percent:.1f}% moving")
+
+        environment_bits = []
+        if run.temperature_c is not None:
+            environment_bits.append(f"🌡️ {run.temperature_c:.0f}°C")
+        if run.humidity is not None:
+            environment_bits.append(f"💧 {run.humidity:.0f}% humidity")
+        if performance is not None and performance.adjustment.dew_point_c is not None:
+            environment_bits.append(f"💦 DP {performance.adjustment.dew_point_c:.0f}°C")
+        if wind_speed is not None:
+            environment_bits.append(f"💨 {wind_speed:.0f} km/h")
+        if run.elevation_m is not None and run.elevation_m > 0:
+            environment_bits.append(f"⛰️ {run.elevation_m:.0f} m")
+
+        trail_found = False
+        if recognition is not None:
+            trail_found = any(
+                "trail" in factor.lower() or "off-road" in factor.lower()
+                for factor in recognition.environment_factors
+            )
+        if not trail_found:
+            lower_title = str(title).lower()
+            trail_found = "trail" in lower_title or "off road" in lower_title or "off-road" in lower_title
+        if trail_found:
+            environment_bits.append("🌲 Trail")
+
+        if recognition is not None:
+            celebration = f"{recognition.icon} {safe_text(recognition.celebration)}"
+            rank_bits = [f"#{recognition.rank} of {recognition.total} {recognition.category_label} sessions"]
+            if recognition.rank_12m is not None:
+                rank_bits.append(f"#{recognition.rank_12m} in the last 12 months")
+            if recognition.environment_adjustment_s_per_km >= 2:
+                rank_bits.append("conditions recognised in ranking")
+            if recognition.provisional:
+                rank_bits.append("provisional ranking")
+            recognition_detail = " · ".join(rank_bits)
+            positive_detail = recognition.positive_detail
+        else:
+            celebration = "✨ Training banked"
+            recognition_detail = sport_name
+            positive_detail = "Another session added to your training history."
+
+        facts = " &nbsp; • &nbsp; ".join(safe_text(item) for item in fact_bits) or "Training session"
+        environment = " &nbsp; • &nbsp; ".join(safe_text(item) for item in dict.fromkeys(environment_bits)) or "🌤️ No environmental data recorded"
+        location = f"📍 {safe_text(route_name)}" if route_name else safe_text(sport_name)
+
+        cards.append(
             f"""
-            <div class="pp-activity-row">
-                <div class="pp-activity-date">
-                    {safe_text(format_date(run.activity_date))}
-                </div>
-                <div>
-                    <div class="pp-activity-name">
-                        {safe_text(run.title or fallback_title)}
+            <div class="pp-training-card">
+                <div class="pp-training-card-top">
+                    <div>
+                        <div class="pp-training-date">{safe_text(format_date(run.activity_date))}</div>
+                        <div class="pp-training-title">{safe_text(title)}</div>
+                        <div class="pp-training-location">{location}</div>
                     </div>
-                    <div class="pp-activity-detail">
-                        {safe_text(sport_name)}
-                    </div>
+                    <div class="pp-training-badge">{celebration}</div>
                 </div>
-                <div class="pp-activity-detail">
-                    {safe_text(format_distance_miles(run.distance_km))}
-                </div>
-                <div class="pp-activity-detail">
-                    {safe_text(pace)}
-                </div>
-                <div>
-                    <span class="pp-status">Analysed</span>
+                <div class="pp-training-facts">{facts}</div>
+                <div class="pp-training-environment">{environment}</div>
+                <div class="pp-training-recognition">
+                    <strong>{celebration}</strong>
+                    <span>{safe_text(recognition_detail)}</span>
+                    <div class="pp-training-positive">{safe_text(positive_detail)}</div>
                 </div>
             </div>
             """
         )
 
-    if not rows:
-        rows.append(
-            """
-            <div class="pp-card-copy">
-                No recent activities are available.
-            </div>
-            """
-        )
+    if not cards:
+        cards.append('<div class="pp-card-copy">No recent activities are available.</div>')
 
     render_html(
         f"""
         <div class="pp-card">
-            <div class="pp-card-label">Training history</div>
-            <div class="pp-card-title">Recent activities</div>
-            {''.join(rows)}
+            <div class="pp-card-label">Latest training</div>
+            <div class="pp-card-title">Every run has something to celebrate</div>
+            <div class="pp-card-copy" style="margin-bottom:0.8rem;">
+                Key training facts, conditions and the strongest positive from each recent session.
+            </div>
+            {''.join(cards)}
         </div>
         """
     )
-
 
 def show_dashboard():
     selector_col, _ = st.columns([0.35, 0.65])
@@ -2526,6 +2676,13 @@ def show_dashboard():
 
     thresholds = get_athlete_thresholds(athlete_id)
     run_profiles = get_run_profiles(athlete_id, thresholds)
+    timing_context = get_recent_activity_timing_context(
+        athlete_id
+    )
+    recognition_index = build_recognition_index(
+        run_profiles,
+        athlete_id=athlete_id,
+    )
     training_blueprint = build_training_blueprint(
         run_profiles,
         athlete_id=athlete_id,
@@ -2732,4 +2889,8 @@ def show_dashboard():
     render_coach_evidence_panel(evidence_bundle)
 
     st.markdown("## Latest training")
-    render_recent_activities(run_profiles)
+    render_recent_activities(
+        run_profiles,
+        recognition_index,
+        timing_context,
+    )

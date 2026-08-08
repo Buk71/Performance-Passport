@@ -493,6 +493,89 @@ def inject_global_theme():
             line-height: 1.3;
         }}
 
+        .pp-training-card {{
+            margin-top: 0.78rem;
+            padding: 1rem 1.05rem;
+            border: 1px solid var(--pp-border);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.72);
+        }}
+
+        .pp-training-card-top {{
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+        }}
+
+        .pp-training-date {{
+            color: var(--pp-text-muted);
+            font-size: 0.70rem;
+            font-weight: 720;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }}
+
+        .pp-training-title {{
+            margin-top: 0.12rem;
+            color: var(--pp-text);
+            font-size: 0.98rem;
+            font-weight: 740;
+            letter-spacing: -0.015em;
+        }}
+
+        .pp-training-location {{
+            margin-top: 0.18rem;
+            color: var(--pp-text-secondary);
+            font-size: 0.75rem;
+        }}
+
+        .pp-training-badge {{
+            flex: 0 0 auto;
+            max-width: 260px;
+            padding: 0.34rem 0.58rem;
+            border-radius: 999px;
+            background: var(--pp-success-soft);
+            color: var(--pp-success);
+            font-size: 0.72rem;
+            font-weight: 760;
+            text-align: center;
+        }}
+
+        .pp-training-facts {{
+            margin-top: 0.72rem;
+            color: var(--pp-text);
+            font-size: 0.81rem;
+            font-weight: 650;
+            line-height: 1.5;
+        }}
+
+        .pp-training-environment {{
+            margin-top: 0.40rem;
+            color: var(--pp-text-secondary);
+            font-size: 0.77rem;
+            line-height: 1.5;
+        }}
+
+        .pp-training-recognition {{
+            margin-top: 0.70rem;
+            padding-top: 0.66rem;
+            border-top: 1px solid var(--pp-border);
+            color: var(--pp-text-secondary);
+            font-size: 0.77rem;
+            line-height: 1.5;
+        }}
+
+        .pp-training-recognition strong {{
+            color: var(--pp-text);
+            margin-right: 0.42rem;
+        }}
+
+        .pp-training-positive {{
+            margin-top: 0.24rem;
+            color: var(--pp-text-secondary);
+        }}
+
         .pp-activity-row {{
             display: grid;
             grid-template-columns: 80px minmax(170px, 1fr) 105px 105px 90px;
@@ -557,6 +640,23 @@ def inject_global_theme():
         @media (max-width: 900px) {{
             [data-testid="stMainBlockContainer"] {{
                 padding: 4rem 1rem 3rem;
+            }}
+
+            .pp-training-card-top {{
+                display: block;
+            }}
+
+            .pp-training-badge {{
+                display: inline-block;
+                margin-top: 0.55rem;
+                max-width: 100%;
+                text-align: left;
+            }}
+
+            .pp-training-facts,
+            .pp-training-environment,
+            .pp-training-recognition {{
+                display: block;
             }}
 
             .pp-activity-row {{
