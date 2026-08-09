@@ -5,6 +5,7 @@ import streamlit as st
 
 from core.next_run import build_next_run_recommendation
 from core.live_integration import build_adaptive_coach_proposal
+from core.coaching_arbitration import build_coaching_arbitration
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -246,6 +247,56 @@ def show_next_run_page():
             "Safety switch is still ON: the existing recommendation remains "
             "authoritative in v0.19.6."
         )
+
+    st.markdown("## ⚖️ Coaching Arbitration")
+
+    arbitration = build_coaching_arbitration(
+        athlete_id,
+        existing_recommendation=recommendation,
+    )
+
+    if arbitration is not None:
+        _html(
+            f"""
+            <div class="pp-card pp-card-accent">
+                <div class="pp-card-label">Proposed final coaching decision</div>
+                <div class="pp-card-title">{_safe(arbitration.headline)}</div>
+                <div class="pp-card-copy">{_safe(arbitration.summary)}</div>
+                <div style="margin-top:0.8rem;">
+                    <span class="pp-status">
+                        Confidence {_safe(arbitration.confidence_label)}
+                        · {arbitration.confidence:.0%}
+                    </span>
+                    <span class="pp-status">
+                        {_safe(arbitration.decision_source)}
+                    </span>
+                    <span class="pp-status">
+                        {'Ready for v0.20' if arbitration.ready_for_live else 'Review required'}
+                    </span>
+                </div>
+            </div>
+            """
+        )
+
+        if arbitration.selected_prescription:
+            st.markdown(
+                f"**Selected key workout · "
+                f"{arbitration.selected_day or 'Timing building'}:** "
+                f"{arbitration.selected_prescription}"
+            )
+
+        with st.expander("Why this signal won"):
+            for item in arbitration.evidence:
+                st.markdown(f"- {item}")
+
+            if arbitration.safety_notes:
+                st.markdown("**Safety / readiness:**")
+                for item in arbitration.safety_notes:
+                    st.markdown(f"- {item}")
+
+            st.markdown("**Decision hierarchy:**")
+            for item in arbitration.hierarchy:
+                st.caption(item)
 
     st.caption(
         "Immediate next run = what to do next · Next key workout = where the "

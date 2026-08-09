@@ -5,6 +5,8 @@ import streamlit as st
 
 from core.session_designer import build_designed_session
 from core.live_integration import build_adaptive_coach_proposal
+from core.next_run import build_next_run_recommendation
+from core.coaching_arbitration import build_coaching_arbitration
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -349,6 +351,37 @@ def show_todays_session_page():
             "Safety switch is still ON: the existing Today's Session remains "
             "authoritative in v0.19.6."
         )
+
+    st.markdown("## ⚖️ Arbitration result")
+
+    existing_for_arbitration = build_next_run_recommendation(athlete_id)
+
+    arbitration = (
+        build_coaching_arbitration(
+            athlete_id,
+            existing_recommendation=existing_for_arbitration,
+        )
+        if existing_for_arbitration is not None
+        else None
+    )
+
+    if arbitration is not None:
+        if arbitration.ready_for_live:
+            st.success(
+                f"{arbitration.headline} · "
+                f"{arbitration.confidence_label} confidence "
+                f"({arbitration.confidence:.0%})"
+            )
+        else:
+            st.warning(
+                f"{arbitration.headline} · review before live takeover."
+            )
+
+        with st.expander("Why arbitration chose this"):
+            for item in arbitration.evidence:
+                st.markdown(f"- {item}")
+            for item in arbitration.safety_notes:
+                st.caption(item)
 
     st.caption(
         "Historical sessions inform the prescription; they do not yet prove "
