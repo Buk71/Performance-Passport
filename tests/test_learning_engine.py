@@ -3,6 +3,7 @@ import unittest
 from core.learning_engine import (
     LearningObservation,
     _build_pattern,
+    _family_components,
     _phase_family,
 )
 
@@ -29,6 +30,17 @@ class LearningEngineTests(unittest.TestCase):
                 ]
             ),
             "mixed_quality",
+        )
+
+    def test_mixed_session_contributes_to_both_components(self):
+        self.assertEqual(
+            _family_components(
+                [
+                    {"phase_type": "threshold"},
+                    {"phase_type": "short_intervals"},
+                ]
+            ),
+            {"threshold", "short_intervals"},
         )
 
     def test_positive_history_builds_positive_pattern(self):

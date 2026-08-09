@@ -105,6 +105,8 @@ class LearnedPattern:
 
     trusted_session_count: int
     response_observation_count: int
+    pure_session_count: int
+    mixed_session_count: int
 
     average_trigger_execution: float
     average_response_delta: float | None
@@ -193,6 +195,36 @@ def _phase_family(phases: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _family_components(phases: list[dict[str, Any]]) -> set[str]:
+    types = {
+        _canonical_phase_type(phase.get("phase_type"))
+        for phase in phases
+    }
+
+    components = set()
+
+    if "threshold" in types:
+        components.add("threshold")
+
+    if "short_intervals" in types:
+        components.add("short_intervals")
+
+    if "long_intervals" in types:
+        components.add("long_intervals")
+
+    if "strides" in types:
+        components.add("strides")
+
+    return components
+
+
+def _is_pure_family(
+    family: str,
+    components: set[str],
+) -> bool:
+    return components == {family}
+
+
 def _family_label(family: str) -> str:
     return {
         "threshold": "Threshold",
@@ -270,6 +302,7 @@ def _trusted_rows(
             continue
 
         family = _phase_family(phases)
+        components = _family_components(phases)
 
         if family is None:
             continue
@@ -301,6 +334,7 @@ def _trusted_rows(
                 "activity_title": str(row[3] or row[4] or "Workout"),
                 "workout_signature": str(row[4] or "workout"),
                 "family": family,
+                "components": components,
                 "execution_score": execution,
                 "phase_confidence": phase_confidence,
                 "recognition_confidence": recognition_confidence,
@@ -616,6 +650,10 @@ def _pattern_language(
 def _build_pattern(
     family: str,
     observations: list[LearningObservation],
+    *,
+    history_total: int | None = None,
+    pure_count: int | None = None,
+    mixed_count: int | None = None,
 ) -> LearnedPattern:
     response_observations = [
         item
@@ -689,9 +727,23 @@ def _build_pattern(
     return LearnedPattern(
         family=family,
         family_label=family_label,
-        trusted_session_count=len(observations),
+        trusted_session_count=(
+            history_total
+            if history_total is not None
+            else len(observations)
+        ),
         response_observation_count=len(
             response_observations
+        ),
+        pure_session_count=(
+            pure_count
+            if pure_count is not None
+            else len(observations)
+        ),
+        mixed_session_count=(
+            mixed_count
+            if mixed_count is not None
+            else 0
         ),
         average_trigger_execution=round(
             statistics.fmean(
@@ -732,6 +784,36 @@ def _build_pattern(
     )
 
 
+def _history_counts(
+    athlete_id: int,
+) -> dict[str, tuple[int, int, int]]:
+    """
+    Return family -> (total participating, pure, mixed).
+
+    A mixed threshold + short-interval session contributes to the historical
+    count of BOTH threshold and short intervals. This prevents useful training
+    history from disappearing into a separate bucket.
+    """
+    rows = _trusted_rows(athlete_id)
+    counts = defaultdict(lambda: [0, 0, 0])
+
+    for row in rows:
+        components = row["components"]
+
+        for family in components:
+            counts[family][0] += 1
+
+            if _is_pure_family(family, components):
+                counts[family][1] += 1
+            else:
+                counts[family][2] += 1
+
+    return {
+        family: tuple(values)
+        for family, values in counts.items()
+    }
+
+
 def build_learning_profile(
     athlete_id: int,
 ) -> AthleteLearningProfile:
@@ -741,18 +823,42 @@ def build_learning_profile(
 
     grouped = defaultdict(list)
 
-    for observation in observations:
-        grouped[observation.family].append(
-            observation
-        )
+    trusted_rows = {
+        row["workout_id"]: row
+        for row in _trusted_rows(athlete_id)
+    }
 
-    patterns = [
-        _build_pattern(
-            family,
-            items,
+    for observation in observations:
+        row = trusted_rows.get(observation.workout_id)
+
+        if row is None:
+            grouped[observation.family].append(
+                observation
+            )
+            continue
+
+        components = row["components"]
+
+        for family in components:
+            grouped[family].append(
+                observation
+            )
+
+    history_counts = _history_counts(athlete_id)
+
+    patterns = []
+
+    for family, counts in history_counts.items():
+        total, pure_count, mixed_count = counts
+        patterns.append(
+            _build_pattern(
+                family,
+                grouped.get(family, []),
+                history_total=total,
+                pure_count=pure_count,
+                mixed_count=mixed_count,
+            )
         )
-        for family, items in grouped.items()
-    ]
 
     direction_order = {
         "strong_positive": 0,

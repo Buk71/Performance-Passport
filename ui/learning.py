@@ -104,29 +104,46 @@ def show_learning_page():
                 """
             )
 
-            cols = st.columns(4, gap="small")
+            history_detail = (
+                f"{pattern.pure_session_count} pure · "
+                f"{pattern.mixed_session_count} mixed"
+            )
+
+            cols = st.columns(5, gap="small")
             cols[0].metric(
+                "History identified",
+                str(pattern.trusted_session_count),
+                help=history_detail,
+            )
+            cols[1].metric(
+                "Usable response windows",
+                str(pattern.response_observation_count),
+            )
+            cols[2].metric(
                 "Response association",
                 _delta_text(
                     pattern.average_response_delta
                 ),
             )
-            cols[1].metric(
+            cols[3].metric(
                 "Positive windows",
                 _rate_text(
                     pattern.positive_response_rate
                 ),
             )
-            cols[2].metric(
-                "Usable responses",
-                str(
-                    pattern.response_observation_count
-                ),
-            )
-            cols[3].metric(
+            cols[4].metric(
                 "Learning confidence",
                 f"{pattern.confidence_label} · "
                 f"{pattern.confidence:.0%}",
+            )
+
+            st.caption(
+                f"History: {pattern.trusted_session_count} sessions identified · "
+                f"{pattern.pure_session_count} pure {pattern.family_label.lower()} · "
+                f"{pattern.mixed_session_count} mixed sessions containing "
+                f"{pattern.family_label.lower()}. Only "
+                f"{pattern.response_observation_count} currently have complete "
+                "before/after response windows."
             )
 
             if pattern.best_associated_signature:
@@ -145,11 +162,13 @@ def show_learning_page():
         <div class="pp-card">
             <div class="pp-card-title">21 days before → workout → 21 days after</div>
             <div class="pp-card-copy">
-                PP only uses workouts with a trustworthy decoded phase
-                structure. For each one, it compares average quality-workout
-                execution in the 21 days before with the 21 days after.
-                Race links add supporting confidence, but are not treated as
-                proof that a workout caused a race result.
+                PP first counts every trustworthy decoded workout that
+                contains the training stimulus — including mixed sessions.
+                Response learning is stricter: where enough surrounding data
+                exists, it compares average quality-workout execution in the
+                21 days before with the 21 days after. Race links add supporting
+                confidence, but are not treated as proof that a workout caused
+                a race result.
             </div>
         </div>
         """
