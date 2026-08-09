@@ -11,6 +11,7 @@ from core.performance_backtracking import build_performance_backtracking_profile
 from core.adaptive_training_block import build_adaptive_block_preview
 from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.adaptive_progression import evaluate_progression
+from core.coach_simulator import simulate_pb_build
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -478,6 +479,59 @@ def show_learning_page():
                         "next workout. PP is showing what the adaptive coach "
                         "would do and why."
                     )
+
+    st.markdown("## 🧪 Retrospective Coach Simulator")
+
+    st.caption(
+        "PP's driving test: replay a completed build day by day and check what "
+        "the adaptive coach would have done without seeing future training."
+    )
+
+    if athlete_id == 1:
+        simulation = simulate_pb_build(
+            athlete_id,
+            target_date=__import__("datetime").date(2026,5,5),
+            target_label="May 2026 5K PB",
+            weeks=10,
+        )
+
+        cols=st.columns(4,gap="small")
+        cols[0].metric("Verdict",simulation.verdict)
+        cols[1].metric("Coach decisions",str(simulation.coaching_decision_count))
+        cols[2].metric("Sensible",str(simulation.sensible_decision_count))
+        cols[3].metric("Validation rate",f"{simulation.pass_rate:.0%}")
+
+        st.write(simulation.summary)
+
+        if simulation.flags:
+            for flag in simulation.flags:
+                if flag.severity=="warning":
+                    st.warning(f"{flag.date}: {flag.message}")
+                else:
+                    st.info(f"{flag.date}: {flag.message}")
+
+        with st.expander("See the simulated coaching timeline"):
+            for decision in simulation.decisions:
+                actual=decision.actual_title or "No recorded run"
+                execution=(
+                    f" · execution {decision.actual_execution_score:.0f}/100"
+                    if decision.actual_execution_score is not None
+                    else ""
+                )
+                st.markdown(
+                    f"**{decision.date} · {decision.weekday}** — "
+                    f"PP: {decision.planned_session}  \n"
+                    f"Actual: {actual}{execution}  \n"
+                    f"Adaptation: **{decision.progression_action.replace('_',' ').title()}**"
+                )
+                for reason in decision.explanation:
+                    st.caption(reason)
+    else:
+        st.info(
+            "The first golden retrospective scenario is the May 2026 5K PB build. "
+            "Once its rules pass review, we will run the same simulator over Jo "
+            "and ordinary/non-PB periods."
+        )
 
     st.markdown("## Guardrails")
 
