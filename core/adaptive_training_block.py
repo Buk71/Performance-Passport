@@ -204,7 +204,7 @@ def build_adaptive_block_preview(
             "are informed by this athlete's own successful preparation history."
         ),
         limitations=(
-            "Preview mode only: this does not change Recommended Next Run, Today's Session or the saved Training Block.",
+            "Preview mode only: this does not change Recommended Next Run, Next Run or the saved Training Block.",
             "Historical associations influence emphasis but are not treated as proof of causation.",
             "Readiness and the response to each newly completed run should be used before the future live engine changes the next prescription.",
         ),

@@ -96,7 +96,7 @@ def show_todays_session_page():
         return
 
     due_today = str(session.earliest_timing or "").lower().startswith("today")
-    st.title("🏃 Today's Session" if due_today else "🎯 Upcoming Key Session")
+    st.title("🏃 Next Run" if due_today else "🎯 Upcoming Key Session")
 
     _html(
         f"""

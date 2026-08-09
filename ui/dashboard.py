@@ -779,7 +779,7 @@ def render_daily_coach(
                 padding-top:0.9rem;
                 border-top:1px solid var(--pp-border);
             ">
-                <div class="pp-card-label">Today's recommendation</div>
+                <div class="pp-card-label">Next run</div>
                 <div class="pp-card-title" style="font-size:1rem;">
                     {safe_text(recommendation_title)}
                 </div>

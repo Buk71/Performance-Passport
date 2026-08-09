@@ -783,7 +783,7 @@ def build_adaptive_weekly_plan(
             f"{quality_days[0]} and {quality_days[1]}, with the long run on {long_day}."
         ),
         limitations=(
-            "Preview only: nothing here changes Recommended Next Run, Today's Session or the saved Training Block.",
+            "Preview only: nothing here changes Recommended Next Run, Next Run or the saved Training Block.",
             "Future live versions must recalculate after each completed run and use readiness before preserving or changing the next workout.",
             "Descriptive activity titles and richer FIT data will progressively improve workout-intent recognition and personal historical matching.",
             "Fallback workouts are used only when trustworthy personal historical structures are not available.",

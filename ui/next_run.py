@@ -16,7 +16,7 @@ def _html(markup):
 
 
 def _go_to_session():
-    st.session_state["pp_navigation_request"] = "Today's Session"
+    st.session_state["pp_navigation_request"] = "Next Run"
 
 
 def show_next_run_page():

@@ -39,7 +39,7 @@ elif page == "Journal":
 elif page == "Next Run":
     show_next_run_page()
 
-elif page == "Today's Session":
+elif page == "Next Run":
     show_todays_session_page()
 
 elif page == "Learning":

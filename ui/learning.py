@@ -588,5 +588,5 @@ def show_learning_page():
     st.info(
         "Learning Engine v1 is deliberately observation-only. We'll inspect "
         "what it has learned about the real athletes before allowing it to "
-        "change Recommended Next Run or Today's Session."
+        "change Recommended Next Run or Next Run."
     )
