@@ -1101,6 +1101,54 @@ def _confidence(
     return round(confidence, 4), label
 
 
+def _preserve_recovery_instruction(
+    generated_main_set: tuple[str, ...],
+    adaptive_main_set: tuple[str, ...],
+) -> tuple[str, ...]:
+    """
+    Keep the recovery instruction when Adaptive Coach replaces the work reps.
+
+    The adaptive planner owns the progression (for example 8 × 500m), while
+    Session Designer still owns the athlete-aware workout detail. That includes
+    the jog/float recovery derived from personal history where available, or the
+    family fallback where history is incomplete.
+    """
+    recovery_keywords = (
+        "between reps",
+        "recovery",
+        "recoveries",
+        "easy jog",
+        "very easy jog",
+        "jog / float",
+        "float between",
+    )
+
+    recovery_lines = [
+        line
+        for line in generated_main_set
+        if any(
+            keyword in str(line).lower()
+            for keyword in recovery_keywords
+        )
+    ]
+
+    if not recovery_lines:
+        return tuple(adaptive_main_set)
+
+    existing_text = " ".join(
+        str(line).lower()
+        for line in adaptive_main_set
+    )
+
+    additions = [
+        line
+        for line in recovery_lines
+        if str(line).lower() not in existing_text
+    ]
+
+    return tuple(adaptive_main_set) + tuple(additions)
+
+
 def build_designed_session(
     athlete_id: int,
     *,
@@ -1143,7 +1191,10 @@ def build_designed_session(
         )
     )
     if main_set_override:
-        main_set = tuple(main_set_override)
+        main_set = _preserve_recovery_instruction(
+            main_set,
+            tuple(main_set_override),
+        )
         source = "Adaptive Coach + personal targets"
 
     (
