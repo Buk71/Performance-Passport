@@ -8,6 +8,7 @@ PRIMARY_NAVIGATION = [
     "Journal",
     "Next Run",
     "Today's Session",
+    "Learning",
     "Activities",
     "Progress",
     "Goals",
