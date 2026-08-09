@@ -1103,6 +1103,13 @@ def _confidence(
 
 def build_designed_session(
     athlete_id: int,
+    *,
+    family_override: str | None = None,
+    main_set_override: tuple[str, ...] | None = None,
+    timing_override: str | None = None,
+    confidence_override: float | None = None,
+    confidence_label_override: str | None = None,
+    why_override: tuple[str, ...] | None = None,
 ) -> DesignedSession | None:
     recommendation = build_next_run_recommendation(
         athlete_id
@@ -1115,7 +1122,11 @@ def build_designed_session(
         recommendation.next_key_session_family
         or recommendation.session_family
     )
-    family = _session_family_from_label(prescribed_family)
+    family = (
+        family_override
+        if family_override is not None
+        else _session_family_from_label(prescribed_family)
+    )
     block = get_active_training_block(athlete_id)
     goal_name, goal_pace = _goal_context(athlete_id)
 
@@ -1131,6 +1142,9 @@ def build_designed_session(
             evidence,
         )
     )
+    if main_set_override:
+        main_set = tuple(main_set_override)
+        source = "Adaptive Coach + personal targets"
 
     (
         pace_low,
@@ -1155,6 +1169,10 @@ def build_designed_session(
         evidence,
         source,
     )
+    if confidence_override is not None:
+        confidence = confidence_override
+    if confidence_label_override is not None:
+        confidence_label = confidence_label_override
 
     if source == "Personal history":
         representative = evidence[0]
@@ -1189,7 +1207,11 @@ def build_designed_session(
             "will take over as the evidence improves."
         )
 
-    why = list(recommendation.why)
+    why = list(
+        why_override
+        if why_override is not None
+        else recommendation.why
+    )
 
     if source == "Personal history":
         why.append(
@@ -1239,7 +1261,8 @@ def build_designed_session(
         confidence=confidence,
         confidence_label=confidence_label,
         earliest_timing=(
-            recommendation.next_key_session_timing
+            timing_override
+            or recommendation.next_key_session_timing
             or recommendation.earliest_timing
         ),
         readiness_required=(
