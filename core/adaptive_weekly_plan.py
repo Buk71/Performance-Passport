@@ -566,6 +566,106 @@ def _phase_for_week(preview: AdaptiveBlockPreview, week: int) -> AdaptivePhase:
     return preview.phases[-1]
 
 
+
+def _completed_family_today(
+    athlete_id: int,
+    today: datetime.date,
+) -> tuple[str | None, str | None]:
+    """
+    Recognise the whole-session stimulus already completed today.
+
+    Whole-activity context deliberately outranks split decoder fragments here.
+    A titled 'SLR 12 miles' is a long-run stimulus even if mile splits resemble
+    repetitions to the low-level decoder.
+    """
+    roles = get_athlete_sport_roles(athlete_id)
+    running = {
+        str(k)
+        for k, v in roles.items()
+        if v == "running"
+    }
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, title, distance_m
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_date = ?
+        ORDER BY distance_m DESC
+        """,
+        (athlete_id, today.isoformat()),
+    )
+    rows = cursor.fetchall()
+
+    for activity_id, title, distance_value in rows:
+        cursor.execute(
+            "SELECT sport_id FROM activities WHERE id = ?",
+            (activity_id,),
+        )
+        sport_row = cursor.fetchone()
+
+        if (
+            not sport_row
+            or str(sport_row[0] or "") not in running
+        ):
+            continue
+
+        try:
+            distance = float(distance_value or 0.0)
+        except (TypeError, ValueError):
+            distance = 0.0
+
+        if distance > 250:
+            distance /= 1000.0
+
+        lower = str(title or "").lower()
+
+        if (
+            distance >= 14.0
+            or "long run" in lower
+            or "slr" in lower
+        ):
+            conn.close()
+            return "endurance", str(title or "Completed long run")
+
+        cursor.execute(
+            """
+            SELECT phase_json, recognition_confidence, phase_confidence
+            FROM workout_library
+            WHERE activity_id = ?
+            """,
+            (activity_id,),
+        )
+        workout = cursor.fetchone()
+
+        if (
+            workout
+            and float(workout[1] or 0) >= 0.65
+            and float(workout[2] or 0) >= 0.70
+        ):
+            components = _family_components(workout[0])
+
+            if "threshold" in components:
+                conn.close()
+                return "threshold", str(title or "Completed threshold")
+            if "short_intervals" in components:
+                conn.close()
+                return "vo2", str(title or "Completed intervals")
+
+        if "threshold" in lower or "tempo" in lower:
+            conn.close()
+            return "threshold", str(title or "Completed threshold")
+        if "interval" in lower or "reps" in lower or "session" in lower:
+            conn.close()
+            return "vo2", str(title or "Completed workout")
+
+    conn.close()
+    return None, None
+
+
+
 def build_adaptive_weekly_plan(
     athlete_id: int,
     *,
@@ -581,6 +681,10 @@ def build_adaptive_weekly_plan(
 
     quality_days,long_day,rest_day=_training_rhythm(athlete_id)
     history_profile=build_performance_backtracking_profile(athlete_id)
+    completed_family, completed_title = _completed_family_today(
+        athlete_id,
+        today,
+    )
     weeks=[]
     phase_week_counter=Counter()
 
@@ -599,7 +703,44 @@ def build_adaptive_weekly_plan(
 
         days=[]
         for day in DAY_NAMES:
-            if day==rest_day:
+            is_today = (
+                week_number == 1
+                and day == DAY_NAMES[today.weekday()]
+            )
+
+            planned_family_for_day = (
+                "endurance"
+                if day == long_day
+                else q1_family
+                if day == quality_days[0]
+                else q2_family
+                if day == quality_days[1]
+                else None
+            )
+
+            if (
+                is_today
+                and completed_family is not None
+                and (
+                    completed_family == planned_family_for_day
+                    or (
+                        completed_family in {"vo2", "speed", "race_pace"}
+                        and planned_family_for_day in {"vo2", "speed", "race_pace"}
+                    )
+                )
+            ):
+                days.append(
+                    PlannedDay(
+                        day,
+                        "completed",
+                        "Completed today",
+                        completed_title or "Completed planned stimulus",
+                        None,
+                        "Today's completed run already supplied this stimulus.",
+                        "Live activity reconciliation",
+                    )
+                )
+            elif day==rest_day:
                 days.append(PlannedDay(day,"rest","Rest / optional mobility","No running",None,
                     "Absorb training and protect quality.","Recent weekly rhythm"))
             elif day==quality_days[0]:

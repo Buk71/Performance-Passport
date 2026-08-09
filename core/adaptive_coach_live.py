@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import datetime
 
 from core.coaching_arbitration import build_coaching_arbitration
+from core.live_integration import build_adaptive_coach_proposal
 from core.next_run import build_next_run_recommendation
 
 
@@ -39,6 +40,37 @@ def family_label(family: str | None) -> str | None:
     }.get(family)
 
 
+
+def _day_timing(day_name: str | None, today: datetime.date) -> str:
+    if not day_name:
+        return "Timing building"
+
+    names = (
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    )
+
+    try:
+        target_index = names.index(day_name)
+    except ValueError:
+        return day_name
+
+    offset = (target_index - today.weekday()) % 7
+
+    if offset == 0:
+        return "Today"
+    if offset == 1:
+        return "Tomorrow"
+
+    return day_name
+
+
+
 def build_live_coach_decision(
     athlete_id: int,
     *,
@@ -52,6 +84,17 @@ def build_live_coach_decision(
     )
     if established is None:
         return None
+
+    established_label = (
+        established.next_key_session_family
+        or established.session_family
+    )
+
+    proposal = build_adaptive_coach_proposal(
+        athlete_id,
+        today=today,
+        existing_label=established_label,
+    )
 
     arbitration = build_coaching_arbitration(
         athlete_id,
@@ -88,19 +131,60 @@ def build_live_coach_decision(
         arbitration.selected_family
     )
 
+    immediate_label = (
+        family_label(proposal.immediate_family)
+        if proposal is not None
+        else established.session_family
+    )
+    immediate_timing = (
+        _day_timing(proposal.immediate_day, today)
+        if proposal is not None
+        else established.earliest_timing
+    )
+    immediate_detail = (
+        proposal.immediate_prescription
+        if proposal is not None
+        else established.timing_detail
+    )
+
+    immediate_headline = (
+        (
+            f"{proposal.immediate_title} now; "
+            f"{selected_label} is the next key workout."
+        )
+        if (
+            proposal is not None
+            and selected_label
+            and proposal.immediate_family != arbitration.selected_family
+        )
+        else arbitration.headline
+    )
+
+    why = list(arbitration.evidence)
+
+    if proposal is not None:
+        why.insert(
+            0,
+            (
+                f"Immediate run from the live adaptive week: "
+                f"{proposal.immediate_day} · "
+                f"{proposal.immediate_prescription}."
+            ),
+        )
+
     return LiveCoachDecision(
         athlete_id=athlete_id,
-        immediate_label=established.session_family,
-        immediate_timing=established.earliest_timing,
-        immediate_detail=established.timing_detail,
+        immediate_label=immediate_label or established.session_family,
+        immediate_timing=immediate_timing,
+        immediate_detail=immediate_detail,
         key_family=arbitration.selected_family,
         key_label=selected_label,
         key_prescription=arbitration.selected_prescription,
         key_day=arbitration.selected_day,
         confidence=arbitration.confidence,
         confidence_label=arbitration.confidence_label,
-        headline=arbitration.headline,
-        why=arbitration.evidence,
+        headline=immediate_headline,
+        why=tuple(why),
         safety_notes=arbitration.safety_notes,
         readiness_required=established.readiness_required,
         source="Adaptive Coach + Arbitration",

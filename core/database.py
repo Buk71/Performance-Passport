@@ -1,9 +1,10 @@
 import sqlite3
+import json
 from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 
 def get_connection():
@@ -998,6 +999,236 @@ def clear_threshold_override(athlete_id):
     conn.commit()
     conn.close()
 
+
+def _merge_duplicate_activity_children(cursor, keeper_id, duplicate_id):
+    """
+    Move child records from duplicate_id onto keeper_id without losing useful
+    analysis. Tables with uniqueness on activity_id are merged conservatively.
+    """
+
+    # derived_metrics: unique(activity_id, metric_name)
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO derived_metrics (
+            activity_id, metric_name, metric_value, metric_text, created_at
+        )
+        SELECT ?, metric_name, metric_value, metric_text, created_at
+        FROM derived_metrics
+        WHERE activity_id = ?
+        """,
+        (keeper_id, duplicate_id),
+    )
+    cursor.execute(
+        "DELETE FROM derived_metrics WHERE activity_id = ?",
+        (duplicate_id,),
+    )
+
+    # benchmarks can safely be re-pointed.
+    cursor.execute(
+        "UPDATE benchmarks SET activity_id = ? WHERE activity_id = ?",
+        (keeper_id, duplicate_id),
+    )
+
+    # decoded_workouts: one row per activity.
+    cursor.execute(
+        "SELECT 1 FROM decoded_workouts WHERE activity_id = ?",
+        (keeper_id,),
+    )
+    keeper_has_decoded = cursor.fetchone() is not None
+
+    if keeper_has_decoded:
+        cursor.execute(
+            "DELETE FROM decoded_workouts WHERE activity_id = ?",
+            (duplicate_id,),
+        )
+    else:
+        cursor.execute(
+            "UPDATE decoded_workouts SET activity_id = ? WHERE activity_id = ?",
+            (keeper_id, duplicate_id),
+        )
+
+    # workout_library: one record per activity in current schema. If both
+    # exist, keep the keeper's record and remove only the duplicate record.
+    cursor.execute(
+        "SELECT id FROM workout_library WHERE activity_id = ?",
+        (keeper_id,),
+    )
+    keeper_workout = cursor.fetchone()
+
+    cursor.execute(
+        "SELECT id FROM workout_library WHERE activity_id = ?",
+        (duplicate_id,),
+    )
+    duplicate_workout = cursor.fetchone()
+
+    if duplicate_workout:
+        duplicate_workout_id = duplicate_workout[0]
+
+        if keeper_workout:
+            # Any race links attached to the duplicate workout are copied onto
+            # the keeper workout where possible.
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO workout_race_links (
+                    workout_id,
+                    race_activity_id,
+                    days_after,
+                    race_distance_km,
+                    race_time_s,
+                    link_confidence,
+                    similarity_score,
+                    created_at,
+                    updated_at
+                )
+                SELECT ?, race_activity_id, days_after, race_distance_km,
+                       race_time_s, link_confidence, similarity_score,
+                       created_at, updated_at
+                FROM workout_race_links
+                WHERE workout_id = ?
+                """,
+                (keeper_workout[0], duplicate_workout_id),
+            )
+            cursor.execute(
+                "DELETE FROM workout_race_links WHERE workout_id = ?",
+                (duplicate_workout_id,),
+            )
+            cursor.execute(
+                "DELETE FROM workout_library WHERE id = ?",
+                (duplicate_workout_id,),
+            )
+        else:
+            cursor.execute(
+                "UPDATE workout_library SET activity_id = ? WHERE id = ?",
+                (keeper_id, duplicate_workout_id),
+            )
+
+
+def _prefer_activity_payload(cursor, keeper_id, duplicate_id):
+    """
+    Keep the older canonical row id (safer for historical links), but refresh
+    user-facing/raw fields from the newer duplicate when the newer record is
+    at least as rich.
+    """
+    cursor.execute(
+        """
+        SELECT raw_json, title, route_name, activity_hash, athlete_name
+        FROM activities
+        WHERE id = ?
+        """,
+        (keeper_id,),
+    )
+    keeper = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT raw_json, title, route_name, activity_hash, athlete_name
+        FROM activities
+        WHERE id = ?
+        """,
+        (duplicate_id,),
+    )
+    duplicate = cursor.fetchone()
+
+    if not keeper or not duplicate:
+        return
+
+    keeper_raw = keeper[0] or "{}"
+    duplicate_raw = duplicate[0] or "{}"
+
+    try:
+        keeper_fields = len(json.loads(keeper_raw))
+    except Exception:
+        keeper_fields = 0
+
+    try:
+        duplicate_fields = len(json.loads(duplicate_raw))
+    except Exception:
+        duplicate_fields = 0
+
+    raw_json = duplicate_raw if duplicate_fields >= keeper_fields else keeper_raw
+    title = duplicate[1] or keeper[1]
+    route_name = duplicate[2] or keeper[2]
+    activity_hash = duplicate[3] or keeper[3]
+
+    cursor.execute(
+        """
+        UPDATE activities
+        SET raw_json = ?,
+            title = ?,
+            route_name = ?,
+            activity_hash = ?
+        WHERE id = ?
+        """,
+        (raw_json, title, route_name, activity_hash, keeper_id),
+    )
+
+
+def migrate_to_schema_v9(cursor):
+    """
+    Make Runalyze identity athlete-based rather than display-name-based.
+
+    The old unique key included athlete_name, so changing 'Richard' to
+    'Richard Burke' allowed the same Runalyze activity to be imported twice.
+    """
+    cursor.execute(
+        """
+        SELECT athlete_id, source, source_activity_id
+        FROM activities
+        WHERE athlete_id IS NOT NULL
+          AND source_activity_id IS NOT NULL
+        GROUP BY athlete_id, source, source_activity_id
+        HAVING COUNT(*) > 1
+        """
+    )
+    groups = cursor.fetchall()
+
+    for athlete_id, source, source_activity_id in groups:
+        cursor.execute(
+            """
+            SELECT id
+            FROM activities
+            WHERE athlete_id = ?
+              AND source = ?
+              AND source_activity_id = ?
+            ORDER BY id
+            """,
+            (athlete_id, source, source_activity_id),
+        )
+        ids = [row[0] for row in cursor.fetchall()]
+
+        if len(ids) < 2:
+            continue
+
+        keeper_id = ids[0]
+
+        for duplicate_id in ids[1:]:
+            _prefer_activity_payload(
+                cursor,
+                keeper_id,
+                duplicate_id,
+            )
+            _merge_duplicate_activity_children(
+                cursor,
+                keeper_id,
+                duplicate_id,
+            )
+            cursor.execute(
+                "DELETE FROM activities WHERE id = ?",
+                (duplicate_id,),
+            )
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_activities_athlete_source_external_unique
+        ON activities (athlete_id, source, source_activity_id)
+        WHERE athlete_id IS NOT NULL
+        """
+    )
+
+    set_schema_version(cursor, 9)
+
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -1033,6 +1264,11 @@ def initialise_database():
 
     if schema_version < 8:
         migrate_to_schema_v8(cursor)
+        schema_version = 8
+
+    if schema_version < 9:
+        migrate_to_schema_v9(cursor)
+        schema_version = 9
 
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)

@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime
 import json
 import math
+import statistics
 from dataclasses import dataclass
 
 from core.coaching import (
@@ -171,21 +172,22 @@ def _distance_signal(distance_km: float) -> tuple[float, float | None]:
 
 
 def _recency_signal(age_days: int) -> float:
+    """
+    Smooth decay rather than hard 30/60/90-day cliffs.
+
+    A good race does not suddenly become much weaker evidence because one new
+    upload moved it from day 30 to day 31.
+    """
     if age_days < 0:
         return 0.0
-    if age_days <= 30:
-        return 1.0
-    if age_days <= 60:
-        return 0.92
-    if age_days <= 90:
-        return 0.82
-    if age_days <= 183:
-        return 0.62
-    if age_days <= 365:
-        return 0.35
-    if age_days <= MAX_AGE_DAYS:
-        return 0.15
-    return 0.0
+    if age_days > MAX_AGE_DAYS:
+        return 0.0
+
+    # Half-life ~120 days, with a small floor for older but still useful races.
+    return max(
+        0.10,
+        math.pow(0.5, age_days / 120.0),
+    )
 
 
 def _continuity_signal(
@@ -256,9 +258,228 @@ def _display_title(candidate: RaceCandidate) -> str:
     return "Race-quality effort"
 
 
+
+def _is_training_intent(candidate: RaceCandidate) -> bool:
+    title = _normalise_title(candidate.title)
+
+    return any(
+        word in title
+        for word in (
+            "threshold",
+            "tempo",
+            "interval",
+            "reps",
+            "session",
+            "steady",
+            "training",
+        )
+    )
+
+
+def _route_course_penalty_seconds(
+    athlete_id: int,
+    candidate: RaceCandidate,
+) -> tuple[float, dict]:
+    """
+    Learn a repeated-course penalty from the athlete's own history.
+
+    For a repeatedly-run hilly 5K route, compare the athlete's best route
+    performances with their best low-elevation standard-distance performances
+    in the same broad period. This captures course shape/surface effects that
+    raw metres climbed alone cannot explain.
+    """
+    route = (candidate.route_name or "").strip()
+
+    if not route:
+        return 0.0, {
+            "route_calibration_applied": False,
+            "route_penalty_seconds": 0.0,
+        }
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT distance_m, elapsed_time_s, elevation_up_m, route_name,
+               activity_date
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_date >= date(?, '-240 day')
+          AND activity_date <= date(?, '+60 day')
+          AND distance_m BETWEEN ? AND ?
+          AND elapsed_time_s IS NOT NULL
+        """,
+        (
+            athlete_id,
+            candidate.activity_date.isoformat(),
+            candidate.activity_date.isoformat(),
+            candidate.distance_km * 0.94,
+            candidate.distance_km * 1.06,
+        ),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    route_paces = []
+    route_elevations = []
+    benchmark_paces = []
+
+    for distance, elapsed, elevation, route_name, _date in rows:
+        try:
+            distance = float(distance)
+            elapsed = float(elapsed)
+            elevation = float(elevation or 0.0)
+        except (TypeError, ValueError):
+            continue
+
+        if distance <= 0 or elapsed <= 0:
+            continue
+
+        pace = elapsed / distance
+
+        if (route_name or "").strip().lower() == route.lower():
+            route_paces.append(pace)
+            route_elevations.append(elevation)
+
+        # A low-elevation comparator approximates a fast/neutral course.
+        if elevation <= 20.0:
+            benchmark_paces.append(pace)
+
+    median_route_elevation = (
+        statistics.median(route_elevations)
+        if route_elevations
+        else 0.0
+    )
+
+    if (
+        len(route_paces) < 3
+        or len(benchmark_paces) < 2
+        or median_route_elevation < 30.0
+    ):
+        return 0.0, {
+            "route_calibration_applied": False,
+            "route_penalty_seconds": 0.0,
+            "route_sample_size": len(route_paces),
+            "benchmark_sample_size": len(benchmark_paces),
+            "median_route_elevation_m": median_route_elevation,
+        }
+
+    # Best-vs-best estimates the athlete's course ceiling. This is especially
+    # useful for repeatedly-raced/parkrun routes such as Nostell, where the
+    # same athlete provides their own calibration.
+    route_reference = min(route_paces)
+    benchmark_reference = min(benchmark_paces)
+
+    penalty_per_km = max(
+        0.0,
+        route_reference - benchmark_reference,
+    )
+
+    # Conservative cap: no more than 18 sec/km from empirical route learning.
+    penalty_per_km = min(
+        penalty_per_km,
+        18.0,
+    )
+    total = penalty_per_km * candidate.distance_km
+
+    return total, {
+        "route_calibration_applied": total >= 5.0,
+        "route_penalty_seconds": total,
+        "route_penalty_seconds_per_km": penalty_per_km,
+        "route_sample_size": len(route_paces),
+        "benchmark_sample_size": len(benchmark_paces),
+        "median_route_elevation_m": median_route_elevation,
+        "route_name": route,
+    }
+
+
+def _generic_elevation_penalty_seconds(
+    candidate: RaceCandidate,
+) -> float:
+    """
+    Conservative generic fallback when no repeated-course calibration exists.
+
+    Net climbing alone underestimates rolling courses because descents do not
+    repay all uphill cost. For short race-quality efforts, use 0.45 sec per
+    metre climbed, capped at 15 sec/km.
+    """
+    gain = float(candidate.elevation_up_m or 0.0)
+
+    if gain <= 0 or candidate.distance_km <= 0:
+        return 0.0
+
+    return min(
+        gain * 0.45,
+        candidate.distance_km * 15.0,
+    )
+
+
+def _performance_quality_signal(
+    athlete_id: int,
+    candidate: RaceCandidate,
+    equivalent_time_s: float,
+) -> float:
+    """
+    Athlete-relative quality at the same standard distance.
+
+    A controlled threshold 5K can be valid fitness evidence, but it should not
+    outrank a substantially faster genuine race merely because it is newer.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT distance_m, elapsed_time_s
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_date <= ?
+          AND distance_m BETWEEN ? AND ?
+          AND elapsed_time_s IS NOT NULL
+        """,
+        (
+            athlete_id,
+            candidate.activity_date.isoformat(),
+            candidate.distance_km * 0.94,
+            candidate.distance_km * 1.06,
+        ),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    paces = []
+
+    for distance, elapsed in rows:
+        try:
+            distance = float(distance)
+            elapsed = float(elapsed)
+        except (TypeError, ValueError):
+            continue
+
+        if distance > 0 and elapsed > 0:
+            paces.append(elapsed / distance)
+
+    if len(paces) < 6:
+        return 0.50
+
+    candidate_pace = equivalent_time_s / candidate.distance_km
+    percentile = sum(
+        pace <= candidate_pace
+        for pace in paces
+    ) / len(paces)
+
+    # Top 10% => near 1.0; median => ~0.5; poor efforts trend to 0.
+    return _clamp(
+        1.10 - percentile * 1.20
+    )
+
+
+
 def _score_candidate(
     candidate: RaceCandidate,
     reference_date: datetime.date,
+    athlete_id: int,
 ) -> CandidateScore:
     age_days = (reference_date - candidate.activity_date).days
     recency = _recency_signal(age_days)
@@ -278,8 +499,31 @@ def _score_candidate(
         officially_measured=candidate.officially_measured,
     )
 
-    # Race Coach adds recency for choosing the best current evidence.
-    total = shared.total * 0.72 + recency * 28.0
+    equivalent_time, _ = _equivalent_race_time(
+        candidate,
+        athlete_id=athlete_id,
+    )
+    performance_quality = _performance_quality_signal(
+        athlete_id,
+        candidate,
+        equivalent_time,
+    )
+
+    # Current-race selection should favour actual performance quality over a
+    # tiny recency edge. Explicit training intent is allowed as evidence but
+    # is materially demoted.
+    training_intent_penalty = (
+        18.0
+        if _is_training_intent(candidate)
+        else 0.0
+    )
+
+    total = (
+        shared.total * 0.58
+        + recency * 16.0
+        + performance_quality * 26.0
+        - training_intent_penalty
+    )
 
     return CandidateScore(
         candidate=candidate,
@@ -320,6 +564,8 @@ def _weather_adjustment_seconds(
 
 def _equivalent_race_time(
     candidate: RaceCandidate,
+    *,
+    athlete_id: int | None = None,
 ) -> tuple[float, dict]:
     observed = (
         candidate.official_time_s
@@ -328,14 +574,48 @@ def _equivalent_race_time(
     )
 
     weather_seconds, weather_details = _weather_adjustment_seconds(candidate)
-    adjusted = max(observed - weather_seconds, observed * 0.85)
+
+    route_seconds = 0.0
+    route_details = {
+        "route_calibration_applied": False,
+        "route_penalty_seconds": 0.0,
+    }
+
+    if athlete_id is not None:
+        route_seconds, route_details = _route_course_penalty_seconds(
+            athlete_id,
+            candidate,
+        )
+
+    elevation_seconds = 0.0
+
+    if route_seconds < 5.0:
+        elevation_seconds = _generic_elevation_penalty_seconds(
+            candidate
+        )
+
+    total_adjustment = (
+        weather_seconds
+        + route_seconds
+        + elevation_seconds
+    )
+
+    # Keep environmental correction conservative.
+    adjusted = max(
+        observed - total_adjustment,
+        observed * 0.82,
+    )
 
     details = {
         "observed_time_seconds": observed,
         "weather_adjusted_time_seconds": adjusted,
         **weather_details,
-        "elevation_adjustment_applied": False,
-        "surface_adjustment_applied": False,
+        **route_details,
+        "elevation_adjustment_applied": elevation_seconds > 0,
+        "elevation_adjustment_seconds": elevation_seconds,
+        "surface_adjustment_applied": bool(
+            route_details.get("route_calibration_applied")
+        ),
         "wind_adjustment_applied": False,
         "heart_rate_time_adjustment_applied": False,
     }
@@ -395,7 +675,7 @@ class RaceEvidenceProvider(EvidenceProvider):
 
         reference_date = latest_date or datetime.date.today()
         scored = [
-            _score_candidate(candidate, reference_date)
+            _score_candidate(candidate, reference_date, context.athlete_id)
             for candidate in candidates
         ]
         scored = [
@@ -431,14 +711,17 @@ class RaceEvidenceProvider(EvidenceProvider):
                         "Candidate quality is currently too uncertain.",
                     ],
                     "candidate_debug": self._candidate_debug(
-                        [_score_candidate(c, reference_date) for c in candidates]
+                        [_score_candidate(c, reference_date, context.athlete_id) for c in candidates]
                     ),
                 },
             )
 
         selected = scored[0]
         candidate = selected.candidate
-        equivalent_time, adjustment_details = _equivalent_race_time(candidate)
+        equivalent_time, adjustment_details = _equivalent_race_time(
+            candidate,
+            athlete_id=context.athlete_id,
+        )
 
         goal = context.goal or {}
         goal_distance_km = (
@@ -500,8 +783,9 @@ class RaceEvidenceProvider(EvidenceProvider):
 
         if candidate.elevation_up_m:
             limitations.append(
-                f"Elevation recorded ({candidate.elevation_up_m:.0f} m), "
-                "but no race-time elevation correction is applied yet."
+                f"Elevation recorded ({candidate.elevation_up_m:.0f} m); "
+                "PP now applies athlete-specific repeated-course calibration "
+                "where possible, otherwise a conservative elevation fallback."
             )
 
         if candidate.wind_speed:
@@ -511,7 +795,8 @@ class RaceEvidenceProvider(EvidenceProvider):
             )
 
         limitations.append(
-            "Surface is not currently stored reliably enough for adjustment."
+            "Surface is not reliably labelled in all imports; repeated-route "
+            "calibration can capture some combined hill/surface/course difficulty."
         )
 
         return EvidenceItem(

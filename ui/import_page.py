@@ -110,6 +110,22 @@ def import_runalyze_dataframe(df, athlete_id, athlete_name):
 
             cursor.execute(
                 """
+                SELECT id
+                FROM activities
+                WHERE athlete_id = ?
+                  AND source = 'runalyze_csv'
+                  AND source_activity_id = ?
+                LIMIT 1
+                """,
+                (athlete_id, source_activity_id),
+            )
+
+            if cursor.fetchone() is not None:
+                duplicates += 1
+                continue
+
+            cursor.execute(
+                """
                 INSERT INTO activities (
                     athlete_name,
                     athlete_id,

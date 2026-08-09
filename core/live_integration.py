@@ -67,7 +67,7 @@ def _families_agree(adaptive: str | None, existing: str | None) -> tuple[bool | 
 def _next_non_rest(days, today_index: int):
     for offset in range(7):
         day = days[(today_index + offset) % 7]
-        if day.session_family != "rest":
+        if day.session_family not in {"rest", "completed"}:
             return day
     return days[today_index]
 

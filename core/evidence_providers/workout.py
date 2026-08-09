@@ -23,6 +23,7 @@ from core.database import get_athlete_sport_roles, get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.pb_shape import build_pb_shape, pb_shape_to_dict
+from core.race_detection import score_race_evidence
 from core.session import SessionType
 from core.session_intelligence import ActivityFacts, classify_session
 from core.workout_dna import build_workout_dna, workout_dna_to_dict
@@ -165,6 +166,47 @@ def _explicit_workout_title(title: str) -> bool:
         "session",
     )
     return any(word in value for word in words)
+
+
+
+def _is_race_quality_session(facts: ActivityFacts) -> bool:
+    """
+    Keep genuine races and race-quality efforts out of Workout Coach.
+
+    A race can contain split patterns that look like repetitions. Race intent
+    belongs to Race Coach; Workout Coach should only learn from training
+    sessions.
+    """
+    raw = {}
+
+    try:
+        import json
+        raw = json.loads(facts.raw_json_text or "{}")
+    except Exception:
+        raw = {}
+
+    signals = score_race_evidence(
+        title=facts.title or "",
+        distance_km=facts.distance_km,
+        moving_time_s=facts.moving_time_s,
+        elapsed_time_s=facts.elapsed_time_s,
+        avg_hr=facts.avg_hr,
+        max_hr=facts.max_hr,
+        athlete_lt2_hr=facts.athlete_lt2_hr,
+        athlete_max_hr=facts.athlete_max_hr,
+        official_race_name=raw.get("race_name"),
+        official_distance_m=raw.get("race_officialDistance"),
+        official_time_s=raw.get("race_officialTime"),
+        officially_measured=bool(
+            raw.get("race_officiallyMeasured")
+        ),
+    )
+
+    return signals.classification in {
+        "confirmed_race",
+        "race_quality_effort",
+    }
+
 
 
 def _programmed_structure_evidence(workout) -> bool:
@@ -1032,6 +1074,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             session = classify_session(facts)
             session_counts[session.session_type.value] += 1
 
+            if _is_race_quality_session(facts):
+                session_counts["race_quality_excluded"] += 1
+                continue
+
             workout = get_or_decode_workout(row[0], row[15])
 
             phase_components, phase_metadata = _group_work_components(
@@ -1406,6 +1452,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             strengths.append("Latest workout is representative of current evidence")
 
         limitations = [
+            "Race and race-quality efforts are excluded from Workout Coach even if their splits resemble repetitions.",
             "Trends compare only sessions with similar workout type and rep distance.",
             "Runalyze CSV splits do not contain full lap-level heart rate or power.",
             "Warm-up, cool-down and recovery splits are excluded from "

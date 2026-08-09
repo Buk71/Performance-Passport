@@ -7,6 +7,7 @@ import streamlit as st
 from ui.athlete_selection import render_athlete_selector
 
 from core.capability import build_capability
+from core.adaptive_coach_live import build_live_coach_decision
 from core.actionable_coaching import ActionableRecommendation
 from core.coach_brain import CoachBrain
 from core.coach_consensus import build_coach_consensus
@@ -695,6 +696,7 @@ def render_coaching_meeting(
 
 
 def render_daily_coach(
+    athlete_id,
     first_name,
     goal,
     prediction,
@@ -713,6 +715,24 @@ def render_daily_coach(
         latest_activity_date.strftime("%d %b %Y")
         if latest_activity_date is not None
         else "No activity date"
+    )
+
+    live_decision = build_live_coach_decision(
+        athlete_id
+    )
+
+    recommendation_title = (
+        live_decision.immediate_label
+        if live_decision is not None
+        else "Building recommendation"
+    )
+    recommendation_detail = (
+        (
+            f"{live_decision.immediate_timing} · "
+            f"{live_decision.immediate_detail}"
+        )
+        if live_decision is not None
+        else "Adaptive Coach needs more evidence before prescribing the next run."
     )
 
     render_html(
@@ -761,11 +781,10 @@ def render_daily_coach(
             ">
                 <div class="pp-card-label">Today's recommendation</div>
                 <div class="pp-card-title" style="font-size:1rem;">
-                    Not available yet
+                    {safe_text(recommendation_title)}
                 </div>
                 <div class="pp-small-meta">
-                    Recovery and training-load evidence are not connected yet,
-                    so Performance Passport will not invent a session.
+                    {safe_text(recommendation_detail)}
                 </div>
             </div>
 
@@ -786,6 +805,24 @@ def render_daily_coach(
             f"**Evidence strength:** {strength} "
             f"({evidence_bundle.confidence:.0%})"
         )
+
+        if live_decision is not None:
+            st.write(
+                f"**Next run:** "
+                f"{live_decision.immediate_label} · "
+                f"{live_decision.immediate_timing}"
+            )
+            st.caption(live_decision.immediate_detail)
+
+            if live_decision.key_label:
+                st.write(
+                    f"**Next key workout:** "
+                    f"{live_decision.key_label}"
+                )
+                if live_decision.key_prescription:
+                    st.caption(
+                        live_decision.key_prescription
+                    )
 
         for item in evidence_bundle.items:
             st.markdown(f"**{item.title}**")
@@ -2910,6 +2947,7 @@ def show_dashboard():
     )
 
     render_daily_coach(
+        athlete_id=athlete_id,
         first_name=selected["first_name"],
         goal=goal,
         prediction=prediction,
