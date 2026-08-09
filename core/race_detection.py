@@ -8,6 +8,9 @@ diagnostics and coaching agree about what constitutes race evidence.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+
+from core.database import get_athlete_sport_roles, get_connection
 
 
 STANDARD_DISTANCES_KM = (
@@ -173,6 +176,254 @@ def _effort_signal(
 
     # Peak HR is the stronger behavioural race signal.
     return avg_signal * 0.30 + max_signal * 0.70
+
+
+@dataclass(frozen=True)
+class AthleteRelativeRaceEffort:
+    is_race_quality: bool
+    confidence: float
+    matched_distance_km: float | None
+    pace_ratio_to_best: float | None
+    percentile_rank: float | None
+    reason: str | None
+
+
+STANDARD_RELATIVE_DISTANCES_KM = (
+    5.0,
+    10.0,
+    21.0975,
+)
+
+
+def _standard_distance_bucket(
+    distance_km: float | None,
+) -> float | None:
+    if distance_km is None or distance_km <= 0:
+        return None
+
+    closest = min(
+        STANDARD_RELATIVE_DISTANCES_KM,
+        key=lambda value: abs(distance_km - value),
+    )
+    error = abs(distance_km - closest) / closest
+
+    if error <= 0.06:
+        return closest
+
+    return None
+
+
+@lru_cache(maxsize=128)
+def _athlete_standard_paces(
+    athlete_id: int,
+    standard_distance_km: float,
+) -> tuple[float, ...]:
+    roles = get_athlete_sport_roles(athlete_id)
+    running_ids = {
+        str(sport_id)
+        for sport_id, role in roles.items()
+        if role == "running"
+    }
+
+    if not running_ids:
+        return ()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            sport_id,
+            distance_m,
+            moving_time_s
+        FROM activities
+        WHERE athlete_id = ?
+          AND distance_m IS NOT NULL
+          AND moving_time_s IS NOT NULL
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    paces = []
+
+    for sport_id, distance_value, moving_time_s in rows:
+        if str(sport_id or "") not in running_ids:
+            continue
+
+        try:
+            distance = float(distance_value)
+            moving = float(moving_time_s)
+        except (TypeError, ValueError):
+            continue
+
+        if distance <= 0 or moving <= 0:
+            continue
+
+        distance_km = (
+            distance / 1000.0
+            if distance > 250.0
+            else distance
+        )
+
+        if (
+            abs(distance_km - standard_distance_km)
+            / standard_distance_km
+            > 0.06
+        ):
+            continue
+
+        pace = moving / distance_km
+
+        if 150.0 <= pace <= 900.0:
+            paces.append(pace)
+
+    return tuple(sorted(paces))
+
+
+def score_athlete_relative_race_effort(
+    *,
+    athlete_id: int | None,
+    title: str,
+    distance_km: float | None,
+    moving_time_s: float | None,
+    elapsed_time_s: float | None = None,
+) -> AthleteRelativeRaceEffort:
+    if athlete_id is None:
+        return AthleteRelativeRaceEffort(
+            False, 0.0, None, None, None, None
+        )
+
+    try:
+        distance = float(distance_km or 0.0)
+        moving = float(moving_time_s or 0.0)
+    except (TypeError, ValueError):
+        distance = 0.0
+        moving = 0.0
+
+    standard = _standard_distance_bucket(distance)
+
+    if standard is None or moving <= 0:
+        return AthleteRelativeRaceEffort(
+            False, 0.0, standard, None, None, None
+        )
+
+    lower_title = str(title or "").lower()
+    training_words = (
+        "easy",
+        "recovery",
+        "warm up",
+        "warm-up",
+        "cool down",
+        "cool-down",
+        "interval",
+        "reps",
+        "threshold",
+        "tempo",
+        "steady",
+        "long run",
+    )
+
+    if any(word in lower_title for word in training_words):
+        return AthleteRelativeRaceEffort(
+            False,
+            0.10,
+            standard,
+            None,
+            None,
+            "Training-language title prevents race-quality promotion.",
+        )
+
+    history = _athlete_standard_paces(
+        athlete_id,
+        standard,
+    )
+
+    if len(history) < 8:
+        return AthleteRelativeRaceEffort(
+            False,
+            0.20,
+            standard,
+            None,
+            None,
+            "Not enough athlete-specific standard-distance history.",
+        )
+
+    pace = moving / distance
+    best = history[0]
+    pace_ratio = pace / best
+    faster_or_equal = sum(
+        historical_pace <= pace
+        for historical_pace in history
+    )
+    percentile_rank = faster_or_equal / len(history)
+
+    continuity = None
+    if elapsed_time_s is not None:
+        try:
+            elapsed = float(elapsed_time_s)
+        except (TypeError, ValueError):
+            elapsed = 0.0
+
+        if elapsed > 0:
+            continuity = min(
+                max(moving / elapsed, 0.0),
+                1.0,
+            )
+
+    pace_quality = pace_ratio <= 1.10
+    percentile_quality = percentile_rank <= 0.15
+    continuous = continuity is None or continuity >= 0.985
+
+    is_race_quality = (
+        pace_quality
+        and percentile_quality
+        and continuous
+    )
+
+    if not is_race_quality:
+        return AthleteRelativeRaceEffort(
+            False,
+            0.35,
+            standard,
+            round(pace_ratio, 4),
+            round(percentile_rank, 4),
+            None,
+        )
+
+    pace_strength = max(
+        0.0,
+        min((1.10 - pace_ratio) / 0.10, 1.0),
+    )
+    percentile_strength = max(
+        0.0,
+        min((0.15 - percentile_rank) / 0.15, 1.0),
+    )
+    continuity_strength = (
+        continuity if continuity is not None else 0.85
+    )
+
+    confidence = (
+        pace_strength * 0.40
+        + percentile_strength * 0.35
+        + continuity_strength * 0.25
+    )
+    confidence = max(0.62, min(confidence, 0.94))
+
+    return AthleteRelativeRaceEffort(
+        True,
+        round(confidence, 4),
+        standard,
+        round(pace_ratio, 4),
+        round(percentile_rank, 4),
+        (
+            f"Standard-distance effort within "
+            f"{(pace_ratio - 1.0) * 100:.1f}% of the athlete's best "
+            f"and in the fastest {max(percentile_rank * 100, 1):.0f}% "
+            "of comparable runs."
+        ),
+    )
 
 
 def score_race_evidence(

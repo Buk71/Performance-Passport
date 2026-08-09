@@ -14,6 +14,7 @@ import datetime
 import math
 from dataclasses import dataclass
 
+from core.race_detection import score_athlete_relative_race_effort
 from core.database import get_athlete_sport_roles
 
 
@@ -599,6 +600,25 @@ def assess_activity(
 
     if any(keyword in title for keyword in race_keywords):
         evidence.append("Race keywords detected")
+
+        return ActivityEvidence(
+            classification="🏁 Race",
+            easy_baseline_candidate=False,
+            evidence=evidence,
+        )
+
+    relative_race = score_athlete_relative_race_effort(
+        athlete_id=run.athlete_id,
+        title=title,
+        distance_km=run.distance_km,
+        moving_time_s=run.moving_time_seconds,
+    )
+
+    if relative_race.is_race_quality:
+        evidence.append(
+            relative_race.reason
+            or "Athlete-relative race-quality effort"
+        )
 
         return ActivityEvidence(
             classification="🏁 Race",

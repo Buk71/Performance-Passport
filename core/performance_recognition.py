@@ -44,6 +44,7 @@ import datetime
 import math
 from typing import Any, Iterable
 
+from core.race_detection import score_athlete_relative_race_effort
 from core.coaching import (
     RunProfile,
     equivalent_performance,
@@ -221,7 +222,11 @@ def _is_running(run: RunProfile) -> bool:
     return roles.get(str(run.sport_id or "")) == "running"
 
 
-def _category(run: RunProfile) -> tuple[str, str, str] | None:
+def _category(
+    run: RunProfile,
+    *,
+    elapsed_time_s: float | None = None,
+) -> tuple[str, str, str] | None:
     if not _is_running(run):
         return None
 
@@ -236,6 +241,17 @@ def _category(run: RunProfile) -> tuple[str, str, str] | None:
 
     if _contains(title, RACE_WORDS):
         return "race", "Race", "🏁"
+
+    relative_race = score_athlete_relative_race_effort(
+        athlete_id=run.athlete_id,
+        title=title,
+        distance_km=distance,
+        moving_time_s=run.moving_time_seconds,
+        elapsed_time_s=elapsed_time_s,
+    )
+
+    if relative_race.is_race_quality:
+        return "race", "Race / Hard Effort", "🏁"
 
     if _contains(title, SPEED_WORDS):
         return "speed", "Speed Development", "⚡"
@@ -871,11 +887,6 @@ def build_recognition_index(
     candidates = []
 
     for run in runs:
-        category = _category(run)
-
-        if category is None:
-            continue
-
         if (
             run.distance_km is None
             or run.moving_time_seconds is None
@@ -895,6 +906,14 @@ def build_recognition_index(
                 route_name=None,
             ),
         )
+
+        category = _category(
+            run,
+            elapsed_time_s=context.elapsed_time_s,
+        )
+
+        if category is None:
+            continue
 
         adjusted, environment_adjustment, environment_factors = (
             _environment_adjusted_pace(

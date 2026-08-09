@@ -38,6 +38,7 @@ from core.actionable_coaching import (
 )
 from core.coaching import RunProfile, equivalent_performance
 from core.evidence_engine import AthleteEvidenceProfile
+from core.race_detection import score_athlete_relative_race_effort
 
 
 EXCLUDED_TITLE_WORDS = (
@@ -179,6 +180,16 @@ def _is_easy_candidate(run: RunProfile) -> bool:
         return False
 
     distance = _safe_float(run.distance_km)
+
+    relative_race = score_athlete_relative_race_effort(
+        athlete_id=run.athlete_id,
+        title=title,
+        distance_km=distance,
+        moving_time_s=run.moving_time_seconds,
+    )
+
+    if relative_race.is_race_quality:
+        return False
     avg_hr = _safe_float(run.avg_hr)
     lt1 = _safe_float(run.lt1_hr)
     pace = _pace(run)
