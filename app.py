@@ -9,6 +9,8 @@ from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.hall_of_fame import show_hall_of_fame_page
 from ui.journal import show_journal_page
+from ui.next_run import show_next_run_page
+from ui.todays_session import show_todays_session_page
 from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
 from ui.training_blocks import show_training_blocks_page
@@ -32,6 +34,12 @@ if page == "Coach":
 
 elif page == "Journal":
     show_journal_page()
+
+elif page == "Next Run":
+    show_next_run_page()
+
+elif page == "Today's Session":
+    show_todays_session_page()
 
 elif page == "Activities":
     render_page_placeholder(

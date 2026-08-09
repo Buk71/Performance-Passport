@@ -6,6 +6,8 @@ from config import APP_NAME, VERSION, VERSION_NAME
 PRIMARY_NAVIGATION = [
     "Coach",
     "Journal",
+    "Next Run",
+    "Today's Session",
     "Activities",
     "Progress",
     "Goals",
@@ -44,6 +46,17 @@ def show_sidebar():
         '<div class="pp-sidebar-section">Your running</div>',
         unsafe_allow_html=True,
     )
+
+    requested_page = st.session_state.pop(
+        "pp_navigation_request",
+        None,
+    )
+
+    if (
+        requested_page in PRIMARY_NAVIGATION
+        and requested_page != st.session_state.get("primary_navigation")
+    ):
+        st.session_state["primary_navigation"] = requested_page
 
     primary_page = st.sidebar.radio(
         "Primary navigation",
