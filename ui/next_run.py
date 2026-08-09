@@ -4,6 +4,7 @@ import textwrap
 import streamlit as st
 
 from core.next_run import build_next_run_recommendation
+from core.live_integration import build_adaptive_coach_proposal
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -16,8 +17,9 @@ def _html(markup):
 
 
 def _go_to_session():
+    # Streamlit automatically reruns after a button callback. Calling
+    # st.rerun() inside the callback is a no-op and produces a warning banner.
     st.session_state["pp_navigation_request"] = "Today's Session"
-    st.rerun()
 
 
 def show_next_run_page():
@@ -187,6 +189,62 @@ def show_next_run_page():
             "dedicated Readiness/Fatigue engine is not connected yet. "
             "Only do the quality session if recovery, soreness and general "
             "energy feel normal."
+        )
+
+    st.markdown("## 🧪 Adaptive Coach integration rehearsal")
+
+    proposal = build_adaptive_coach_proposal(
+        athlete_id,
+        existing_label=(
+            recommendation.next_key_session_family
+            or recommendation.session_family
+        ),
+    )
+
+    if proposal is not None:
+        if proposal.takeover_recommended:
+            st.success(
+                f"{proposal.safety_status} · confidence "
+                f"{proposal.adaptive_confidence_label} "
+                f"({proposal.adaptive_confidence:.0%})"
+            )
+        else:
+            st.warning(
+                f"{proposal.safety_status} · confidence "
+                f"{proposal.adaptive_confidence_label} "
+                f"({proposal.adaptive_confidence:.0%})"
+            )
+
+        left_rehearsal, right_rehearsal = st.columns(2, gap="medium")
+        with left_rehearsal:
+            st.markdown("### Existing live")
+            st.write(f"**Immediate:** {recommendation.session_family}")
+            st.write(
+                f"**Next key:** "
+                f"{recommendation.next_key_session_family or '—'}"
+            )
+
+        with right_rehearsal:
+            st.markdown("### Adaptive Coach")
+            st.write(
+                f"**Immediate · {proposal.immediate_day}:** "
+                f"{proposal.immediate_prescription}"
+            )
+            if proposal.key_prescription:
+                st.write(
+                    f"**Next key · {proposal.key_day}:** "
+                    f"{proposal.key_prescription}"
+                )
+
+        st.caption(f"Comparison: {proposal.comparison}")
+
+        with st.expander("Why Adaptive Coach chose this"):
+            for item in proposal.why:
+                st.markdown(f"- {item}")
+
+        st.info(
+            "Safety switch is still ON: the existing recommendation remains "
+            "authoritative in v0.19.6."
         )
 
     st.caption(

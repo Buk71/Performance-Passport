@@ -4,6 +4,7 @@ import textwrap
 import streamlit as st
 
 from core.session_designer import build_designed_session
+from core.live_integration import build_adaptive_coach_proposal
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -307,6 +308,46 @@ def show_todays_session_page():
             "PP has designed the highest-value session, but the dedicated "
             "Readiness/Fatigue engine is not connected yet. Only complete the "
             "quality session if soreness, recovery and general energy feel normal."
+        )
+
+    st.markdown("## 🧪 Adaptive Coach session rehearsal")
+
+    proposal = build_adaptive_coach_proposal(
+        athlete_id,
+        existing_label=session.family_label,
+    )
+
+    if proposal is not None and proposal.key_prescription:
+        _html(
+            f"""
+            <div class="pp-card pp-card-hero">
+                <div class="pp-card-label">Adaptive Coach proposed key workout</div>
+                <div class="pp-card-title">
+                    {_safe(proposal.key_day)} · {_safe(proposal.key_prescription)}
+                </div>
+                <div class="pp-card-copy">
+                    {_safe(proposal.progression_headline or "Progression evidence building")}
+                </div>
+                <div style="margin-top:0.8rem;">
+                    <span class="pp-status">{_safe(proposal.safety_status)}</span>
+                    <span class="pp-status">
+                        Confidence {_safe(proposal.adaptive_confidence_label)}
+                        · {proposal.adaptive_confidence:.0%}
+                    </span>
+                </div>
+            </div>
+            """
+        )
+
+        st.caption(f"Existing session comparison: {proposal.comparison}")
+
+        with st.expander("See integration reasoning"):
+            for item in proposal.why:
+                st.markdown(f"- {item}")
+
+        st.info(
+            "Safety switch is still ON: the existing Today's Session remains "
+            "authoritative in v0.19.6."
         )
 
     st.caption(
