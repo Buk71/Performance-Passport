@@ -7,6 +7,7 @@ from core.learning_engine import (
     build_learning_observations,
     build_learning_profile,
 )
+from core.performance_backtracking import build_performance_backtracking_profile
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -204,6 +205,78 @@ def show_learning_page():
                     f"21-day response association "
                     f"{item.response_delta:+.1f} points"
                 )
+
+    st.markdown("## 🏁 Performance Backtracking")
+
+    with st.spinner("Reconstructing training before strong performances..."):
+        backtracking = build_performance_backtracking_profile(athlete_id)
+
+    st.write(backtracking.summary)
+
+    if backtracking.performances:
+        st.caption(
+            "This starts with PBs and other top race-quality performances, then "
+            "looks backwards. It treats the whole preparation pattern as evidence "
+            "rather than pretending one Wednesday or Saturday workout caused the result."
+        )
+
+        for item in backtracking.performances[:8]:
+            anchor = item.anchor
+            badge = "PB" if anchor.is_pb else "Strong performance"
+
+            with st.expander(
+                f"{anchor.activity_date} · {anchor.distance_label} · "
+                f"{badge} · {anchor.title}"
+            ):
+                st.caption(
+                    f"{anchor.anchor_reason} · anchor confidence "
+                    f"{anchor.confidence:.0%}"
+                )
+
+                cols = st.columns(4, gap="small")
+                for col, days in zip(cols, (14, 28, 42, 56)):
+                    window = next(
+                        value for value in item.windows
+                        if value.days == days
+                    )
+                    with col:
+                        st.metric(
+                            f"{days // 7}-week volume",
+                            f"{window.average_weekly_km:.1f} km/wk",
+                        )
+                        st.caption(
+                            f"{window.quality_session_count} quality · "
+                            f"{window.threshold_session_count} threshold · "
+                            f"{window.short_interval_session_count} short/VO₂ · "
+                            f"{window.long_run_count} long runs"
+                        )
+
+                six_week = next(
+                    value for value in item.windows
+                    if value.days == 42
+                )
+                if six_week.signatures:
+                    st.markdown("**Most repeated decoded workouts in the 6-week build:**")
+                    st.write(
+                        " · ".join(
+                            f"{signature} ×{count}"
+                            for signature, count in six_week.signatures
+                        )
+                    )
+
+        if backtracking.recurring_42d_signatures:
+            st.markdown("### Recurring patterns before strong performances")
+            st.caption(
+                "Workout structures appearing across multiple successful "
+                "6-week preparation blocks."
+            )
+            st.write(
+                " · ".join(
+                    f"{signature} ({count} blocks)"
+                    for signature, count
+                    in backtracking.recurring_42d_signatures
+                )
+            )
 
     st.markdown("## Guardrails")
 
