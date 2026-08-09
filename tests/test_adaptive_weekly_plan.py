@@ -3,7 +3,12 @@ import unittest
 from unittest.mock import patch
 
 from core.adaptive_training_block import AdaptiveBlockPreview, AdaptivePhase
-from core.adaptive_weekly_plan import build_adaptive_weekly_plan
+from core.adaptive_weekly_plan import (
+    _humanise_signature,
+    _progress_interval_session,
+    _progress_threshold_session,
+    build_adaptive_weekly_plan,
+)
 from core.performance_backtracking import PerformanceBacktrackingProfile
 
 
@@ -46,6 +51,38 @@ EMPTY_HISTORY = PerformanceBacktrackingProfile(
 
 
 class AdaptiveWeeklyPlanTests(unittest.TestCase):
+    def test_odd_historical_distances_become_coach_friendly(self):
+        self.assertEqual(
+            _humanise_signature("threshold_7x775m"),
+            "7 × 800m threshold",
+        )
+        self.assertEqual(
+            _humanise_signature("short_intervals_8x525m"),
+            "8 × 500m controlled intervals",
+        )
+
+    def test_build_sessions_progress_week_to_week(self):
+        week1=_progress_interval_session(
+            "8 × 500m controlled intervals",
+            1,
+        )
+        week4=_progress_interval_session(
+            "8 × 500m controlled intervals",
+            4,
+        )
+        self.assertNotEqual(week1,week4)
+
+        threshold1=_progress_threshold_session(
+            "7 × 800m threshold",
+            1,
+        )
+        threshold5=_progress_threshold_session(
+            "7 × 800m threshold",
+            5,
+        )
+        self.assertNotEqual(threshold1,threshold5)
+        self.assertIn("min threshold",threshold5)
+
     @patch("core.adaptive_weekly_plan.build_performance_backtracking_profile", return_value=EMPTY_HISTORY)
     @patch("core.adaptive_weekly_plan._target_text", return_value="Target")
     @patch("core.adaptive_weekly_plan._training_rhythm", return_value=(("Wednesday","Saturday"),"Sunday","Friday"))

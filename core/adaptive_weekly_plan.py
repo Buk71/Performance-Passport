@@ -183,18 +183,41 @@ def _training_rhythm(athlete_id: int) -> tuple[tuple[str,...],str,str]:
     return tuple(quality[:2]),long_day,rest
 
 
+RECOGNISABLE_REP_DISTANCES_M = (
+    200, 300, 400, 500, 600, 800, 1000, 1200, 1600,
+)
+
+
+def _snap_rep_distance(metres: float | int) -> int:
+    """
+    Convert decoder averages into coach-friendly prescription distances.
+
+    Historical sessions remain stored at their real measured value. Only the
+    future prescription is normalised: e.g. 775m -> 800m, 525m -> 500m.
+    """
+    value = max(float(metres), 1.0)
+    return min(
+        RECOGNISABLE_REP_DISTANCES_M,
+        key=lambda standard: abs(standard - value),
+    )
+
+
 def _humanise_signature(signature: str) -> str:
     text=str(signature or "").strip()
-    m=re.fullmatch(r"(threshold|short_intervals|long_intervals|strides)_(\d+)x(\d+)m",text)
+    m=re.fullmatch(
+        r"(threshold|short_intervals|long_intervals|strides)_(\d+)x(\d+)m",
+        text,
+    )
     if m:
         family,count,metres=m.groups()
+        snapped=_snap_rep_distance(int(metres))
         label={
             "threshold":"threshold",
             "short_intervals":"controlled intervals",
             "long_intervals":"long intervals",
             "strides":"strides",
         }[family]
-        return f"{count} × {metres}m {label}"
+        return f"{count} × {snapped}m {label}"
 
     m=re.fullmatch(r"threshold_(\d+)x(\d+)min",text)
     if m:
@@ -217,24 +240,255 @@ def _personal_signature(
     if prefix:
         for item in profile.signature_lifts:
             if item.workout_signature.startswith(prefix):
-                return _humanise_signature(item.workout_signature), "Successful-preparation history"
+                return (
+                    _humanise_signature(item.workout_signature),
+                    "Successful-preparation history",
+                )
 
         for signature,_count in profile.recurring_42d_signatures:
             if signature.startswith(prefix):
-                return _humanise_signature(signature), "Repeated before strong performances"
+                return (
+                    _humanise_signature(signature),
+                    "Repeated before strong performances",
+                )
 
-    # Session Designer personal history is the second source.
-    evidence=_historical_candidates(athlete_id,family,limit=1)
+    evidence=_historical_candidates(
+        athlete_id,
+        family,
+        limit=1,
+    )
     if evidence:
         item=evidence[0]
         if item.rep_count and item.average_rep_distance_km:
-            metres=int(round(item.average_rep_distance_km*1000/25)*25)
-            return f"{item.rep_count} × {metres}m", "Personal workout history"
+            metres=_snap_rep_distance(
+                item.average_rep_distance_km*1000
+            )
+            return (
+                f"{item.rep_count} × {metres}m",
+                "Personal workout history",
+            )
         if item.rep_count and item.average_rep_duration_s:
-            minutes=max(1,round(item.average_rep_duration_s/60))
-            return f"{item.rep_count} × {minutes} min", "Personal workout history"
+            minutes=max(
+                1,
+                round(item.average_rep_duration_s/60),
+            )
+            return (
+                f"{item.rep_count} × {minutes} min",
+                "Personal workout history",
+            )
 
     return None,"Coaching fallback"
+
+
+def _parse_rep_prescription(
+    prescription: str,
+) -> tuple[int,int] | None:
+    match=re.search(
+        r"(\d+)\s*×\s*(\d+)\s*m",
+        prescription,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    return int(match.group(1)),_snap_rep_distance(int(match.group(2)))
+
+
+def _progress_interval_session(
+    base: str,
+    week_in_phase: int,
+) -> str:
+    """
+    Progress a personal interval pattern through recognisable rep distances.
+
+    The loading is intentionally stepped rather than linear. The total work
+    grows, then rep length increases, which makes the block visibly progress
+    without turning every week into a bigger session than the last.
+    """
+    parsed=_parse_rep_prescription(base)
+
+    if parsed is None:
+        fallback=(
+            "8 × 400m controlled intervals",
+            "10 × 400m controlled intervals",
+            "8 × 500m controlled intervals",
+            "8 × 600m controlled intervals",
+            "6 × 800m controlled intervals",
+            "7 × 800m controlled intervals",
+            "5 × 1000m controlled intervals",
+            "6 × 1000m controlled intervals",
+            "5 × 1200m controlled intervals",
+            "4 × 1200m controlled intervals",
+        )
+        return fallback[
+            min(max(week_in_phase-1,0),len(fallback)-1)
+        ]
+
+    base_count,base_distance=parsed
+    standards=list(RECOGNISABLE_REP_DISTANCES_M)
+    index=standards.index(base_distance)
+
+    # Personal starting structure first, then progressive overload.
+    patterns=(
+        (0,0),
+        (1,0),
+        (0,1),
+        (1,1),
+        (0,2),
+        (1,2),
+        (0,3),
+        (1,3),
+        (0,4),
+        (0,4),
+    )
+    rep_add,distance_add=patterns[
+        min(max(week_in_phase-1,0),len(patterns)-1)
+    ]
+    new_distance=standards[
+        min(index+distance_add,len(standards)-1)
+    ]
+
+    # As reps get longer, keep total work in a sensible range.
+    base_total=base_count*base_distance
+    desired_total=base_total*(
+        1.0+0.06*min(max(week_in_phase-1,0),6)
+    )
+    calculated=max(
+        3,
+        round(desired_total/new_distance),
+    )
+    new_count=max(
+        3,
+        calculated+rep_add,
+    )
+
+    return f"{new_count} × {new_distance}m controlled intervals"
+
+
+def _progress_threshold_session(
+    base: str,
+    week_in_phase: int,
+) -> str:
+    """
+    Threshold progression prioritises recognisable, coach-like structures.
+
+    Distance-based personal history is respected for the first weeks, then
+    progression moves toward sustained threshold duration rather than endlessly
+    increasing rep count.
+    """
+    parsed=_parse_rep_prescription(base)
+    week=max(1,week_in_phase)
+
+    if parsed is not None and week <= 3:
+        count,distance=parsed
+        distance=_snap_rep_distance(distance)
+
+        if week==1:
+            return f"{count} × {distance}m threshold"
+
+        if week==2:
+            next_distance=_snap_rep_distance(
+                distance*1.20
+            )
+            total=count*distance
+            new_count=max(
+                3,
+                round(total*1.06/next_distance),
+            )
+            return f"{new_count} × {next_distance}m threshold"
+
+        next_distance=_snap_rep_distance(
+            distance*1.45
+        )
+        total=count*distance
+        new_count=max(
+            3,
+            round(total*1.12/next_distance),
+        )
+        return f"{new_count} × {next_distance}m threshold"
+
+    progression=(
+        "4 × 8 min threshold",
+        "3 × 10 min threshold",
+        "4 × 10 min threshold",
+        "3 × 12 min threshold",
+        "2 × 15 min threshold",
+        "3 × 10 min threshold",
+        "2 × 12 min threshold + 4 × 30 sec relaxed strides",
+    )
+
+    # After three personal-distance weeks, move through sustained work.
+    index=max(0,week-4 if parsed is not None else week-1)
+    return progression[
+        min(index,len(progression)-1)
+    ]
+
+
+def _specific_prescription(
+    distance: str,
+    slot: int,
+    week_in_phase: int,
+) -> tuple[str,str]:
+    week=max(1,week_in_phase)
+
+    if distance=="5K":
+        first=(
+            "6 × 800m at controlled 5K effort",
+            "5 × 1000m at controlled 5K effort",
+            "4 × 1200m at 5K–10K effort",
+            "3 × 1600m around 5K–10K effort",
+        )
+        second=(
+            "3 × 10 min threshold",
+            "3 × 12 min threshold",
+            "2 × 15 min threshold",
+            "2 × 10 min threshold + 4 × 200m relaxed",
+        )
+    elif distance=="10K":
+        first=(
+            "5 × 1000m at goal 10K pace",
+            "4 × 1200m at goal 10K pace",
+            "3 × 1600m at goal 10K pace",
+            "3 × 2 km at goal 10K pace",
+            "2 × 2 km + 4 × 400m at 10K-to-5K effort",
+        )
+        second=(
+            "3 × 10 min threshold",
+            "3 × 12 min threshold",
+            "2 × 15 min threshold",
+            "2 × 12 min threshold + 4 × 30 sec strides",
+            "20 min controlled threshold",
+        )
+    elif distance=="Half Marathon":
+        first=(
+            "3 × 2 km at half-marathon effort",
+            "3 × 3 km at half-marathon effort",
+            "2 × 4 km at half-marathon effort",
+            "3 × 3 km at goal half-marathon pace",
+        )
+        second=(
+            "3 × 12 min threshold",
+            "2 × 15 min threshold",
+            "2 × 20 min threshold",
+            "25 min controlled threshold",
+        )
+    else:
+        first=(
+            "4 × 1000m at goal race pace",
+            "3 × 1600m at goal race pace",
+            "3 × 2 km at goal race pace",
+        )
+        second=(
+            "3 × 10 min threshold",
+            "3 × 12 min threshold",
+            "2 × 15 min threshold",
+        )
+
+    sequence=first if slot==1 else second
+    return (
+        "race_pace" if slot==1 else "threshold",
+        sequence[min(week-1,len(sequence)-1)],
+    )
 
 
 def _quality_prescription(
@@ -245,48 +499,64 @@ def _quality_prescription(
     week_in_phase: int,
     profile,
 ) -> tuple[str,str,str]:
-    """
-    slot 1 = first weekly quality stimulus
-    slot 2 = second weekly quality stimulus
-    """
     if phase.startswith("Taper"):
         if slot==1:
-            return "race_pace", "3 × 1 km at goal race pace", "Race-specific sharpening"
-        return "speed", "6 × 200m relaxed and quick", "Freshness / leg speed"
+            return (
+                "race_pace",
+                "3 × 1 km at goal race pace",
+                "Race-specific sharpening",
+            )
+        return (
+            "speed",
+            "6 × 200m relaxed and quick",
+            "Freshness / leg speed",
+        )
 
     if phase=="Specific":
-        if distance=="5K":
-            prescriptions=[
-                ("vo2","5 × 1 km at controlled 5K effort"),
-                ("threshold","2 × 12 min threshold"),
-            ]
-        elif distance=="10K":
-            prescriptions=[
-                ("race_pace","5 × 1 km at goal 10K pace"),
-                ("threshold","3 × 10 min threshold"),
-            ]
-        elif distance=="Half Marathon":
-            prescriptions=[
-                ("race_pace","3 × 3 km at goal HM effort"),
-                ("threshold","3 × 12 min threshold"),
-            ]
-        else:
-            prescriptions=[
-                ("race_pace","3 × 2 km at goal race pace"),
-                ("threshold","3 × 10 min threshold"),
-            ]
-        family,prescription=prescriptions[slot-1]
-        return family,prescription,"Goal-specific progression"
+        family,prescription=_specific_prescription(
+            distance,
+            slot,
+            week_in_phase,
+        )
+        return (
+            family,
+            prescription,
+            "Goal-specific progression",
+        )
 
-    # Build: let personal history lead where possible.
     family="vo2" if slot==1 else "threshold"
-    personal,source=_personal_signature(athlete_id,family,profile)
-    if personal:
-        return family,personal,source
+    personal,source=_personal_signature(
+        athlete_id,
+        family,
+        profile,
+    )
 
     if family=="vo2":
-        return family,"6 × 3 min strong and controlled","Coaching fallback"
-    return family,"3 × 10 min threshold","Coaching fallback"
+        base=personal or "8 × 400m controlled intervals"
+        return (
+            family,
+            _progress_interval_session(
+                base,
+                week_in_phase,
+            ),
+            (
+                source
+                + " + progressive overload"
+            ),
+        )
+
+    base=personal or "3 × 10 min threshold"
+    return (
+        family,
+        _progress_threshold_session(
+            base,
+            week_in_phase,
+        ),
+        (
+            source
+            + " + progressive overload"
+        ),
+    )
 
 
 def _phase_for_week(preview: AdaptiveBlockPreview, week: int) -> AdaptivePhase:
