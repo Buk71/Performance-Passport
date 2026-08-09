@@ -12,6 +12,7 @@ from core.adaptive_training_block import build_adaptive_block_preview
 from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.adaptive_progression import evaluate_progression
 from core.coach_simulator import simulate_pb_build
+from core.coach_validation_suite import build_validation_suite
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -531,6 +532,52 @@ def show_learning_page():
             "The first golden retrospective scenario is the May 2026 5K PB build. "
             "Once its rules pass review, we will run the same simulator over Jo "
             "and ordinary/non-PB periods."
+        )
+
+    st.markdown("## 🚦 Adaptive Coach Release Validation")
+
+    suite = build_validation_suite()
+    st.write(suite.summary)
+
+    release_cols = st.columns(2, gap="small")
+    release_cols[0].metric("Overall verdict", suite.overall_verdict)
+    release_cols[1].metric(
+        "Live-release gate",
+        "READY FOR INTEGRATION" if suite.release_ready else "HOLD",
+    )
+
+    for result in suite.scenarios:
+        with st.expander(f"{result.scenario.label} · {result.verdict}"):
+            cols = st.columns(5, gap="small")
+            cols[0].metric("Decisions", str(result.decision_count))
+            cols[1].metric("Sensible", str(result.sensible_count))
+            cols[2].metric("Review", str(result.review_count))
+            cols[3].metric("Validation", f"{result.validation_rate:.0%}")
+            cols[4].metric("Execution coverage", f"{result.data_coverage:.0%}")
+            st.caption(
+                "Quality days inferred using pre-simulation history only: "
+                + " + ".join(result.quality_days)
+            )
+            for flag in result.flags:
+                st.info(flag)
+
+            with st.expander("Timeline"):
+                for decision in result.decisions:
+                    st.markdown(
+                        f"**{decision.date} · {decision.weekday} · {decision.phase}**  \n"
+                        f"PP: {decision.planned_session}  \n"
+                        f"Actual: {decision.actual_title or 'No recorded run'}  \n"
+                        f"Coach response: **{decision.action.replace('_',' ').title()}**"
+                    )
+                    for line in decision.explanation:
+                        st.caption(line)
+
+    if suite.blockers:
+        st.warning("Before live release: " + " ".join(suite.blockers))
+    else:
+        st.success(
+            "No simulator blocker was found. Adaptive Coach is ready for the "
+            "live-integration rehearsal behind a safety/preview switch."
         )
 
     st.markdown("## Guardrails")
