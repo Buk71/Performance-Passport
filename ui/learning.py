@@ -10,6 +10,7 @@ from core.learning_engine import (
 from core.performance_backtracking import build_performance_backtracking_profile
 from core.adaptive_training_block import build_adaptive_block_preview
 from core.adaptive_weekly_plan import build_adaptive_weekly_plan
+from core.adaptive_progression import evaluate_progression
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -421,6 +422,61 @@ def show_learning_page():
                         st.caption(f"Target: {day.target}")
                     st.caption(
                         f"Why: {day.purpose} · Evidence: {day.evidence}"
+                    )
+
+    st.markdown("## 🔁 Plan → Perform → Adapt")
+
+    if weekly_plan.available and weekly_plan.weeks:
+        first_week = weekly_plan.weeks[0]
+        key_sessions = [
+            day
+            for day in first_week.days
+            if day.title.startswith("Key Session")
+        ]
+
+        if key_sessions:
+            st.caption(
+                "PP now checks real completed workout execution before deciding "
+                "whether the next step should progress, repeat or reduce."
+            )
+
+            for planned in key_sessions:
+                gate = evaluate_progression(
+                    athlete_id,
+                    planned.session_family,
+                )
+
+                with st.expander(
+                    f"{planned.day_name} · {planned.prescription} → {gate.headline}"
+                ):
+                    if gate.completed_title:
+                        st.markdown(
+                            f"**Latest evidence:** {gate.completed_date} · "
+                            f"{gate.completed_title}"
+                        )
+
+                    if gate.execution_score is not None:
+                        cols = st.columns(3, gap="small")
+                        cols[0].metric(
+                            "Execution",
+                            f"{gate.execution_score:.0f}/100",
+                        )
+                        cols[1].metric(
+                            "Decision",
+                            gate.action.replace("_", " ").title(),
+                        )
+                        cols[2].metric(
+                            "Evidence confidence",
+                            gate.confidence_label,
+                        )
+
+                    for reason in gate.explanation:
+                        st.markdown(f"- {reason}")
+
+                    st.info(
+                        "Preview only. This decision does not yet rewrite the "
+                        "next workout. PP is showing what the adaptive coach "
+                        "would do and why."
                     )
 
     st.markdown("## Guardrails")
