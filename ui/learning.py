@@ -9,6 +9,7 @@ from core.learning_engine import (
 )
 from core.performance_backtracking import build_performance_backtracking_profile
 from core.adaptive_training_block import build_adaptive_block_preview
+from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -386,6 +387,41 @@ def show_learning_page():
             "The next step is to connect current weakness, readiness and completed-session "
             "response before PP is allowed to adapt the live rolling plan."
         )
+
+    st.markdown("## 📅 Adaptive Weekly Plan Preview")
+
+    weekly_plan = build_adaptive_weekly_plan(athlete_id)
+
+    if not weekly_plan.available:
+        st.info(weekly_plan.summary)
+    else:
+        st.write(weekly_plan.summary)
+        st.caption(
+            "This is the first full calendar-style preview. It remains advisory "
+            "until we are happy with the progression and readiness logic."
+        )
+
+        rhythm = st.columns(4, gap="small")
+        rhythm[0].metric("Quality day 1", weekly_plan.quality_days[0])
+        rhythm[1].metric("Quality day 2", weekly_plan.quality_days[1])
+        rhythm[2].metric("Long run", weekly_plan.long_run_day or "—")
+        rhythm[3].metric("Rest", weekly_plan.rest_day or "—")
+
+        for week in weekly_plan.weeks:
+            with st.expander(
+                f"Week {week.week_number} · {week.phase_name} · {week.theme}",
+                expanded=(week.week_number == 1),
+            ):
+                for day in week.days:
+                    st.markdown(
+                        f"**{day.day_name} — {day.title}**  \n"
+                        f"{day.prescription}"
+                    )
+                    if day.target:
+                        st.caption(f"Target: {day.target}")
+                    st.caption(
+                        f"Why: {day.purpose} · Evidence: {day.evidence}"
+                    )
 
     st.markdown("## Guardrails")
 
