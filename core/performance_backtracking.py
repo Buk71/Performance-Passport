@@ -65,15 +65,40 @@ class BacktrackedPerformance:
 
 
 @dataclass(frozen=True)
+class PreparationContrast:
+    metric_key: str
+    metric_label: str
+    successful_average: float
+    normal_average: float
+    difference: float
+    relative_difference: float | None
+    direction: str
+    evidence_label: str
+
+
+@dataclass(frozen=True)
+class SignatureLift:
+    workout_signature: str
+    successful_block_rate: float
+    normal_block_rate: float
+    lift: float | None
+    successful_blocks: int
+    normal_blocks: int
+
+
+@dataclass(frozen=True)
 class PerformanceBacktrackingProfile:
     athlete_id: int
     anchor_count: int
     pb_count: int
     performances: tuple[BacktrackedPerformance, ...]
     recurring_42d_signatures: tuple[tuple[str, int], ...]
+    normal_42d_block_count: int
+    preparation_contrasts: tuple[PreparationContrast, ...]
+    signature_lifts: tuple[SignatureLift, ...]
     summary: str
     limitations: tuple[str, ...]
-    model_version: int = 1
+    model_version: int = 2
 
 
 def _date(value: Any) -> datetime.date | None:
@@ -240,8 +265,11 @@ def build_performance_anchors(athlete_id:int) -> tuple[PerformanceAnchor,...]:
     return tuple(anchors)
 
 
-def _window(athlete_id:int,anchor:PerformanceAnchor,days:int) -> PreparationWindow:
-    end=_date(anchor.activity_date)
+def _window_ending(
+    athlete_id: int,
+    end: datetime.date,
+    days: int,
+) -> PreparationWindow:
     start=end-datetime.timedelta(days=days)
     roles=get_athlete_sport_roles(athlete_id)
     running={str(k) for k,v in roles.items() if v=="running"}
@@ -286,37 +314,411 @@ def _window(athlete_id:int,anchor:PerformanceAnchor,days:int) -> PreparationWind
     )
 
 
-def build_performance_backtracking_profile(athlete_id:int) -> PerformanceBacktrackingProfile:
-    anchors=build_performance_anchors(athlete_id)
-    performances=[]
-    recurring=Counter()
-    for anchor in anchors:
-        windows=tuple(_window(athlete_id,anchor,d) for d in WINDOWS)
-        performances.append(BacktrackedPerformance(anchor=anchor,windows=windows))
-        w42=next((w for w in windows if w.days==42),None)
-        if w42:
-            # Count presence per successful block, not raw repetition.
-            for sig,_ in w42.signatures: recurring[sig]+=1
+def _window(
+    athlete_id: int,
+    anchor: PerformanceAnchor,
+    days: int,
+) -> PreparationWindow:
+    end = _date(anchor.activity_date)
 
-    pb_count=sum(a.is_pb for a in anchors)
+    if end is None:
+        raise ValueError("Performance anchor has no usable date.")
+
+    return _window_ending(
+        athlete_id,
+        end,
+        days,
+    )
+
+
+def _normal_control_windows(
+    athlete_id: int,
+    anchors: tuple[PerformanceAnchor, ...],
+    *,
+    days: int = 42,
+) -> tuple[PreparationWindow, ...]:
+    """
+    Build ordinary training blocks for comparison.
+
+    Windows end every 14 days across the athlete's running history. End dates
+    within 21 days of a strong-performance anchor are excluded, so the control
+    group is less contaminated by the same successful preparation period.
+    """
+    roles = get_athlete_sport_roles(athlete_id)
+    running = {
+        str(k)
+        for k, v in roles.items()
+        if v == "running"
+    }
+
+    if not running:
+        return ()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT activity_date, sport_id
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_date IS NOT NULL
+        ORDER BY activity_date
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    dates = [
+        _date(row[0])
+        for row in rows
+        if str(row[1] or "") in running
+    ]
+    dates = [value for value in dates if value is not None]
+
+    if not dates:
+        return ()
+
+    first = min(dates) + datetime.timedelta(days=days)
+    last = max(dates)
+
+    anchor_dates = [
+        _date(anchor.activity_date)
+        for anchor in anchors
+    ]
+    anchor_dates = [
+        value
+        for value in anchor_dates
+        if value is not None
+    ]
+
+    controls = []
+    current = first
+
+    while current <= last:
+        near_anchor = any(
+            abs((current - anchor_date).days) <= 21
+            for anchor_date in anchor_dates
+        )
+
+        if not near_anchor:
+            window = _window_ending(
+                athlete_id,
+                current,
+                days,
+            )
+
+            # Require enough running to represent a genuine training block.
+            if window.run_count >= 8:
+                controls.append(window)
+
+        current += datetime.timedelta(days=14)
+
+    return tuple(controls)
+
+
+def _average_metric(
+    windows: tuple[PreparationWindow, ...],
+    attribute: str,
+) -> float | None:
+    values = [
+        float(getattr(window, attribute))
+        for window in windows
+        if getattr(window, attribute) is not None
+    ]
+
+    if not values:
+        return None
+
+    return statistics.fmean(values)
+
+
+def _contrast(
+    metric_key: str,
+    metric_label: str,
+    successful_windows: tuple[PreparationWindow, ...],
+    normal_windows: tuple[PreparationWindow, ...],
+) -> PreparationContrast | None:
+    successful = _average_metric(
+        successful_windows,
+        metric_key,
+    )
+    normal = _average_metric(
+        normal_windows,
+        metric_key,
+    )
+
+    if successful is None or normal is None:
+        return None
+
+    difference = successful - normal
+    relative = (
+        difference / normal
+        if abs(normal) > 1e-9
+        else None
+    )
+
+    if relative is not None:
+        magnitude = abs(relative)
+    else:
+        magnitude = abs(difference)
+
+    if magnitude >= 0.25:
+        evidence = "Strong difference"
+    elif magnitude >= 0.12:
+        evidence = "Meaningful difference"
+    elif magnitude >= 0.05:
+        evidence = "Small difference"
+    else:
+        evidence = "Similar to normal"
+
+    if difference > 0:
+        direction = "higher"
+    elif difference < 0:
+        direction = "lower"
+    else:
+        direction = "similar"
+
+    return PreparationContrast(
+        metric_key=metric_key,
+        metric_label=metric_label,
+        successful_average=round(successful, 2),
+        normal_average=round(normal, 2),
+        difference=round(difference, 2),
+        relative_difference=(
+            round(relative, 4)
+            if relative is not None
+            else None
+        ),
+        direction=direction,
+        evidence_label=evidence,
+    )
+
+
+def _signature_presence(
+    windows: tuple[PreparationWindow, ...],
+) -> Counter:
+    counts = Counter()
+
+    for window in windows:
+        present = {
+            signature
+            for signature, _count
+            in window.signatures
+        }
+
+        for signature in present:
+            counts[signature] += 1
+
+    return counts
+
+
+def _signature_lifts(
+    successful_windows: tuple[PreparationWindow, ...],
+    normal_windows: tuple[PreparationWindow, ...],
+) -> tuple[SignatureLift, ...]:
+    if not successful_windows or not normal_windows:
+        return ()
+
+    successful_counts = _signature_presence(
+        successful_windows
+    )
+    normal_counts = _signature_presence(
+        normal_windows
+    )
+
+    signatures = set(successful_counts) | set(normal_counts)
+    results = []
+
+    for signature in signatures:
+        successful_rate = (
+            successful_counts[signature]
+            / len(successful_windows)
+        )
+        normal_rate = (
+            normal_counts[signature]
+            / len(normal_windows)
+        )
+
+        if successful_counts[signature] < 2:
+            continue
+
+        lift = (
+            successful_rate / normal_rate
+            if normal_rate > 0
+            else None
+        )
+
+        results.append(
+            SignatureLift(
+                workout_signature=signature,
+                successful_block_rate=round(
+                    successful_rate,
+                    4,
+                ),
+                normal_block_rate=round(
+                    normal_rate,
+                    4,
+                ),
+                lift=(
+                    round(lift, 2)
+                    if lift is not None
+                    else None
+                ),
+                successful_blocks=successful_counts[
+                    signature
+                ],
+                normal_blocks=normal_counts[
+                    signature
+                ],
+            )
+        )
+
+    results.sort(
+        key=lambda item: (
+            (
+                item.lift
+                if item.lift is not None
+                else 999.0
+            ),
+            item.successful_block_rate,
+            item.successful_blocks,
+        ),
+        reverse=True,
+    )
+
+    return tuple(results[:10])
+
+
+def build_performance_backtracking_profile(
+    athlete_id: int,
+) -> PerformanceBacktrackingProfile:
+    anchors = build_performance_anchors(
+        athlete_id
+    )
+    performances = []
+    recurring = Counter()
+
+    for anchor in anchors:
+        windows = tuple(
+            _window(
+                athlete_id,
+                anchor,
+                days,
+            )
+            for days in WINDOWS
+        )
+        performances.append(
+            BacktrackedPerformance(
+                anchor=anchor,
+                windows=windows,
+            )
+        )
+
+        w42 = next(
+            (
+                window
+                for window in windows
+                if window.days == 42
+            ),
+            None,
+        )
+
+        if w42:
+            for signature, _ in w42.signatures:
+                recurring[signature] += 1
+
+    successful_42d = tuple(
+        next(
+            window
+            for window in item.windows
+            if window.days == 42
+        )
+        for item in performances
+    )
+
+    normal_42d = _normal_control_windows(
+        athlete_id,
+        anchors,
+        days=42,
+    )
+
+    metrics = (
+        ("average_weekly_km", "Weekly volume"),
+        ("quality_session_count", "Quality sessions / 6 weeks"),
+        ("threshold_session_count", "Threshold sessions / 6 weeks"),
+        ("short_interval_session_count", "Short interval / VO₂ sessions / 6 weeks"),
+        ("long_interval_session_count", "Long interval sessions / 6 weeks"),
+        ("long_run_count", "Long runs / 6 weeks"),
+        ("average_execution_score", "Average quality execution"),
+    )
+
+    contrasts = []
+
+    for metric_key, metric_label in metrics:
+        item = _contrast(
+            metric_key,
+            metric_label,
+            successful_42d,
+            normal_42d,
+        )
+
+        if item is not None:
+            contrasts.append(item)
+
+    contrasts.sort(
+        key=lambda item: abs(
+            item.relative_difference
+            if item.relative_difference is not None
+            else 0.0
+        ),
+        reverse=True,
+    )
+
+    lifts = _signature_lifts(
+        successful_42d,
+        normal_42d,
+    )
+
+    pb_count = sum(
+        anchor.is_pb
+        for anchor in anchors
+    )
+
     if anchors:
-        summary=(
+        summary = (
             f"PP found {len(anchors)} strong performance anchors, including "
-            f"{pb_count} historical PBs. It has reconstructed the 2, 4, 6 and "
-            "8 weeks before each one so recurring successful preparation can be compared."
+            f"{pb_count} historical PBs, and compared their 6-week preparation "
+            f"with {len(normal_42d)} ordinary 6-week training blocks. "
+            "This shows which patterns are unusually associated with running well, "
+            "rather than merely common in the athlete's training."
         )
     else:
-        summary="PP has not yet found enough trustworthy PB or race-quality anchors for backtracking."
+        summary = (
+            "PP has not yet found enough trustworthy PB or race-quality "
+            "anchors for backtracking."
+        )
 
     return PerformanceBacktrackingProfile(
-        athlete_id=athlete_id,anchor_count=len(anchors),pb_count=pb_count,
+        athlete_id=athlete_id,
+        anchor_count=len(anchors),
+        pb_count=pb_count,
         performances=tuple(performances),
-        recurring_42d_signatures=tuple(recurring.most_common(8)),
+        recurring_42d_signatures=tuple(
+            recurring.most_common(8)
+        ),
+        normal_42d_block_count=len(normal_42d),
+        preparation_contrasts=tuple(
+            contrasts
+        ),
+        signature_lifts=lifts,
         summary=summary,
         limitations=(
-            "Backtracking identifies training associated with strong performances; it does not prove causation.",
+            "Successful preparation is compared with ordinary 6-week blocks from the same athlete.",
+            "Control blocks ending within 21 days of a strong-performance anchor are excluded to reduce overlap.",
+            "Backtracking identifies association, not causation.",
             "Historical PB means best performance recorded up to that date in the available Performance Passport history.",
-            "Training windows overlap when strong performances are close together, so repeated patterns are evidence rather than independent experiments.",
-            "v0.18.3 remains observation-only and does not alter session recommendations.",
+            "Strong-performance windows can still overlap when races are close together, so evidence is not fully independent.",
+            "v0.18.4 remains observation-only and does not alter session recommendations.",
         ),
     )

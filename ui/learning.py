@@ -8,6 +8,7 @@ from core.learning_engine import (
     build_learning_profile,
 )
 from core.performance_backtracking import build_performance_backtracking_profile
+from core.adaptive_training_block import build_adaptive_block_preview
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -264,6 +265,60 @@ def show_learning_page():
                         )
                     )
 
+        if backtracking.preparation_contrasts:
+            st.markdown("### 🔍 What was different from normal training?")
+            st.caption(
+                "This is the important control-group comparison: successful "
+                "6-week builds versus ordinary 6-week blocks from the same athlete."
+            )
+
+            for contrast in backtracking.preparation_contrasts:
+                relative_text = (
+                    f"{contrast.relative_difference:+.0%}"
+                    if contrast.relative_difference is not None
+                    else "n/a"
+                )
+
+                cols = st.columns([1.7, 1, 1, 1], gap="small")
+                cols[0].markdown(f"**{contrast.metric_label}**")
+                cols[1].metric(
+                    "Before strong performances",
+                    f"{contrast.successful_average:g}",
+                )
+                cols[2].metric(
+                    "Normal training",
+                    f"{contrast.normal_average:g}",
+                )
+                cols[3].metric(
+                    "Difference",
+                    relative_text,
+                )
+
+                st.caption(
+                    f"{contrast.evidence_label} · "
+                    f"{contrast.direction} before strong performances."
+                )
+
+        if backtracking.signature_lifts:
+            st.markdown("### ⭐ Workout structures unusually associated with strong performances")
+            st.caption(
+                "A workout only matters here if it appears more often in "
+                "successful 6-week builds than in ordinary 6-week training."
+            )
+
+            for signature in backtracking.signature_lifts[:8]:
+                if signature.lift is None:
+                    lift_text = "only seen in successful blocks"
+                else:
+                    lift_text = f"{signature.lift:.1f}× as common"
+
+                st.markdown(
+                    f"**{signature.workout_signature}** — "
+                    f"{lift_text} · "
+                    f"{signature.successful_block_rate:.0%} of successful builds "
+                    f"vs {signature.normal_block_rate:.0%} of normal blocks"
+                )
+
         if backtracking.recurring_42d_signatures:
             st.markdown("### Recurring patterns before strong performances")
             st.caption(
@@ -277,6 +332,60 @@ def show_learning_page():
                     in backtracking.recurring_42d_signatures
                 )
             )
+
+    st.markdown("## 🧭 Adaptive Training Block Preview")
+
+    adaptive = build_adaptive_block_preview(athlete_id)
+
+    if not adaptive.available:
+        st.info(adaptive.summary)
+    else:
+        st.write(adaptive.summary)
+
+        top = st.columns(4, gap="small")
+        top[0].metric("Goal", adaptive.distance_label or "—")
+        top[1].metric("Weeks remaining", str(adaptive.weeks_remaining or "—"))
+        top[2].metric("Current phase", adaptive.current_phase or "—")
+        top[3].metric("Mode", "Preview only")
+
+        if adaptive.learned_signals:
+            st.markdown("### What PP has learned from this athlete")
+            for signal in adaptive.learned_signals:
+                st.markdown(f"- {signal}")
+
+        st.markdown("### Proposed progression")
+
+        for phase in adaptive.phases:
+            week_text = (
+                f"Week {phase.start_week}"
+                if phase.start_week == phase.end_week
+                else f"Weeks {phase.start_week}–{phase.end_week}"
+            )
+
+            with st.expander(
+                f"{week_text} · {phase.name} · {phase.primary_focus}",
+                expanded=(phase.name == adaptive.current_phase),
+            ):
+                st.markdown(f"**Purpose:** {phase.purpose}")
+                st.markdown(
+                    f"**Quality emphasis:** {phase.quality_emphasis}"
+                )
+
+                if phase.athlete_evidence:
+                    st.markdown("**Why this suits this athlete:**")
+                    for evidence in phase.athlete_evidence:
+                        st.markdown(f"- {evidence}")
+                else:
+                    st.caption(
+                        "Personal evidence is still building for this phase; "
+                        "PP is using the goal's physiological demands conservatively."
+                    )
+
+        st.info(
+            "Nothing on this preview changes the live prescription yet. "
+            "The next step is to connect current weakness, readiness and completed-session "
+            "response before PP is allowed to adapt the live rolling plan."
+        )
 
     st.markdown("## Guardrails")
 
