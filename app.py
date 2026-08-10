@@ -20,7 +20,7 @@ from ui.settings import show_settings_page
 
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon="🏃",
+    page_icon="P",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -38,9 +38,6 @@ elif page == "Journal":
 
 elif page == "Next Run":
     show_next_run_page()
-
-elif page == "Next Run":
-    show_todays_session_page()
 
 elif page == "Learning":
     show_learning_page()

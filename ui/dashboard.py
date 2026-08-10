@@ -1,5 +1,6 @@
 import datetime
 import html
+import re
 import textwrap
 
 import streamlit as st
@@ -8,6 +9,7 @@ from ui.athlete_selection import render_athlete_selector
 
 from core.capability import build_capability
 from core.adaptive_coach_live import build_live_coach_decision
+from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.actionable_coaching import ActionableRecommendation
 from core.coach_brain import CoachBrain
 from core.coach_consensus import build_coach_consensus
@@ -874,6 +876,34 @@ def goal_distance_km(goal):
 
 
 
+
+def format_rep_distance(distance_km):
+    if distance_km is None:
+        return "—"
+
+    if abs(distance_km - 1.609344) <= 0.08:
+        return "1 mile"
+
+    if distance_km >= 1.0:
+        return f"{distance_km:.2f} km"
+
+    metres = int(round(distance_km * 1000 / 25) * 25)
+    return f"{metres}m"
+
+
+def format_recovery(seconds):
+    if seconds is None:
+        return "Still learning"
+
+    seconds = int(round(seconds))
+
+    if seconds >= 120 and seconds % 60 == 0:
+        return f"{seconds // 60} min"
+
+    return f"{seconds} sec"
+
+
+
 def render_training_blueprint(blueprint, thresholds):
     st.markdown("## 🧬 Coach Blueprints")
 
@@ -952,62 +982,133 @@ def render_training_blueprint(blueprint, thresholds):
                 )
 
                 if (
-                    category.hr_low is not None
-                    and category.hr_high is not None
+                    category.coach == "Speed Coach"
+                    and category.rep_metric_sample_size > 0
                 ):
-                    st.metric(
-                        "HR sweet spot",
-                        (
-                            f"{category.hr_low}–"
-                            f"{category.hr_high} bpm"
+                    metric_columns = st.columns(2)
+                    metric_columns[0].metric(
+                        "Typical rep",
+                        format_rep_distance(
+                            category.rep_distance_typical_km
                         ),
                     )
+                    metric_columns[1].metric(
+                        "Rep pace",
+                        (
+                            format_pace_value(
+                                category.rep_pace_typical_s_per_km
+                            )
+                            if category.rep_pace_typical_s_per_km is not None
+                            else "Still learning"
+                        ),
+                    )
+
+                    if (
+                        category.rep_pace_low_s_per_km is not None
+                        and category.rep_pace_high_s_per_km is not None
+                    ):
+                        faster = min(
+                            category.rep_pace_low_s_per_km,
+                            category.rep_pace_high_s_per_km,
+                        )
+                        slower = max(
+                            category.rep_pace_low_s_per_km,
+                            category.rep_pace_high_s_per_km,
+                        )
+                        st.caption(
+                            "Strong-session rep pace range: "
+                            f"{format_pace_value(faster)}–"
+                            f"{format_pace_value(slower)}"
+                        )
+
+                    detail_columns = st.columns(2)
+                    detail_columns[0].metric(
+                        "Typical recovery",
+                        format_recovery(
+                            category.recovery_typical_s
+                        ),
+                    )
+                    detail_columns[1].metric(
+                        "Current reps",
+                        (
+                            f"{category.recent_rep_count_typical:.0f}"
+                            if category.recent_rep_count_typical is not None
+                            else "—"
+                        ),
+                    )
+
+                    if category.recent_quality_volume_typical_km is not None:
+                        st.caption(
+                            "Current quality volume: "
+                            f"{category.recent_quality_volume_typical_km:.1f} km"
+                        )
+
+                    if (
+                        category.historical_rep_count_typical is not None
+                        and category.recent_rep_count_typical is not None
+                        and category.historical_profile_sample_size > 1
+                    ):
+                        history_text = (
+                            f"Historical {category.comparable_distance_label or 'comparable'} "
+                            f"profile: {category.historical_rep_count_typical:.0f} reps"
+                        )
+                        if category.historical_quality_volume_typical_km is not None:
+                            history_text += (
+                                " · "
+                                f"{category.historical_quality_volume_typical_km:.1f} km quality"
+                            )
+                        st.caption(history_text)
+
+                    st.caption(
+                        f"Compared with {category.current_profile_sample_size} recent "
+                        f"{category.comparable_distance_label or 'similar'} workout blocks. "
+                        "Heart rate is secondary context for short repetitions."
+                    )
                 else:
-                    st.metric(
-                        "HR sweet spot",
-                        "Still learning",
-                    )
+                    if (
+                        category.hr_low is not None
+                        and category.hr_high is not None
+                    ):
+                        st.metric(
+                            "HR sweet spot",
+                            f"{category.hr_low}–{category.hr_high} bpm",
+                        )
+                    else:
+                        st.metric("HR sweet spot", "Still learning")
 
-                if (
-                    category.show_pace
-                    and category.pace_low_s_per_km
-                    is not None
-                    and category.pace_high_s_per_km
-                    is not None
-                ):
-                    # Stored internally as seconds per kilometre; shown to
-                    # the runner in the app's miles-first display.
-                    faster = min(
-                        category.pace_low_s_per_km,
-                        category.pace_high_s_per_km,
-                    )
-                    slower = max(
-                        category.pace_low_s_per_km,
-                        category.pace_high_s_per_km,
-                    )
-                    st.caption(
-                        "Adjusted pace sweet spot: "
-                        f"{format_pace_per_mile(faster)}–"
-                        f"{format_pace_per_mile(slower)}"
-                    )
-                elif not category.show_pace:
-                    st.caption(
-                        "Workout-average pace hidden because warm-up, "
-                        "recoveries and cool-down distort it."
-                    )
+                    if (
+                        category.show_pace
+                        and category.pace_low_s_per_km is not None
+                        and category.pace_high_s_per_km is not None
+                    ):
+                        faster = min(
+                            category.pace_low_s_per_km,
+                            category.pace_high_s_per_km,
+                        )
+                        slower = max(
+                            category.pace_low_s_per_km,
+                            category.pace_high_s_per_km,
+                        )
+                        st.caption(
+                            "Adjusted pace sweet spot: "
+                            f"{format_pace_per_mile(faster)}–"
+                            f"{format_pace_per_mile(slower)}"
+                        )
+                    elif not category.show_pace:
+                        st.caption(
+                            "Activity-average pace is hidden because warm-up, "
+                            "recoveries and cool-down distort it."
+                        )
 
-                if (
-                    category.typical_distance_km
-                    is not None
-                ):
-                    distance_miles = (
-                        category.typical_distance_km
-                        / (METRES_PER_MILE / 1000)
-                    )
-                    st.caption(
-                        "Usually works well around "
-                        f"{distance_miles:.1f} miles"
-                    )
+                    if category.typical_distance_km is not None:
+                        distance_miles = (
+                            category.typical_distance_km
+                            / (METRES_PER_MILE / 1000)
+                        )
+                        st.caption(
+                            "Usually works well around "
+                            f"{distance_miles:.1f} miles"
+                        )
 
                 st.caption(
                     f"{category.sample_size} comparable sessions · "
@@ -1021,8 +1122,9 @@ def render_training_blueprint(blueprint, thresholds):
             "Easy Coach ranks genuine running activities by "
             "condition-adjusted speed per heartbeat, then studies the "
             "best 30% of comparable runs. Threshold and Speed coaches "
-            "currently use recognised session history, HR and distance; "
-            "rep-level Workout DNA will refine them later."
+            "use trusted Workout DNA. Speed Coach prioritises rep pace, "
+            "rep length, recovery and quality volume; HR is secondary for "
+            "short repetitions because it lags the effort."
         )
 
         for limitation in blueprint.limitations:
@@ -2811,6 +2913,103 @@ def render_recent_activities(
         """
     )
 
+
+def _v21_family_label(family, title=None):
+    family = str(family or "").lower()
+    labels = {
+        "completed": "Completed", "easy": "Easy", "recovery": "Recovery",
+        "endurance": "Long Run", "long": "Long Run", "threshold": "Threshold",
+        "vo2": "VO₂", "speed": "Speed", "race_pace": "Race Pace", "rest": "Rest",
+    }
+    return labels.get(family, str(title or family).replace("_", " ").title() or "Run")
+
+
+def render_v21_coach_home(
+    athlete_id, first_name, goal, capability,
+    environment_forecast, brain_brief, evidence_bundle,
+):
+    """Presentation-only v0.21 Coach Home using existing coaching engines."""
+    today = datetime.date.today()
+    live = build_live_coach_decision(athlete_id)
+    weekly = build_adaptive_weekly_plan(athlete_id, today=today)
+    goal_name = goal["goal_name"] if goal else "Build your next goal"
+    evidence = evidence_strength(evidence_bundle.confidence)
+
+    week_days = weekly.weeks[0].days if weekly.available and weekly.weeks else ()
+    day_cards = []
+    for index, day in enumerate(week_days):
+        day_date = today + datetime.timedelta(days=index - today.weekday())
+        classes = ["pp-v21-day"]
+        if day_date == today:
+            classes.append("today")
+        if day.session_family == "completed":
+            classes.append("completed")
+        detail = day.prescription or day.target or ""
+        if len(detail) > 46:
+            detail = detail[:43].rstrip() + "…"
+        day_cards.append(
+            f"""<div class="{' '.join(classes)}">
+            <div class="pp-v21-day-name">{safe_text(day.day_name[:3])}</div>
+            <div class="pp-v21-day-session">{safe_text(_v21_family_label(day.session_family, day.title))}</div>
+            <div class="pp-v21-day-detail">{safe_text(detail)}</div></div>"""
+        )
+
+    capability_text = format_clock(capability.central_seconds) if capability.available and capability.central_seconds else "—"
+    scenarios = {x.key: x for x in environment_forecast.scenarios} if environment_forecast.available else {}
+    ideal = scenarios.get("ideal")
+    typical = scenarios.get("typical")
+    ideal_text = format_clock(ideal.central_seconds) if ideal else capability_text
+    typical_text = format_clock(typical.central_seconds) if typical else "—"
+
+    next_title = live.immediate_label if live else "Building next run"
+    next_timing = live.immediate_timing if live else "Timing building"
+    next_detail = live.immediate_detail if live else brain_brief.summary
+    key_title = live.key_label if live and live.key_label else "Next key session"
+    key_day = live.key_day if live and live.key_day else "Building"
+    key_detail = live.key_prescription if live and live.key_prescription else "The coaching team is resolving the next quality stimulus."
+
+    render_html(f"""
+    <div class="pp-v21-kicker">Coach Home · {safe_text(goal_name)}</div>
+    <div class="pp-v21-title">Good morning, {safe_text(first_name)}.</div>
+    <div class="pp-v21-subtitle">{safe_text(brain_brief.headline)}
+    <strong style="color:var(--pp-ink);"> {safe_text(evidence)} evidence.</strong></div>
+
+    <div class="pp-v21-section-title">This week</div>
+    <div class="pp-v21-week">{''.join(day_cards)}</div>
+
+    <div class="pp-v21-grid">
+      <div class="pp-v21-card route">
+        <div class="pp-v21-label">Up next · {safe_text(next_timing)}</div>
+        <div class="pp-v21-card-title">{safe_text(next_title)}</div>
+        <div class="pp-v21-copy">{safe_text(next_detail)}</div>
+        <div class="pp-v21-pill">Adaptive Coach</div>
+      </div>
+      <div class="pp-v21-card dark">
+        <div class="pp-v21-label">Prediction · {safe_text(goal_name)}</div>
+        <div class="pp-v21-predictions">
+          <div class="pp-v21-pred"><div class="pp-v21-pred-value">{safe_text(capability_text)}</div><div class="pp-v21-pred-label">Capability</div></div>
+          <div class="pp-v21-pred"><div class="pp-v21-pred-value orange">{safe_text(ideal_text)}</div><div class="pp-v21-pred-label">Ideal</div></div>
+          <div class="pp-v21-pred"><div class="pp-v21-pred-value green">{safe_text(typical_text)}</div><div class="pp-v21-pred-label">Typical conditions</div></div>
+        </div>
+        <div class="pp-v21-copy" style="margin-top:.9rem;">Fitness stays separate from environment: conditions change expected performance, not underlying capability.</div>
+      </div>
+    </div>
+
+    <div class="pp-v21-grid">
+      <div class="pp-v21-card">
+        <div class="pp-v21-label">Next key session · {safe_text(key_day)}</div>
+        <div class="pp-v21-card-title">{safe_text(key_title)}</div>
+        <div class="pp-v21-copy">{safe_text(key_detail)}</div>
+      </div>
+      <div class="pp-v21-card">
+        <div class="pp-v21-label">Coach insight</div>
+        <div class="pp-v21-card-title">{safe_text(brain_brief.headline)}</div>
+        <div class="pp-v21-copy">{safe_text(brain_brief.summary)}</div>
+      </div>
+    </div>
+    """)
+
+
 def show_dashboard():
     selector_col, _ = st.columns([0.35, 0.65])
 
@@ -2940,23 +3139,21 @@ def show_dashboard():
 
     best_run = best_easy_run(run_profiles)
 
-    render_header(selected["first_name"], goal)
-
     recent_weekly_distance_km, latest_activity_date = (
         get_recent_weekly_average(athlete_id, weeks=26)
     )
 
-    render_daily_coach(
+    render_v21_coach_home(
         athlete_id=athlete_id,
         first_name=selected["first_name"],
         goal=goal,
-        prediction=prediction,
+        capability=capability,
+        environment_forecast=environment_forecast,
         brain_brief=brain_brief,
         evidence_bundle=evidence_bundle,
-        latest_activity_date=latest_activity_date,
     )
 
-    st.markdown("## Coaching team")
+    st.markdown('<div class="pp-v21-section-title">Coaching team & deep analysis</div>', unsafe_allow_html=True)
     render_coaching_meeting(
         performance_dna,
         prediction,

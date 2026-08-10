@@ -667,7 +667,51 @@ def inject_global_theme():
                 display: none;
             }}
         }}
-        </style>
+        
+        /* PERFORMANCE PASSPORT DESIGN SYSTEM v1 */
+        :root {{
+            --pp-ink: #10263D;
+            --pp-paper: #F7F3EC;
+            --pp-orange: #F05A28;
+            --pp-green: #3E8E72;
+            --pp-green-soft: #E6F1EC;
+            --pp-line: rgba(16, 38, 61, 0.10);
+        }}
+        .pp-v21-kicker{{color:var(--pp-orange);font-size:.72rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}}
+        .pp-v21-title{{margin-top:.22rem;color:var(--pp-ink);font-size:clamp(2rem,4.5vw,3.6rem);font-weight:800;line-height:1;letter-spacing:-.055em}}
+        .pp-v21-subtitle{{margin-top:.5rem;max-width:760px;color:var(--pp-text-secondary);font-size:.96rem;line-height:1.55}}
+        .pp-v21-section-title{{margin:1.45rem 0 .72rem;color:var(--pp-ink);font-size:1.12rem;font-weight:780;letter-spacing:-.02em}}
+        .pp-v21-week{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.55rem;margin:0 0 1rem}}
+        .pp-v21-day{{min-height:92px;padding:.72rem .68rem;background:rgba(255,255,255,.72);border:1px solid var(--pp-line);border-radius:15px}}
+        .pp-v21-day.today{{background:var(--pp-ink);border-color:var(--pp-ink);box-shadow:0 10px 24px rgba(16,38,61,.15)}}
+        .pp-v21-day.completed{{background:var(--pp-green-soft);border-color:rgba(62,142,114,.20)}}
+        .pp-v21-day-name{{color:var(--pp-text-muted);font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}
+        .pp-v21-day-session{{margin-top:.45rem;color:var(--pp-ink);font-size:.82rem;font-weight:760;line-height:1.2}}
+        .pp-v21-day-detail{{margin-top:.22rem;color:var(--pp-text-secondary);font-size:.68rem;line-height:1.25}}
+        .pp-v21-day.today .pp-v21-day-name,.pp-v21-day.today .pp-v21-day-detail{{color:rgba(255,255,255,.70)}}
+        .pp-v21-day.today .pp-v21-day-session{{color:white}}
+        .pp-v21-grid{{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);gap:1rem;margin-top:1rem}}
+        .pp-v21-card{{position:relative;overflow:hidden;min-height:100%;padding:1.25rem 1.3rem;background:rgba(255,255,255,.88);border:1px solid var(--pp-line);border-radius:22px;box-shadow:0 10px 32px rgba(16,38,61,.055)}}
+        .pp-v21-card.dark{{color:white;background:var(--pp-ink);border-color:var(--pp-ink)}}
+        .pp-v21-card.route::after{{content:"";position:absolute;inset:0;opacity:.15;pointer-events:none;background-image:radial-gradient(ellipse at 85% 30%,transparent 0 18%,rgba(240,90,40,.55) 18.5% 19%,transparent 19.5% 26%,rgba(240,90,40,.35) 26.5% 27%,transparent 27.5%),radial-gradient(ellipse at 75% 85%,transparent 0 24%,rgba(16,38,61,.22) 24.5% 25%,transparent 25.5% 34%,rgba(16,38,61,.16) 34.5% 35%,transparent 35.5%)}}
+        .pp-v21-label{{color:var(--pp-text-muted);font-size:.67rem;font-weight:800;letter-spacing:.10em;text-transform:uppercase}}
+        .pp-v21-card.dark .pp-v21-label{{color:rgba(255,255,255,.58)}}
+        .pp-v21-card-title{{margin-top:.42rem;color:var(--pp-ink);font-size:1.32rem;font-weight:790;letter-spacing:-.025em}}
+        .pp-v21-card.dark .pp-v21-card-title{{color:white}}
+        .pp-v21-copy{{margin-top:.42rem;color:var(--pp-text-secondary);font-size:.82rem;line-height:1.48}}
+        .pp-v21-card.dark .pp-v21-copy{{color:rgba(255,255,255,.72)}}
+        .pp-v21-predictions{{display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-top:.9rem}}
+        .pp-v21-pred{{padding-right:.7rem;border-right:1px solid rgba(255,255,255,.13)}}
+        .pp-v21-pred:last-child{{border-right:0}}
+        .pp-v21-pred-value{{color:white;font-size:clamp(1.5rem,3vw,2.35rem);font-weight:820;letter-spacing:-.055em;line-height:1}}
+        .pp-v21-pred-value.orange{{color:var(--pp-orange)}} .pp-v21-pred-value.green{{color:#75C4A6}}
+        .pp-v21-pred-label{{margin-top:.32rem;color:rgba(255,255,255,.54);font-size:.61rem;font-weight:780;letter-spacing:.08em;text-transform:uppercase}}
+        .pp-v21-pill{{display:inline-flex;margin-top:.75rem;padding:.35rem .58rem;color:var(--pp-green);background:var(--pp-green-soft);border-radius:999px;font-size:.7rem;font-weight:760}}
+        .pp-v21-pathmark{{width:43px;height:43px;flex:0 0 43px}}
+        .pp-v21-motto{{margin-top:.16rem;color:var(--pp-text-secondary);font-size:.66rem;font-weight:560}}
+        @media(max-width:900px){{[data-testid="stMainBlockContainer"]{{padding:3.9rem 1rem 5.8rem!important}}.pp-v21-week{{grid-template-columns:repeat(7,minmax(78px,1fr));overflow-x:auto;padding-bottom:.25rem;scrollbar-width:none}}.pp-v21-week::-webkit-scrollbar{{display:none}}.pp-v21-grid{{grid-template-columns:1fr}}
+        @media(max-width:640px){{.pp-v21-title{{font-size:2.15rem}}.pp-v21-card{{padding:1.05rem;border-radius:18px}}.pp-v21-pred-value{{font-size:1.55rem}}.pp-v21-pred-label{{font-size:.55rem}}
+</style>
         """,
         unsafe_allow_html=True,
     )

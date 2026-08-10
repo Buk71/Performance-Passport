@@ -7,7 +7,6 @@ PRIMARY_NAVIGATION = [
     "Coach",
     "Journal",
     "Next Run",
-    "Next Run",
     "Learning",
     "Activities",
     "Progress",
@@ -31,12 +30,15 @@ def show_sidebar():
     st.sidebar.markdown(
         f"""
         <div class="pp-brand">
-            <div class="pp-brand-mark">PP</div>
+            <svg class="pp-v21-pathmark" viewBox="0 0 48 48" aria-label="Performance Passport">
+                <rect x="1" y="1" width="46" height="46" rx="14" fill="#10263D"/>
+                <path d="M13 35V13h8.2c6.1 0 9.6 3.1 9.6 8.1 0 4.9-3.5 8-9.6 8H18" fill="none" stroke="#F7F3EC" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M24 35V13h7.2c5.5 0 8.8 2.8 8.8 7.3 0 4.4-3.3 7.2-8.8 7.2H29" fill="none" stroke="#F7F3EC" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M11 31C19 27 24 23 29 17c3-3.6 6-5.7 10-6.5" fill="none" stroke="#F05A28" stroke-width="3.2" stroke-linecap="round"/>
+            </svg>
             <div>
                 <div class="pp-brand-title">{APP_NAME}</div>
-                <div class="pp-brand-subtitle">
-                    Personal Running Intelligence
-                </div>
+                <div class="pp-v21-motto">Every run has something to give.</div>
             </div>
         </div>
         """,

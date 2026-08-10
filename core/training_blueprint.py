@@ -28,6 +28,8 @@ Important safeguards:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+import json
 import math
 import statistics
 from typing import Any, Iterable
@@ -37,6 +39,7 @@ from core.coaching import (
     equivalent_performance,
     get_athlete_sport_roles,
 )
+from core.database import get_connection
 
 
 MILES_PER_KM = 0.621371192237334
@@ -100,6 +103,23 @@ class BlueprintCategory:
     show_pace: bool
     source: str
     summary: str
+    rep_distance_typical_km: float | None = None
+    rep_distance_low_km: float | None = None
+    rep_distance_high_km: float | None = None
+    rep_pace_typical_s_per_km: float | None = None
+    rep_pace_low_s_per_km: float | None = None
+    rep_pace_high_s_per_km: float | None = None
+    recovery_typical_s: float | None = None
+    rep_count_typical: float | None = None
+    quality_volume_typical_km: float | None = None
+    rep_metric_sample_size: int = 0
+    recent_rep_count_typical: float | None = None
+    recent_quality_volume_typical_km: float | None = None
+    historical_rep_count_typical: float | None = None
+    historical_quality_volume_typical_km: float | None = None
+    comparable_distance_label: str | None = None
+    current_profile_sample_size: int = 0
+    historical_profile_sample_size: int = 0
 
 
 @dataclass(frozen=True)
@@ -456,6 +476,372 @@ def _build_category(
     )
 
 
+
+def _median(values):
+    return statistics.median(values) if values else None
+
+
+def _phase_bucket(phase: dict) -> str | None:
+    phase_type = str(phase.get("phase_type") or "").lower()
+
+    try:
+        distance = float(
+            phase.get("average_rep_distance_km") or 0.0
+        )
+    except (TypeError, ValueError):
+        distance = 0.0
+
+    if phase_type == "short_intervals":
+        return "speed"
+
+    if phase_type == "long_intervals":
+        return "speed" if distance and distance < 0.60 else "vo2"
+
+    return None
+
+
+def _distance_family(distance_km: float) -> tuple[str, float]:
+    """
+    Canonical rep families used for comparable-session learning.
+    Tolerances are deliberately broad enough for GPS/lap drift.
+    """
+    families = (
+        ("200m", 0.200),
+        ("300m", 0.300),
+        ("400m", 0.400),
+        ("500m", 0.500),
+        ("600m", 0.600),
+        ("800m", 0.800),
+        ("1km", 1.000),
+        ("1200m", 1.200),
+        ("1 mile", 1.609344),
+    )
+
+    label, target = min(
+        families,
+        key=lambda item: abs(distance_km - item[1]),
+    )
+
+    tolerance = max(0.06, target * 0.10)
+
+    if abs(distance_km - target) <= tolerance:
+        return label, target
+
+    if distance_km < 1.0:
+        metres = int(round(distance_km * 1000 / 50) * 50)
+        return f"{metres}m", distance_km
+
+    return f"{distance_km:.2f}km", distance_km
+
+
+def _safe_date(value):
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_rep_level_blueprints(
+    athlete_id: int,
+) -> dict[str, dict]:
+    """
+    Learn Speed Coach from comparable sessions, not one blended history.
+
+    Priority:
+      1. same rep-distance family + recent sessions
+      2. same rep-distance family + broader history
+      3. broader trusted Speed/VO2 history
+
+    Each workout phase is treated as a session-level observation, so 20 x 400m
+    is recognised as a materially different training dose from 10 x 400m.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            activity_date,
+            phase_json,
+            recognition_confidence,
+            phase_confidence
+        FROM workout_library
+        WHERE athlete_id = ?
+          AND recognition_confidence >= 0.65
+          AND phase_confidence >= 0.70
+        ORDER BY activity_date DESC, id DESC
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    buckets = {"speed": [], "vo2": []}
+
+    for activity_date, phase_json, recognition_confidence, phase_confidence in rows:
+        try:
+            phases = json.loads(phase_json or "[]")
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        if not isinstance(phases, list):
+            continue
+
+        for phase in phases:
+            if not isinstance(phase, dict):
+                continue
+
+            bucket = _phase_bucket(phase)
+            if bucket not in buckets:
+                continue
+
+            def number(key):
+                try:
+                    value = phase.get(key)
+                    return float(value) if value is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            pace = number("pace_s_per_km")
+            rep_distance = number("average_rep_distance_km")
+            reps = number("rep_count")
+            total_distance = number("distance_km")
+            recovery = number("recovery_duration_s")
+
+            if (
+                pace is None
+                or not math.isfinite(pace)
+                or not (150.0 <= pace <= 480.0)
+            ):
+                continue
+
+            if (
+                rep_distance is None
+                or not (0.10 <= rep_distance <= 2.0)
+            ):
+                continue
+
+            family_label, family_target = _distance_family(rep_distance)
+
+            buckets[bucket].append(
+                {
+                    "date": _safe_date(activity_date),
+                    "pace": pace,
+                    "rep_distance": rep_distance,
+                    "family_label": family_label,
+                    "family_target": family_target,
+                    "reps": reps,
+                    "total_distance": total_distance,
+                    "recovery": recovery,
+                    "confidence": min(
+                        float(recognition_confidence or 0.0),
+                        float(phase_confidence or 0.0),
+                    ),
+                }
+            )
+
+    result = {}
+
+    for bucket, items in buckets.items():
+        if not items:
+            continue
+
+        dated = [item for item in items if item["date"] is not None]
+        latest_date = max((item["date"] for item in dated), default=None)
+
+        # Recent = last 120 days of this athlete's available workout history.
+        # This is intentionally anchored to their latest activity, not today's
+        # wall-clock date, so historical imports remain reproducible.
+        if latest_date is not None:
+            recent_cutoff = latest_date.fromordinal(
+                latest_date.toordinal() - 120
+            )
+            recent_items = [
+                item for item in items
+                if item["date"] is not None and item["date"] >= recent_cutoff
+            ]
+        else:
+            recent_items = list(items)
+
+        # Determine the athlete's current rep family by frequency in recent
+        # sessions, breaking ties in favour of the most recently used family.
+        family_counts = {}
+        family_latest = {}
+        for item in recent_items:
+            family = item["family_label"]
+            family_counts[family] = family_counts.get(family, 0) + 1
+            if item["date"] is not None:
+                family_latest[family] = max(
+                    family_latest.get(family, item["date"]),
+                    item["date"],
+                )
+
+        if family_counts:
+            current_family = max(
+                family_counts,
+                key=lambda family: (
+                    family_counts[family],
+                    family_latest.get(family, date.min),
+                ),
+            )
+        else:
+            current_family = items[0]["family_label"]
+
+        comparable_recent = [
+            item for item in recent_items
+            if item["family_label"] == current_family
+        ]
+        comparable_history = [
+            item for item in items
+            if item["family_label"] == current_family
+        ]
+
+        # Need at least two comparable recent observations before calling it a
+        # current pattern; otherwise fall back to the same-distance history.
+        current_profile = (
+            comparable_recent
+            if len(comparable_recent) >= 2
+            else comparable_history
+        )
+
+        if not current_profile:
+            current_profile = recent_items or items
+
+        def values(source, key, predicate=lambda value: True):
+            output = []
+            for item in source:
+                value = item.get(key)
+                if value is None:
+                    continue
+                if predicate(value):
+                    output.append(value)
+            return output
+
+        current_paces = values(
+            current_profile, "pace",
+            lambda value: 150.0 <= value <= 480.0,
+        )
+        current_distances = values(
+            current_profile, "rep_distance",
+            lambda value: value > 0,
+        )
+        current_recoveries = values(
+            current_profile, "recovery",
+            lambda value: 10.0 <= value <= 600.0,
+        )
+        current_reps = values(
+            current_profile, "reps",
+            lambda value: value > 0,
+        )
+        current_volumes = values(
+            current_profile, "total_distance",
+            lambda value: value > 0,
+        )
+
+        historical_reps = values(
+            comparable_history, "reps",
+            lambda value: value > 0,
+        )
+        historical_volumes = values(
+            comparable_history, "total_distance",
+            lambda value: value > 0,
+        )
+
+        result[bucket] = {
+            "sample_size": len(items),
+            "benchmark_size": len(current_profile),
+            "pace_low": _percentile(current_paces, 0.25),
+            "pace_high": _percentile(current_paces, 0.75),
+            "pace_typical": _median(current_paces),
+            "distance_low": _percentile(current_distances, 0.25),
+            "distance_high": _percentile(current_distances, 0.75),
+            "distance_typical": _median(current_distances),
+            "recovery_typical": _median(current_recoveries),
+            "rep_count_typical": _median(current_reps),
+            "quality_volume_typical": _median(current_volumes),
+            "recent_rep_count_typical": _median(current_reps),
+            "recent_quality_volume_typical": _median(current_volumes),
+            "historical_rep_count_typical": _median(historical_reps),
+            "historical_quality_volume_typical": _median(historical_volumes),
+            "comparable_distance_label": current_family,
+            "current_profile_sample_size": len(current_profile),
+            "historical_profile_sample_size": len(comparable_history),
+        }
+
+    return result
+
+
+
+def _apply_rep_metrics(
+    category: BlueprintCategory,
+    metrics: dict | None,
+) -> BlueprintCategory:
+    if not metrics:
+        return category
+
+    family = metrics.get("comparable_distance_label") or "similar reps"
+    current_n = int(metrics.get("current_profile_sample_size") or 0)
+
+    return BlueprintCategory(
+        key=category.key,
+        label=category.label,
+        coach=category.coach,
+        icon=category.icon,
+        sample_size=max(category.sample_size, int(metrics["sample_size"])),
+        benchmark_size=max(category.benchmark_size, int(metrics["benchmark_size"])),
+        confidence=max(category.confidence, _confidence(int(metrics["sample_size"]))),
+        hr_low=category.hr_low,
+        hr_high=category.hr_high,
+        hr_typical=category.hr_typical,
+        pace_low_s_per_km=category.pace_low_s_per_km,
+        pace_high_s_per_km=category.pace_high_s_per_km,
+        typical_distance_km=category.typical_distance_km,
+        show_pace=category.show_pace,
+        source="Workout DNA · recent comparable sessions",
+        summary=(
+            f"Current {family} pattern learned from {current_n} comparable "
+            "session blocks. Rep pace, session volume and recovery are compared "
+            "with like-for-like history before broader Speed Coach evidence."
+        ),
+        rep_distance_typical_km=metrics["distance_typical"],
+        rep_distance_low_km=metrics["distance_low"],
+        rep_distance_high_km=metrics["distance_high"],
+        rep_pace_typical_s_per_km=metrics["pace_typical"],
+        rep_pace_low_s_per_km=metrics["pace_low"],
+        rep_pace_high_s_per_km=metrics["pace_high"],
+        recovery_typical_s=metrics["recovery_typical"],
+        rep_count_typical=metrics["rep_count_typical"],
+        quality_volume_typical_km=metrics["quality_volume_typical"],
+        rep_metric_sample_size=int(metrics["sample_size"]),
+        recent_rep_count_typical=metrics.get(
+            "recent_rep_count_typical",
+            metrics.get("rep_count_typical"),
+        ),
+        recent_quality_volume_typical_km=metrics.get(
+            "recent_quality_volume_typical",
+            metrics.get("quality_volume_typical"),
+        ),
+        historical_rep_count_typical=metrics.get(
+            "historical_rep_count_typical",
+            metrics.get("rep_count_typical"),
+        ),
+        historical_quality_volume_typical_km=metrics.get(
+            "historical_quality_volume_typical",
+            metrics.get("quality_volume_typical"),
+        ),
+        comparable_distance_label=family,
+        current_profile_sample_size=(
+            current_n
+            or int(metrics.get("benchmark_size") or 0)
+        ),
+        historical_profile_sample_size=int(
+            metrics.get("historical_profile_sample_size")
+            or metrics.get("sample_size")
+            or 0
+        ),
+    )
+
+
+
 def build_training_blueprint(
     runs: Iterable[RunProfile],
     *,
@@ -535,6 +921,18 @@ def build_training_blueprint(
         ) in definitions
     )
 
+    rep_blueprints = _load_rep_level_blueprints(athlete_id)
+
+    categories = tuple(
+        _apply_rep_metrics(
+            category,
+            rep_blueprints.get(category.key),
+        )
+        if category.key in {"vo2", "speed"}
+        else category
+        for category in categories
+    )
+
     available = [
         category
         for category in categories
@@ -559,8 +957,8 @@ def build_training_blueprint(
     summary = (
         f"{len(available)} of {len(categories)} runner-friendly session "
         "types have enough history to show a personal pattern. Easy-run "
-        "blueprints include pace; development workouts remain HR and "
-        "distance-led until rep-level structure is connected."
+        "blueprints use aerobic efficiency; Speed Coach now uses trusted "
+        "rep-level pace, distance and recovery evidence."
     )
 
     return TrainingBlueprint(
@@ -578,9 +976,11 @@ def build_training_blueprint(
             "medical or physiological limits.",
             "Manual laboratory or coach-tested thresholds remain the active "
             "physiological boundaries when selected.",
-            "Threshold, VO₂ and speed activity-average pace is deliberately "
-            "hidden because recoveries distort it.",
-            "Workout DNA will later add rep distance, rep pace and recovery "
-            "structure to development blueprints.",
+            "Activity-average pace remains hidden for development workouts "
+            "because warm-up and recoveries distort it.",
+            "For short speed/VO₂ work, activity-average HR is supporting "
+            "context only because heart rate lags short repetitions.",
+            "Speed Coach prioritises rep distance, rep pace, recovery and "
+            "quality volume from trusted Workout DNA.",
         ),
     )

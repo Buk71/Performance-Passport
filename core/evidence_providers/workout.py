@@ -39,6 +39,7 @@ from core.workout_phases import (
     reconstruct_workout_phases,
 )
 from core.workouts import get_or_decode_workout
+from core.workout_title_intent import build_title_intent_evidence, parse_workout_title
 
 
 RECENT_WINDOW_DAYS = 365
@@ -152,6 +153,10 @@ def _estimate_easy_pace(
 
 def _explicit_workout_title(title: str) -> bool:
     value = (title or "").lower()
+
+    if "parkrun" in value or "race" in value:
+        return False
+
     words = (
         "threshold",
         "tempo",
@@ -209,6 +214,57 @@ def _is_race_quality_session(facts: ActivityFacts) -> bool:
 
 
 
+
+def _obvious_continuous_run(
+    facts: ActivityFacts,
+    workout,
+    title_intent,
+) -> bool:
+    """
+    Reject auto-lapped continuous runs that happen to look like repetitions.
+
+    A 12-mile SLR naturally contains twelve one-mile auto-laps. With no
+    recovery/boundary pattern and a clear continuous-run title, those laps are
+    not twelve work reps.
+    """
+    if title_intent is not None:
+        return False
+
+    title = (facts.title or "").lower()
+    continuous_words = (
+        "long run",
+        "slr",
+        "recovery",
+        "easy run",
+        "easy ",
+        "aerobic",
+        "steady run",
+    )
+
+    if not any(word in title for word in continuous_words):
+        return False
+
+    data = workout.recognition_json
+    if data.get("recovery_splits"):
+        return False
+    if data.get("boundary_splits"):
+        return False
+    if data.get("unknown_recovery_count"):
+        return False
+
+    # With clear continuous-run intent and no recovery/boundary structure,
+    # repeated mile/kilometre laps are simply auto-laps. Do not require every
+    # final partial lap to have been labelled "work" by the low-level decoder.
+    return workout.rep_count >= 3
+
+
+def _display_description(item) -> str:
+    evidence = item.get("title_intent_evidence")
+    if evidence:
+        return str(evidence.get("display_description") or item["workout"].description)
+    return item["workout"].description
+
+
 def _programmed_structure_evidence(workout) -> bool:
     """
     Accept programmed-watch sessions without manual boundary fragments.
@@ -230,16 +286,11 @@ def _programmed_structure_evidence(workout) -> bool:
     if workout.workout_type == "Mixed interval session":
         return workout.rep_count >= 3
 
-    return (
-        workout.rep_count >= 3
-        and workout.workout_type
-        in {
-            "Short intervals",
-            "Long intervals",
-            "Mile repetitions",
-            "Long threshold repetitions",
-        }
-    )
+    # Repeated equal-distance laps with no recovery/boundary evidence are most
+    # often ordinary auto-laps (for example a 12-mile long run). They must not
+    # establish a workout on their own. Explicit titles and the phase engine
+    # are handled separately by the caller.
+    return False
 
 
 def _trust_score(session, workout, activity_date, reference_date) -> float:
@@ -475,7 +526,23 @@ def _group_work_components(
     workout,
     raw_json_text: str | None = None,
     easy_pace_s_per_km: float | None = None,
+    title: str | None = None,
 ) -> tuple[list[dict], dict]:
+    title_evidence = build_title_intent_evidence(
+        title or "",
+        raw_json_text,
+    )
+
+    if title_evidence is not None:
+        components = [
+            component
+            for component in title_evidence["components"]
+            if component.get("average_pace_s_per_km") is not None
+        ]
+
+        if components:
+            return components, title_evidence["metadata"]
+
     phase_result = reconstruct_workout_phases(
         raw_json_text,
         easy_pace_s_per_km=easy_pace_s_per_km,
@@ -696,11 +763,16 @@ def _workout_prediction_quality(item, goal_distance_km: float) -> float:
         else 0.55
     )
 
-    components, phase_metadata = _group_work_components(
-        workout,
-        item.get("raw_json_text"),
-        item.get("easy_pace_s_per_km"),
-    )
+    components = item.get("phase_components")
+    phase_metadata = item.get("phase_metadata")
+
+    if components is None or phase_metadata is None:
+        components, phase_metadata = _group_work_components(
+            workout,
+            item.get("raw_json_text"),
+            item.get("easy_pace_s_per_km"),
+            item["session"].title,
+        )
 
     if components:
         component_quality = max(
@@ -726,11 +798,16 @@ def _workout_prediction_quality(item, goal_distance_km: float) -> float:
 
 def _predict_from_workout(item, goal_distance_km: float) -> dict | None:
     workout = item["workout"]
-    components, phase_metadata = _group_work_components(
-        workout,
-        item.get("raw_json_text"),
-        item.get("easy_pace_s_per_km"),
-    )
+    components = item.get("phase_components")
+    phase_metadata = item.get("phase_metadata")
+
+    if components is None or phase_metadata is None:
+        components, phase_metadata = _group_work_components(
+            workout,
+            item.get("raw_json_text"),
+            item.get("easy_pace_s_per_km"),
+            item["session"].title,
+        )
 
     if not components:
         rep_pace = workout.average_rep_pace_s_per_km
@@ -809,7 +886,7 @@ def _predict_from_workout(item, goal_distance_km: float) -> dict | None:
             else "Unknown"
         ),
         "title": item["session"].title,
-        "description": workout.description,
+        "description": _display_description(item),
         "workout_type": workout.workout_type,
         "component_summary": component_summary,
         "components": component_estimates,
@@ -1078,12 +1155,32 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 session_counts["race_quality_excluded"] += 1
                 continue
 
+            event_title = (facts.title or "").lower()
+            if "parkrun" in event_title or "race" in event_title:
+                session_counts["event_effort_excluded"] += 1
+                continue
+
+            title_intent = parse_workout_title(facts.title)
             workout = get_or_decode_workout(row[0], row[15])
+
+            if _obvious_continuous_run(
+                facts,
+                workout,
+                title_intent,
+            ):
+                session_counts["continuous_autolap_excluded"] += 1
+                continue
+
+            title_intent_evidence = build_title_intent_evidence(
+                facts.title,
+                row[15],
+            )
 
             phase_components, phase_metadata = _group_work_components(
                 workout,
                 row[15],
                 easy_pace_s_per_km,
+                facts.title,
             )
             phase_establishes_workout = (
                 float(phase_metadata.get("confidence") or 0.0) >= 0.65
@@ -1123,6 +1220,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
             item["phase_components"] = phase_components
             item["phase_metadata"] = phase_metadata
+            item["title_intent_evidence"] = title_intent_evidence
 
             workout_dna = build_workout_dna(
                 phases=phase_metadata.get("phases", []),
@@ -1182,6 +1280,17 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 activity_date,
                 reference_date,
             )
+
+            if (
+                title_intent_evidence is not None
+                and float(
+                    title_intent_evidence["metadata"].get("confidence") or 0.0
+                ) >= 0.85
+            ):
+                item["trust_score"] = min(
+                    item["trust_score"] + 5.0,
+                    100.0,
+                )
             item["trust_reasons"] = _reason_for_trust(item)
             candidates.append(item)
 
@@ -1353,10 +1462,13 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         best_session = best["session"]
         best_workout = best["workout"]
 
+        latest_description = _display_description(latest)
+        best_description = _display_description(best)
+
         summary_parts = [
-            f"Latest session: {latest_workout.description} on "
+            f"Latest session: {latest_description} on "
             f"{(latest_session.activity_date or 'unknown')[:10]}.",
-            f"Best current evidence: {best_workout.description} on "
+            f"Best current evidence: {best_description} on "
             f"{(best_session.activity_date or 'unknown')[:10]}.",
         ]
 
@@ -1404,7 +1516,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     ),
                     "title": session.title,
                     "workout_type": workout.workout_type,
-                    "description": workout.description,
+                    "description": _display_description(item),
                     "trust_score": item["trust_score"],
                     "execution_score": workout.execution_score,
                     "recognition_confidence": workout.confidence,
@@ -1452,6 +1564,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             strengths.append("Latest workout is representative of current evidence")
 
         limitations = [
+            "Explicit workout titles now outrank split-only inference when the title structure can be matched to exported splits.",
+            "Repeated auto-laps alone never establish a workout; PP requires explicit session intent, recovery/boundary structure, or a confident phase reconstruction.",
             "Race and race-quality efforts are excluded from Workout Coach even if their splits resemble repetitions.",
             "Trends compare only sessions with similar workout type and rep distance.",
             "Runalyze CSV splits do not contain full lap-level heart rate or power.",
@@ -1506,7 +1620,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "activity_date": latest_session.activity_date,
                 "selected_title": latest_session.title,
                 "workout_type": latest_workout.workout_type,
-                "description": latest_workout.description,
+                "description": latest_description,
                 "execution_score": latest_workout.execution_score,
                 "rep_count": latest_workout.rep_count,
                 "average_rep_distance_km":
@@ -1523,7 +1637,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                         else "Unknown"
                     ),
                     "title": latest_session.title,
-                    "description": latest_workout.description,
+                    "description": latest_description,
                     "trust_score": latest["trust_score"],
                     "representative": latest_is_representative,
                 },
@@ -1547,7 +1661,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                         else "Unknown"
                     ),
                     "title": best_session.title,
-                    "description": best_workout.description,
+                    "description": best_description,
                     "trust_score": best["trust_score"],
                 },
                 "top_workouts": top_workouts,
