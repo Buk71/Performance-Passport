@@ -6,6 +6,7 @@ import textwrap
 import streamlit as st
 
 from ui.athlete_selection import render_athlete_selector
+from ui.athlete_card import build_athlete_card_html, render_athlete_card
 
 from core.capability import build_capability
 from core.adaptive_coach_live import build_live_coach_decision
@@ -2924,94 +2925,317 @@ def _v21_family_label(family, title=None):
     return labels.get(family, str(title or family).replace("_", " ").title() or "Run")
 
 
-def render_v21_coach_home(
-    athlete_id, first_name, goal, capability,
-    environment_forecast, brain_brief, evidence_bundle,
+
+def get_latest_activity_summary(athlete_id):
+    conn = get_connection()
+    row = conn.execute('''
+        SELECT activity_date, title, distance_m, moving_time_s, avg_hr
+        FROM activities
+        WHERE athlete_id = ?
+        ORDER BY activity_datetime DESC
+        LIMIT 1
+    ''', (athlete_id,)).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    activity_date, title, distance_km, moving_time_s, avg_hr = row
+    try:
+        distance_km = float(distance_km or 0.0)
+    except (TypeError, ValueError):
+        distance_km = 0.0
+    try:
+        moving_time_s = float(moving_time_s or 0.0)
+    except (TypeError, ValueError):
+        moving_time_s = 0.0
+    pace = moving_time_s / distance_km if distance_km > 0 and moving_time_s > 0 else None
+    return {'activity_date': activity_date, 'title': title or 'Activity', 'distance_km': distance_km, 'pace_s_per_km': pace, 'avg_hr': avg_hr}
+
+
+
+RACE_DISTANCES = (
+    ("5K", 5.0),
+    ("5M", 8.04672),
+    ("10K", 10.0),
+    ("10M", 16.09344),
+    ("HM", 21.0975),
+)
+
+
+def _riegel_time(base_seconds, base_distance_km, target_distance_km):
+    if (
+        base_seconds is None
+        or base_distance_km is None
+        or base_distance_km <= 0
+        or target_distance_km <= 0
+    ):
+        return None
+
+    return float(base_seconds) * (
+        float(target_distance_km) / float(base_distance_km)
+    ) ** 1.06
+
+
+def _format_race_time(seconds):
+    if seconds is None:
+        return "—"
+
+    seconds = int(round(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+
+    return f"{minutes}:{secs:02d}"
+
+
+def _prediction_strip_html(capability, goal):
+    base_distance = goal_distance_km(goal)
+
+    if (
+        not capability.available
+        or capability.central_seconds is None
+        or base_distance is None
+    ):
+        return '<div class="pp-v223-empty">Multi-distance predictions are still building.</div>'
+
+    items = []
+
+    for label, distance in RACE_DISTANCES:
+        predicted = _riegel_time(
+            capability.central_seconds,
+            base_distance,
+            distance,
+        )
+        items.append(
+            f'<a class="pp-v223-prediction" href="?pp_page=Passport" target="_self">'
+            f'<span>{safe_text(label)}</span>'
+            f'<strong>{safe_text(_format_race_time(predicted))}</strong>'
+            f'</a>'
+        )
+
+    return "".join(items)
+
+
+def _environment_strip_html(environment_forecast):
+    if (
+        environment_forecast is None
+        or not environment_forecast.available
+        or not environment_forecast.scenarios
+    ):
+        return '<div class="pp-v223-empty">Environmental scenarios are still building.</div>'
+
+    scenario_map = {
+        scenario.key: scenario
+        for scenario in environment_forecast.scenarios
+    }
+
+    preferred = (
+        ("ideal", "Ideal"),
+        ("warm", "Warm"),
+        ("hilly", "Hilly"),
+        ("windy", "Windy"),
+    )
+
+    baseline = environment_forecast.baseline_seconds or 0.0
+    items = []
+
+    for key, label in preferred:
+        scenario = scenario_map.get(key)
+        if scenario is None:
+            continue
+
+        delta = max(
+            float(scenario.central_seconds) - float(baseline),
+            0.0,
+        )
+
+        if delta < 60:
+            delta_text = f"+{int(round(delta))}s"
+        else:
+            minutes, seconds = divmod(int(round(delta)), 60)
+            delta_text = f"+{minutes}:{seconds:02d}"
+
+        items.append(
+            f'<a class="pp-v223-env-chip" href="?pp_page=Passport" target="_self">'
+            f'<span>{safe_text(label)}</span><strong>{safe_text(delta_text)}</strong></a>'
+        )
+
+    return "".join(items)
+
+
+
+def render_v22_coach_home(
+    *,
+    athlete_id,
+    first_name,
+    goal,
+    brain_brief,
+    evidence_bundle,
+    performance_dna,
+    easy_run_coach,
+    capability,
+    environment_forecast,
 ):
-    """Presentation-only v0.21 Coach Home using existing coaching engines."""
     today = datetime.date.today()
     live = build_live_coach_decision(athlete_id)
     weekly = build_adaptive_weekly_plan(athlete_id, today=today)
     goal_name = goal["goal_name"] if goal else "Build your next goal"
-    evidence = evidence_strength(evidence_bundle.confidence)
 
     week_days = weekly.weeks[0].days if weekly.available and weekly.weeks else ()
     day_cards = []
+
     for index, day in enumerate(week_days):
         day_date = today + datetime.timedelta(days=index - today.weekday())
-        classes = ["pp-v21-day"]
+        classes = ["pp-v22-day"]
+
         if day_date == today:
             classes.append("today")
         if day.session_family == "completed":
             classes.append("completed")
-        detail = day.prescription or day.target or ""
-        if len(detail) > 46:
-            detail = detail[:43].rstrip() + "…"
+
+        session = _v21_family_label(day.session_family, day.title)
+
         day_cards.append(
-            f"""<div class="{' '.join(classes)}">
-            <div class="pp-v21-day-name">{safe_text(day.day_name[:3])}</div>
-            <div class="pp-v21-day-session">{safe_text(_v21_family_label(day.session_family, day.title))}</div>
-            <div class="pp-v21-day-detail">{safe_text(detail)}</div></div>"""
+            f'<div class="{" ".join(classes)}">'
+            f'<span>{safe_text(day.day_name[:3])}</span>'
+            f'<strong>{safe_text(session)}</strong>'
+            f'</div>'
         )
 
-    capability_text = format_clock(capability.central_seconds) if capability.available and capability.central_seconds else "—"
-    scenarios = {x.key: x for x in environment_forecast.scenarios} if environment_forecast.available else {}
-    ideal = scenarios.get("ideal")
-    typical = scenarios.get("typical")
-    ideal_text = format_clock(ideal.central_seconds) if ideal else capability_text
-    typical_text = format_clock(typical.central_seconds) if typical else "—"
+    next_title = live.immediate_label if live is not None else "Building next run"
+    next_timing = live.immediate_timing if live is not None else "Timing building"
+    next_detail = live.immediate_detail if live is not None else brain_brief.summary
 
-    next_title = live.immediate_label if live else "Building next run"
-    next_timing = live.immediate_timing if live else "Timing building"
-    next_detail = live.immediate_detail if live else brain_brief.summary
-    key_title = live.key_label if live and live.key_label else "Next key session"
-    key_day = live.key_day if live and live.key_day else "Building"
-    key_detail = live.key_prescription if live and live.key_prescription else "The coaching team is resolving the next quality stimulus."
+    latest = get_latest_activity_summary(athlete_id)
 
-    render_html(f"""
-    <div class="pp-v21-kicker">Coach Home · {safe_text(goal_name)}</div>
-    <div class="pp-v21-title">Good morning, {safe_text(first_name)}.</div>
-    <div class="pp-v21-subtitle">{safe_text(brain_brief.headline)}
-    <strong style="color:var(--pp-ink);"> {safe_text(evidence)} evidence.</strong></div>
+    aerobic_progress = (
+        easy_run_coach.trend_percent
+        if (
+            easy_run_coach is not None
+            and easy_run_coach.trend_percent is not None
+        )
+        else None
+    )
 
-    <div class="pp-v21-section-title">This week</div>
-    <div class="pp-v21-week">{''.join(day_cards)}</div>
+    athlete_card_html = build_athlete_card_html(
+        athlete_id=athlete_id,
+        performance_dna=performance_dna,
+        aerobic_progress_percent=aerobic_progress,
+    )
 
-    <div class="pp-v21-grid">
-      <div class="pp-v21-card route">
-        <div class="pp-v21-label">Up next · {safe_text(next_timing)}</div>
-        <div class="pp-v21-card-title">{safe_text(next_title)}</div>
-        <div class="pp-v21-copy">{safe_text(next_detail)}</div>
-        <div class="pp-v21-pill">Adaptive Coach</div>
-      </div>
-      <div class="pp-v21-card dark">
-        <div class="pp-v21-label">Prediction · {safe_text(goal_name)}</div>
-        <div class="pp-v21-predictions">
-          <div class="pp-v21-pred"><div class="pp-v21-pred-value">{safe_text(capability_text)}</div><div class="pp-v21-pred-label">Capability</div></div>
-          <div class="pp-v21-pred"><div class="pp-v21-pred-value orange">{safe_text(ideal_text)}</div><div class="pp-v21-pred-label">Ideal</div></div>
-          <div class="pp-v21-pred"><div class="pp-v21-pred-value green">{safe_text(typical_text)}</div><div class="pp-v21-pred-label">Typical conditions</div></div>
+    latest_markup = ""
+    if latest is not None:
+        pace_text = (
+            " · " + format_pace_per_mile(latest["pace_s_per_km"])
+            if latest["pace_s_per_km"]
+            else ""
+        )
+        latest_markup = (
+            f'<a class="pp-v223-compact" href="?pp_page=Activities" target="_self">'
+            f'<span>Latest activity</span>'
+            f'<strong>{safe_text(latest["title"])}</strong>'
+            f'<small>{format_distance_miles(latest["distance_km"])}'
+            f'{pace_text} · Analyse →</small></a>'
+        )
+
+    scores = performance_dna.system_scores or {}
+    aer = scores.get("aerobic")
+    thr = scores.get("threshold")
+    spd = scores.get("speed")
+
+    trajectory_bits = []
+
+    if aerobic_progress is not None:
+        arrow = "↑" if aerobic_progress >= 0 else "↓"
+        trajectory_bits.append(
+            f"Aerobic {arrow} {abs(aerobic_progress):.1f}%"
+        )
+    if thr is not None:
+        trajectory_bits.append(f"Threshold {thr:.0f}")
+    if spd is not None:
+        trajectory_bits.append(f"Speed {spd:.0f}")
+
+    trajectory_text = " · ".join(trajectory_bits) or "Current fitness profile is still building."
+
+    prediction_markup = _prediction_strip_html(capability, goal)
+    environment_markup = _environment_strip_html(environment_forecast)
+
+    st.html(
+        f"""
+        <div class="pp-v22-head">
+            <div class="pp-v21-kicker">Coach · {safe_text(goal_name)}</div>
+            <div class="pp-v21-title">
+                {safe_text(greeting_for_current_time())}, {safe_text(first_name)}.
+            </div>
+            <div class="pp-v21-subtitle">{safe_text(brain_brief.headline)}</div>
         </div>
-        <div class="pp-v21-copy" style="margin-top:.9rem;">Fitness stays separate from environment: conditions change expected performance, not underlying capability.</div>
-      </div>
-    </div>
 
-    <div class="pp-v21-grid">
-      <div class="pp-v21-card">
-        <div class="pp-v21-label">Next key session · {safe_text(key_day)}</div>
-        <div class="pp-v21-card-title">{safe_text(key_title)}</div>
-        <div class="pp-v21-copy">{safe_text(key_detail)}</div>
-      </div>
-      <div class="pp-v21-card">
-        <div class="pp-v21-label">Coach insight</div>
-        <div class="pp-v21-card-title">{safe_text(brain_brief.headline)}</div>
-        <div class="pp-v21-copy">{safe_text(brain_brief.summary)}</div>
-      </div>
-    </div>
-    """)
+        <div class="pp-v223-home-grid">
+            <main class="pp-v223-coach-column">
+                <section>
+                    <div class="pp-v22-section-label">This week</div>
+                    <div class="pp-v22-week">{''.join(day_cards)}</div>
+                </section>
 
+                <section class="pp-v223-upnext-row">
+                    <div class="pp-v22-upnext">
+                        <div class="pp-v21-label">Up next · {safe_text(next_timing)}</div>
+                        <div class="pp-v22-upnext-title">{safe_text(next_title)}</div>
+                        <div class="pp-v21-copy">{safe_text(next_detail)}</div>
+                        <a class="pp-v22-text-link" href="?pp_page=Plan" target="_self">
+                            View session →
+                        </a>
+                    </div>
+
+                    <a class="pp-v223-trajectory" href="?pp_page=Performance" target="_self">
+                        <span>Fitness trajectory</span>
+                        <strong>{safe_text(trajectory_text)}</strong>
+                        <small>Explore performance →</small>
+                    </a>
+                </section>
+
+                <section class="pp-v223-panel">
+                    <div class="pp-v223-panel-head">
+                        <div>
+                            <span>Current capability</span>
+                            <strong>Race predictions</strong>
+                        </div>
+                        <a href="?pp_page=Passport" target="_self">Full Passport →</a>
+                    </div>
+                    <div class="pp-v223-prediction-grid">{prediction_markup}</div>
+                </section>
+
+                <section class="pp-v223-panel pp-v223-environment">
+                    <div class="pp-v223-panel-head">
+                        <div>
+                            <span>Environment</span>
+                            <strong>What conditions could cost you</strong>
+                        </div>
+                        <a href="?pp_page=Passport" target="_self">All scenarios →</a>
+                    </div>
+                    <div class="pp-v223-env-grid">{environment_markup}</div>
+                </section>
+
+                <section class="pp-v223-bottom-grid">
+                    <a class="pp-v223-compact" href="?pp_page=Performance" target="_self">
+                        <span>Coach insight</span>
+                        <strong>{safe_text(brain_brief.headline)}</strong>
+                        <small>Explore the evidence →</small>
+                    </a>
+                    {latest_markup}
+                </section>
+            </main>
+
+            <aside class="pp-v223-athlete-column">
+                {athlete_card_html}
+            </aside>
+        </div>
+        """
+    )
 
 def show_dashboard():
-    selector_col, _ = st.columns([0.35, 0.65])
+    selector_col, _ = st.columns([0.28, 0.72])
 
     with selector_col:
         athlete_id = render_athlete_selector(
@@ -3143,34 +3367,19 @@ def show_dashboard():
         get_recent_weekly_average(athlete_id, weeks=26)
     )
 
-    render_v21_coach_home(
+    render_v22_coach_home(
         athlete_id=athlete_id,
         first_name=selected["first_name"],
         goal=goal,
-        capability=capability,
-        environment_forecast=environment_forecast,
         brain_brief=brain_brief,
         evidence_bundle=evidence_bundle,
+        performance_dna=performance_dna,
+        easy_run_coach=easy_run_coach,
+        capability=capability,
+        environment_forecast=environment_forecast,
     )
 
-    st.markdown('<div class="pp-v21-section-title">Coaching team & deep analysis</div>', unsafe_allow_html=True)
-    render_coaching_meeting(
-        performance_dna,
-        prediction,
-        coach_consensus,
-    )
-
-    render_training_blueprint(
-        training_blueprint,
-        thresholds,
-    )
-    render_evidence_engine(athlete_evidence_profile)
-    render_easy_run_coach(easy_run_coach)
-    render_capability_card(capability)
-    render_personal_environment_profile(
-        personal_environment_profile
-    )
-    render_environment_forecast(environment_forecast)
+    return
 
     st.markdown("## Goal and context")
 

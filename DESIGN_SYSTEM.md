@@ -24,3 +24,12 @@ Mobile-first, desktop-expanded. No hover-only information. Week ribbon scrolls h
 
 ## Merchandise
 The Pathmark, contour motif and achievement system must work on premium performance apparel as well as digital UI. Earned kit should feel like sportswear, not promotional merchandise.
+
+
+## v0.22 Athlete Card
+- Interactive map of the athlete.
+- Headline Profile score opens Passport.
+- AER / THR / SPD / END / DUR / FORM open focused Performance views.
+- v0.22.0 deliberately labels the temporary composite as Profile, not Age Grade.
+- Dedicated age grading will replace the headline score later.
+- Coach Home uses progressive disclosure: week, Up Next, one insight, latest activity, Athlete Card.

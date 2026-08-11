@@ -16,6 +16,7 @@ from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
 from ui.training_blocks import show_training_blocks_page
 from ui.settings import show_settings_page
+from ui.performance import show_performance_page
 
 
 st.set_page_config(
@@ -32,6 +33,12 @@ page = show_sidebar()
 
 if page == "Coach":
     show_dashboard()
+
+elif page == "Plan":
+    show_next_run_page()
+
+elif page == "Performance":
+    show_performance_page()
 
 elif page == "Journal":
     show_journal_page()
