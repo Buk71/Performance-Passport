@@ -1,8 +1,10 @@
-# 🏃 Performance Passport
+# Performance Passport
 
-Performance Passport is a personal running analytics platform built using Python and Streamlit.
+Performance Passport is a personal running intelligence and coaching platform
+built with Python, Streamlit and SQLite.
 
-The aim is to go beyond Garmin Connect, Strava and Runalyze by analysing not just what happened during a run, but what the run actually means.
+It goes beyond recording what happened by explaining what a run means compared
+with the athlete's own genuinely similar historical sessions.
 
 ---
 
@@ -18,51 +20,42 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ---
 
-## Planned Features
+## Current Release
 
-### Data
-- FIT file import
-- Runalyze import
-- SQLite database
-- Shoe tracking
+**v0.23.3 — Activity Review Foundation**
 
-### Analysis
-- Workout recognition
-- Heat adjustment
-- Surface adjustment
-- Heart rate efficiency
-- Similar run detection
-- Training load
+The production app now brings together:
 
-### Performance
-- Race prediction
-- Benchmark workouts
-- Running DNA
-- Coach's Notes
-- Performance Passport score
+- Athlete Passport and Active Goal
+- Latest-run interpretation and comparable-session ranking
+- Three-coach race outlook
+- This Week and Recommended Next Run
+- Best Runs and Hall of Fame evidence
+- Split-aware session classification
+- Measurement-reliability safeguards, including treadmill pace exclusion
+- Evidence-backed review of an individual activity
+- Classification scores, continuity, splits and comparable-session ranking
+- A Home navigation label that matches the production Home route
+- Sidebar-aware Home composition without an over-stretched Passport
 
 ---
 
-## Development Roadmap
+## Next Sprint
 
-### Sprint 1 – Data Foundation
-- Project structure
-- SQLite database
-- FIT import
-- Runalyze import
-- Dashboard
+**Home-to-Activity Review integration** will make Latest Run and Best Runs
+open the exact supporting activity evidence.
 
-### Sprint 2 – Run Intelligence
-- Workout recognition
-- Heat adjustment
-- Surface adjustment
-- Similar session matching
+Activity Review already answers:
 
-### Sprint 3 – Performance Engine
-- Race prediction
-- Workout targets
-- Running DNA
-- Coach's Notes
+> How good was this run, really—and why?
+
+See `ROADMAP.md` for the complete scope and exclusions.
+
+## Run
+
+```bash
+streamlit run app.py
+```
 
 ---
 
@@ -76,4 +69,5 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ---
 
-Version 0.1
+Every feature must be validated against real athlete data before it is called
+complete. Mock data is reserved for isolated unit tests.

@@ -185,27 +185,37 @@ Build one feature to completion before moving on.
 Explain architectural decisions.
 Test the feature before committing.
 Recommend a Git commit message only after testing passes.
-Current Sprint Baseline
-Sprint 2.1 completed:
-GitHub repository connected
-SQLite database created
-Athletes table created
-Activities table created
-Derived metrics table created
-Benchmarks table created
-Multi-athlete architecture working
-Runalyze CSV importer working
-3,703 Runalyze activities imported
-Duplicate detection working
-Raw JSON stored for every activity
-Sprint 2.2 Direction
-Sprint 2.2 should build the first live database-powered dashboard within the existing architecture.
-Expected areas of work:
-ui/dashboard.py
-core/database.py
-possibly ui/import_page.py
-possibly ui/athletes.py
-Do not use Streamlit pages/ during Sprint 2.2.
+Current Release Baseline
+
+Version 0.23.3 preserves the approved Home and adds the production Activity
+Review destination:
+
+- `ui/home.py` owns the production Home route.
+- The approved v11 responsive composition remains available as the visual
+  reference and rollback history.
+- `app.py` routes Home to `show_home_page()` and Activities to
+  `show_activities_page()`.
+- Home calculations continue to come from the existing `core/` coaching,
+  prediction, recognition and summary modules.
+- Split-aware session classification is shared across product consumers.
+- Treadmill session history is retained while unreliable treadmill distance
+  and pace are excluded from comparative performance intelligence.
+- Real-data regression tests cover Richard and Jo independently.
+- `core/activity_review.py` joins, but does not replace, the shared
+  classification, reliability, split and recognition engines.
+- `ui/activities.py` contains presentation and selection only; it does not
+  recalculate classifications or rankings.
+- The production Home wrapper reuses the approved generated intelligence
+  sections in an intermediate-only grid: Passport and Performance Intelligence
+  share the first-row baseline, while Race Outlook spans the second row. The
+  approved full-width and compact v11 layouts remain intact, and no calculation
+  is duplicated.
+
+Next Sprint Direction
+
+Link Home Latest Run and Best Runs to Activity Review inside the existing
+`core/`, `ui/` and `tests/` architecture. Do not introduce Streamlit `pages/`,
+`utils/` or `services/`.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

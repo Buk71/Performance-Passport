@@ -4,7 +4,7 @@ from config import APP_NAME, VERSION, VERSION_NAME
 
 
 PRIMARY_NAVIGATION = [
-    "Coach",
+    "Home",
     "Journal",
     "Next Run",
     "Learning",
@@ -50,10 +50,17 @@ def show_sidebar():
         unsafe_allow_html=True,
     )
 
+    # One-release migration for sessions saved before Coach Home was renamed.
+    if st.session_state.get("primary_navigation") == "Coach":
+        st.session_state["primary_navigation"] = "Home"
+
     requested_page = st.session_state.pop(
         "pp_navigation_request",
         None,
     )
+
+    if requested_page == "Coach":
+        requested_page = "Home"
 
     if (
         requested_page in PRIMARY_NAVIGATION

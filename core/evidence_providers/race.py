@@ -25,6 +25,7 @@ import math
 import statistics
 from dataclasses import dataclass
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import (
     humidity_adjustment_seconds_per_km,
     temperature_adjustment_seconds_per_km,
@@ -302,7 +303,7 @@ def _route_course_penalty_seconds(
     cursor.execute(
         """
         SELECT distance_m, elapsed_time_s, elevation_up_m, route_name,
-               activity_date
+               activity_date, title, sport_id, raw_json
         FROM activities
         WHERE athlete_id = ?
           AND activity_date >= date(?, '-240 day')
@@ -325,7 +326,24 @@ def _route_course_penalty_seconds(
     route_elevations = []
     benchmark_paces = []
 
-    for distance, elapsed, elevation, route_name, _date in rows:
+    for (
+        distance,
+        elapsed,
+        elevation,
+        route_name,
+        _date,
+        title,
+        sport_id,
+        raw_json_text,
+    ) in rows:
+        if not has_reliable_distance_and_pace(
+            title=title,
+            sport_id=str(sport_id or ""),
+            route_name=route_name,
+            raw_json_text=raw_json_text,
+        ):
+            continue
+
         try:
             distance = float(distance)
             elapsed = float(elapsed)
@@ -431,7 +449,8 @@ def _performance_quality_signal(
 
     cursor.execute(
         """
-        SELECT distance_m, elapsed_time_s
+        SELECT distance_m, elapsed_time_s, title, sport_id, route_name,
+               raw_json
         FROM activities
         WHERE athlete_id = ?
           AND activity_date <= ?
@@ -450,7 +469,15 @@ def _performance_quality_signal(
 
     paces = []
 
-    for distance, elapsed in rows:
+    for distance, elapsed, title, sport_id, route_name, raw_json_text in rows:
+        if not has_reliable_distance_and_pace(
+            title=title,
+            sport_id=str(sport_id or ""),
+            route_name=route_name,
+            raw_json_text=raw_json_text,
+        ):
+            continue
+
         try:
             distance = float(distance)
             elapsed = float(elapsed)
@@ -975,6 +1002,13 @@ class RaceEvidenceProvider(EvidenceProvider):
 
             elapsed = elapsed_time_s or moving_time_s
             if not distance_km or not elapsed or elapsed <= 0:
+                continue
+
+            if not has_reliable_distance_and_pace(
+                title=title,
+                route_name=route_name,
+                raw_json_text=raw_json_text,
+            ):
                 continue
 
             try:

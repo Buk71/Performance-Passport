@@ -19,6 +19,7 @@ import math
 import json
 from dataclasses import dataclass
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import (
     RunProfile,
     equivalent_performance,
@@ -739,6 +740,13 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         result = []
 
         for row in cursor.fetchall():
+            if not has_reliable_distance_and_pace(
+                title=row[4],
+                sport_id=str(row[2] or ""),
+                raw_json_text=row[16],
+            ):
+                continue
+
             try:
                 activity_date = datetime.date.fromisoformat(row[3][:10])
             except (TypeError, ValueError):

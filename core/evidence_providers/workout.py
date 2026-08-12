@@ -19,6 +19,7 @@ import datetime
 import math
 from statistics import mean, median
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.database import get_athlete_sport_roles, get_connection
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
@@ -1097,7 +1098,15 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             (context.athlete_id, *running_ids),
         )
 
-        rows = cursor.fetchall()
+        rows = [
+            row for row in cursor.fetchall()
+            if has_reliable_distance_and_pace(
+                title=row[3],
+                sport_id=str(row[4] or ""),
+                route_name=row[14],
+                raw_json_text=row[15],
+            )
+        ]
         conn.close()
 
         reference_date = max(

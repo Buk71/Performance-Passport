@@ -14,6 +14,7 @@ import datetime
 import math
 from dataclasses import dataclass
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.race_detection import score_athlete_relative_race_effort
 from core.database import get_athlete_sport_roles
 
@@ -675,6 +676,11 @@ def classify_run(
 def is_easy_baseline_candidate(
     run: RunProfile,
 ) -> bool:
+    if not has_reliable_distance_and_pace(
+        title=run.title,
+        sport_id=str(run.sport_id or ""),
+    ):
+        return False
     return assess_activity(run).easy_baseline_candidate
 
 
@@ -698,6 +704,12 @@ def build_baseline(
     matching_runs = []
 
     for run in runs:
+        if not has_reliable_distance_and_pace(
+            title=run.title,
+            sport_id=str(run.sport_id or ""),
+        ):
+            continue
+
         if run_type == "🟢 Run":
             if not is_easy_baseline_candidate(run):
                 continue

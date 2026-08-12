@@ -27,6 +27,8 @@ import math
 import statistics
 from typing import Any, Iterable
 
+from core.activity_reliability import has_reliable_distance_and_pace
+
 
 @dataclass(frozen=True)
 class PersonalEnvironmentProfile:
@@ -166,6 +168,12 @@ def _comparable_runs(runs: Iterable[Any]) -> list[Any]:
 
     for run in runs:
         title = str(_value(run, "title", "") or "")
+
+        if not has_reliable_distance_and_pace(
+            title=title,
+            sport_id=str(_value(run, "sport_id", "") or ""),
+        ):
+            continue
 
         if _is_probable_quality_title(title):
             continue

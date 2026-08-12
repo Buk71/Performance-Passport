@@ -4,7 +4,8 @@ from config import APP_NAME
 from core.database import initialise_database
 from theme import inject_global_theme, render_page_placeholder
 from ui.athletes import show_athletes_page
-from ui.dashboard import show_dashboard
+from ui.activities import show_activities_page
+from ui.home import show_home_page
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.hall_of_fame import show_hall_of_fame_page
@@ -30,8 +31,8 @@ initialise_database()
 
 page = show_sidebar()
 
-if page == "Coach":
-    show_dashboard()
+if page == "Home":
+    show_home_page()
 
 elif page == "Journal":
     show_journal_page()
@@ -43,15 +44,7 @@ elif page == "Learning":
     show_learning_page()
 
 elif page == "Activities":
-    render_page_placeholder(
-        title="Activities",
-        question="What happened?",
-        description=(
-            "Your running history will become a clean activity timeline, "
-            "with every session summarised through performance, context and "
-            "coaching meaning."
-        ),
-    )
+    show_activities_page()
 
 elif page == "Progress":
     render_page_placeholder(

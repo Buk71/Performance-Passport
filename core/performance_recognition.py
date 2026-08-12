@@ -31,10 +31,12 @@ Categories:
 - Threshold Development
 - VO2 Development
 - Speed Development
+- Structured Workout
 - Race
 
-Structured-workout rankings remain provisional until rep-level Workout DNA is
-connected. The engine explicitly exposes that limitation rather than hiding it.
+Structured-workout rankings use the shared split-aware session classifier.
+Their whole-session rankings remain provisional because recoveries make summary
+pace and heart rate less precise than rep-level Workout DNA.
 """
 
 from __future__ import annotations
@@ -44,13 +46,20 @@ import datetime
 import math
 from typing import Any, Iterable
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.race_detection import score_athlete_relative_race_effort
 from core.coaching import (
     RunProfile,
     equivalent_performance,
     get_athlete_sport_roles,
 )
-from core.database import get_connection
+from core.database import get_connection, get_effective_athlete_thresholds
+from core.session import SessionPurpose, SessionType
+from core.session_intelligence import (
+    ActivityFacts,
+    RELIABLE_SESSION_CONFIDENCE,
+    classify_session,
+)
 
 
 TRAIL_WORDS = (
@@ -154,6 +163,10 @@ class _ActivityContext:
     elapsed_time_s: float | None
     moving_percent: float | None
     route_name: str | None
+    session_type: SessionType | None
+    session_purpose: SessionPurpose | None
+    session_confidence: float | None
+    pace_reliable: bool
 
 
 @dataclass(frozen=True)
@@ -226,6 +239,8 @@ def _category(
     run: RunProfile,
     *,
     elapsed_time_s: float | None = None,
+    session_type: SessionType | None = None,
+    session_purpose: SessionPurpose | None = None,
 ) -> tuple[str, str, str] | None:
     if not _is_running(run):
         return None
@@ -238,6 +253,21 @@ def _category(
 
     if distance is None or distance < 3:
         return None
+
+    # The shared classifier sees recorded recoveries and lap boundaries.  It
+    # must outrank generic titles and whole-run averages, which can make a
+    # stopped-watch interval session look implausibly easy or fast.
+    if session_type == SessionType.STRUCTURED_WORKOUT:
+        if session_purpose == SessionPurpose.THRESHOLD:
+            return "threshold", "Threshold Development", "❤️"
+        if session_purpose in {SessionPurpose.VO2, SessionPurpose.FARTLEK}:
+            return "vo2", "VO₂ Development", "⚡"
+        if session_purpose == SessionPurpose.HILLS:
+            return "speed", "Hill Development", "⛰️"
+        return "workout", "Structured Workout", "🔴"
+
+    if session_type == SessionType.RACE:
+        return "race", "Race", "🏁"
 
     if _contains(title, RACE_WORDS):
         return "race", "Race", "🏁"
@@ -295,18 +325,27 @@ def _category(
 def _activity_context_lookup(
     athlete_id: int,
 ) -> dict[str, _ActivityContext]:
+    thresholds = get_effective_athlete_thresholds(athlete_id)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
         SELECT
+            id,
             activity_date,
             title,
+            sport_id,
             distance_m,
             moving_time_s,
             elapsed_time_s,
+            avg_hr,
+            max_hr,
+            elevation_up_m,
+            temperature_c,
+            humidity,
             wind_speed,
-            route_name
+            route_name,
+            raw_json
         FROM activities
         WHERE athlete_id = ?
         """,
@@ -318,13 +357,21 @@ def _activity_context_lookup(
     lookup = {}
 
     for (
+        activity_id,
         activity_date,
         title,
+        sport_id,
         distance_value,
         moving_time_s,
         elapsed_time_s,
+        avg_hr,
+        max_hr,
+        elevation_up_m,
+        temperature_c,
+        humidity,
         wind_speed,
         route_name,
+        raw_json,
     ) in rows:
         distance = _safe_float(distance_value) or 0.0
 
@@ -342,6 +389,29 @@ def _activity_context_lookup(
 
         moving = _safe_float(moving_time_s)
         elapsed = _safe_float(elapsed_time_s)
+
+        session = classify_session(
+            ActivityFacts(
+                activity_id=int(activity_id),
+                athlete_id=athlete_id,
+                activity_date=activity_date,
+                title=title or "Activity",
+                sport_id=str(sport_id) if sport_id is not None else None,
+                distance_km=distance_km,
+                moving_time_s=moving,
+                elapsed_time_s=elapsed,
+                avg_hr=_safe_float(avg_hr),
+                max_hr=_safe_float(max_hr),
+                elevation_up_m=_safe_float(elevation_up_m),
+                temperature_c=_safe_float(temperature_c),
+                humidity=_safe_float(humidity),
+                wind_speed=_safe_float(wind_speed),
+                route_name=route_name,
+                raw_json_text=raw_json,
+                athlete_lt2_hr=thresholds.get("lt2_hr"),
+                athlete_max_hr=thresholds.get("athlete_max_hr"),
+            )
+        )
 
         moving_percent = None
 
@@ -362,6 +432,15 @@ def _activity_context_lookup(
             elapsed_time_s=elapsed,
             moving_percent=moving_percent,
             route_name=route_name,
+            session_type=session.session_type,
+            session_purpose=session.purpose,
+            session_confidence=session.confidence,
+            pace_reliable=has_reliable_distance_and_pace(
+                title=title,
+                sport_id=str(sport_id) if sport_id is not None else None,
+                route_name=route_name,
+                raw_json_text=raw_json,
+            ),
         )
 
     return lookup
@@ -904,12 +983,40 @@ def build_recognition_index(
                 elapsed_time_s=None,
                 moving_percent=None,
                 route_name=None,
+                session_type=None,
+                session_purpose=None,
+                session_confidence=None,
+                pace_reliable=True,
             ),
         )
+
+        # The session remains part of training history and can still inform
+        # duration/heart-rate load. Device-estimated treadmill distance and
+        # pace must not enter athlete-relative performance comparisons.
+        if not context.pace_reliable:
+            continue
 
         category = _category(
             run,
             elapsed_time_s=context.elapsed_time_s,
+            session_type=(
+                context.session_type
+                if (
+                    context.session_confidence is not None
+                    and context.session_confidence
+                    >= RELIABLE_SESSION_CONFIDENCE
+                )
+                else None
+            ),
+            session_purpose=(
+                context.session_purpose
+                if (
+                    context.session_confidence is not None
+                    and context.session_confidence
+                    >= RELIABLE_SESSION_CONFIDENCE
+                )
+                else None
+            ),
         )
 
         if category is None:

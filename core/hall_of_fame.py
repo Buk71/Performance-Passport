@@ -14,8 +14,9 @@ Version 1 includes:
   understates its quality.
 
 The engine is athlete-specific and uses the same environmental adjustment
-foundation as the coaching system. Workout-specific awards will become more
-precise when rep-level Workout DNA is connected.
+foundation as the coaching system.  Easy-run awards also use the shared
+split-aware session classifier so recoveries and stopped-watch intervals can
+never be mistaken for aerobic efficiency.
 """
 
 from __future__ import annotations
@@ -23,10 +24,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import re
 from typing import Any
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import RunProfile, equivalent_performance, get_athlete_sport_roles
 from core.database import get_connection, get_effective_athlete_thresholds
+from core.session import SessionType
+from core.session_intelligence import (
+    ActivityFacts,
+    RELIABLE_SESSION_CONFIDENCE,
+    classify_session,
+)
 
 
 STANDARD_DISTANCES = (
@@ -114,8 +123,18 @@ def _safe_float(value: Any) -> float | None:
 
 
 def _is_trail(title: str) -> bool:
-    text = title.lower()
-    return any(word in text for word in TRAIL_WORDS)
+    text = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+    tokens = set(text.split())
+
+    if "xc" in tokens:
+        return True
+
+    padded = f" {text} "
+    phrases = tuple(word for word in TRAIL_WORDS if word != "xc")
+    return any(
+        f" {word.replace('-', ' ')} " in padded
+        for word in phrases
+    )
 
 
 def _is_quality_title(title: str) -> bool:
@@ -230,12 +249,44 @@ def _profiles(athlete_id: int) -> list[tuple[int, RunProfile, dict[str, Any]]]:
             athlete_max_hr=thresholds.get("athlete_max_hr"),
         )
 
+        session = classify_session(
+            ActivityFacts(
+                activity_id=int(activity_id),
+                athlete_id=athlete_id,
+                activity_date=activity_date,
+                title=title or "Activity",
+                sport_id=str(sport_id) if sport_id is not None else None,
+                distance_km=distance_km,
+                moving_time_s=moving,
+                elapsed_time_s=_safe_float(elapsed_time_s),
+                avg_hr=_safe_float(avg_hr),
+                max_hr=_safe_float(max_hr),
+                elevation_up_m=_safe_float(elevation_m),
+                temperature_c=_safe_float(temperature_c),
+                humidity=_safe_float(humidity),
+                wind_speed=_safe_float(wind_speed),
+                route_name=route_name,
+                raw_json_text=raw_json,
+                athlete_lt2_hr=thresholds.get("lt2_hr"),
+                athlete_max_hr=thresholds.get("athlete_max_hr"),
+            )
+        )
+
         metadata = {
             "elapsed_time_s": _safe_float(elapsed_time_s),
             "wind_speed": _safe_float(wind_speed),
             "route_name": route_name,
             "equipment_ids": equipment_ids,
             "raw_json": raw_json,
+            "session_type": session.session_type,
+            "session_purpose": session.purpose,
+            "session_confidence": session.confidence,
+            "pace_reliable": has_reliable_distance_and_pace(
+                title=title,
+                sport_id=str(sport_id) if sport_id is not None else None,
+                route_name=route_name,
+                raw_json_text=raw_json,
+            ),
         }
         profiles.append((activity_id, profile, metadata))
 
@@ -426,24 +477,47 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
             limitations=("Import running history to build awards.",),
         )
 
+    pace_profiles = [
+        item for item in profiles
+        if item[2].get("pace_reliable", True)
+    ]
+
     efficiencies = []
     evaluated = []
 
-    for activity_id, profile, metadata in profiles:
+    for activity_id, profile, metadata in pace_profiles:
         equivalent = _equivalent_pace(profile)
         avg_hr = _safe_float(profile.avg_hr)
         if avg_hr and avg_hr > 0:
             efficiencies.append((1000.0 / equivalent) / avg_hr)
 
-    for activity_id, profile, metadata in profiles:
+    for activity_id, profile, metadata in pace_profiles:
         equivalent = _equivalent_pace(profile)
         score = _quality_score(profile, equivalent, efficiencies)
         evaluated.append((activity_id, profile, metadata, score))
 
     awards = []
 
+    def reliable_session(item, session_type: SessionType) -> bool:
+        metadata = item[2]
+        return (
+            metadata.get("session_type") == session_type
+            and float(metadata.get("session_confidence") or 0.0)
+            >= RELIABLE_SESSION_CONFIDENCE
+        )
+
+    summary_candidates = [
+        item for item in evaluated
+        if not reliable_session(item, SessionType.STRUCTURED_WORKOUT)
+    ]
+
     easy_candidates = [
         item for item in evaluated
+        if (
+            reliable_session(item, SessionType.CONTINUOUS_RUN)
+            or float(item[2].get("session_confidence") or 0.0)
+            < RELIABLE_SESSION_CONFIDENCE
+        )
         if not _is_quality_title(item[1].title or "")
         and item[1].avg_hr is not None
         and (
@@ -480,7 +554,7 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
         )
 
     hot_candidates = [
-        item for item in evaluated
+        item for item in summary_candidates
         if item[1].temperature_c is not None
         and item[1].temperature_c >= 20
     ]
@@ -495,7 +569,7 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
         )
 
     trail_candidates = [
-        item for item in evaluated
+        item for item in summary_candidates
         if _is_trail(item[1].title or "")
     ]
     if trail_candidates:
@@ -509,7 +583,7 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
         )
 
     hidden_candidates = []
-    for item in evaluated:
+    for item in summary_candidates:
         activity_id, profile, metadata, score = item
         actual = profile.moving_time_seconds / profile.distance_km
         equivalent = _equivalent_pace(profile)
@@ -533,17 +607,19 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
 
     return HallOfFame(
         athlete_id=athlete_id,
-        personal_bests=_personal_bests(athlete_id, profiles),
+        personal_bests=_personal_bests(athlete_id, pace_profiles),
         awards=tuple(awards),
-        candidate_count=len(profiles),
+        candidate_count=len(pace_profiles),
         headline="Your greatest runs, not only your fastest",
         summary=(
-            f"Performance Passport reviewed {len(profiles):,} running "
-            "activities using elapsed-time PBs and environmentally adjusted "
-            "training quality."
+            f"Performance Passport reviewed {len(pace_profiles):,} "
+            "pace-reliable running activities using elapsed-time PBs and "
+            "environmentally adjusted training quality."
         ),
         limitations=(
             "PBs use elapsed time and a small GPS-distance tolerance.",
+            "Treadmill sessions remain in training history but are excluded "
+            "from distance, pace, PB and efficiency comparisons.",
             "Easy, hot, trail and hidden-gem awards are athlete-relative.",
             "Threshold, VO₂ and speed awards will be added after rep-level "
             "Workout DNA is connected.",

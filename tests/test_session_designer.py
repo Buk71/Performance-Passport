@@ -1,14 +1,10 @@
 import unittest
 
 from core.session_designer import (
-    _recommendation_family,
-    _structural_fit,
     _history_structure,
+    _session_family_from_label,
+    _structural_fit,
 )
-
-
-class FakeRecommendation:
-    session_family = "Threshold Development"
 
 
 class FakeRecord:
@@ -39,9 +35,9 @@ class FakeEvidence:
 
 
 class SessionDesignerTests(unittest.TestCase):
-    def test_recommendation_maps_to_threshold(self):
+    def test_session_family_label_maps_to_threshold(self):
         self.assertEqual(
-            _recommendation_family(FakeRecommendation()),
+            _session_family_from_label("Threshold Development"),
             "threshold",
         )
 

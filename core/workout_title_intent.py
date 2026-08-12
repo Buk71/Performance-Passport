@@ -105,7 +105,17 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
     if any(token in text for token in continuous_tokens) and not has_structure_hint:
         return None
 
-    body = text.split(":", 1)[1] if ":" in text else text
+    body = text
+    if ":" in text:
+        prefix, suffix = text.split(":", 1)
+        # Most titles use the text before a colon as a label (for example,
+        # "Blizzard session:").  Some real activity titles put genuine work
+        # structure there instead (for example, "6 x 100m strides:").  Keep
+        # the full title whenever the prefix already contains a rep pattern.
+        prefix_has_structure = bool(
+            re.search(r"\b\d+\s*x\s*\d+", prefix)
+        )
+        body = text if prefix_has_structure else suffix
 
     # Recovery: "off 60", "off 60 sec", "60s recovery", "off 200m".
     recovery_s = None

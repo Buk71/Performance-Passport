@@ -1,299 +1,126 @@
-# Current Status
+# Performance Passport Roadmap
 
-Current Release: **v0.3.3**
+## Current Status
 
-Current Sprint: **Sprint 3.4 – Athlete Baseline Foundation**
+Current release: **v0.23.3 — Activity Review Foundation**
 
-Architecture Status:
-**Frozen**
+Architecture status: **Frozen**
 
-Overall Progress
+Approved production baseline:
 
-🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜
-
----
-
-# Project Vision
-
-Performance Passport is a coaching-focused running analysis platform.
-
-The objective is **not** to replicate Garmin Connect, Strava or Runalyze.
-
-Instead it should answer:
-
-**"How good was this run, really... compared with my other similar runs?"**
-
-Every feature should help the runner understand their training better.
-
-Examples include:
-
-- Heat-adjusted performance
-- Trail and surface adjusted performance
-- Best Ever Easy Run
-- Benchmark workout tracking
-- Durability analysis
-- Fatigue & Freshness
-- Race Readiness
-- Shoe Performance
-- Performance Passport Score
-- AI-generated coaching insights based on deterministic calculations
+- Coach Home v11 responsive composition
+- Jo and Richard athlete imagery
+- Shared split-aware session classification
+- Treadmill pace-reliability exclusion
+- Real-data validation for both athletes
+- Production Activity Review using the shared intelligence engines
+- Home and Activities production navigation labels
+- Intermediate-width Home composition for an expanded sidebar
 
 ---
 
-# Completed
+## Product Vision
 
-## Sprint 1 – FIT and Runalyze Import
+Performance Passport is a coaching-focused running analysis platform. It does
+not aim to reproduce Garmin Connect, Strava or Runalyze. Its defining question
+is:
 
-- ✅ GitHub repository
-- ✅ Streamlit application
-- ✅ SQLite database
-- ✅ Database schema
-- ✅ Initial import foundation
+> How good was this run, really, compared with my other similar runs after
+> accounting for its purpose and conditions?
 
----
-
-## Sprint 2.1 – Multi-Athlete Database and Runalyze Import
-
-- ✅ Multi-athlete database
-- ✅ Runalyze CSV importer
-- ✅ Duplicate detection
-- ✅ Raw JSON storage
-- ✅ 3,703 activities imported
+Deterministic calculations create the conclusion. AI may explain those
+calculations, but must not invent them.
 
 ---
 
-## Sprint 2.2 – Athlete Management
+## Completed Foundations
 
-- ✅ Add athlete
-- ✅ Edit athlete
-- ✅ Delete athlete
-- ✅ Duplicate prevention
-- ✅ Athlete profile fields
-- ✅ Athlete management page
-- ✅ Architecture documented
-- ✅ Roadmap documented
-- ✅ Decisions log introduced
+### Data and athlete identity
 
----
+- Multi-athlete SQLite database
+- Runalyze import, duplicate detection and raw source preservation
+- FIT foundation
+- Athlete management and `athlete_id` linking
+- Richard and Jo validated independently against real historical data
 
-## Sprint 2.3 – Athlete Linking
+### Coaching intelligence
 
-- ✅ Added athlete_id to activities
-- ✅ Linked imported activities to registered athletes
-- ✅ Preserved existing imported data
-- ✅ Supported multiple import sources
-- ✅ Eliminated text-based athlete matching issues
+- Athlete baselines and comparable-session rankings
+- Split-aware session classification with confidence safeguards
+- Best Runs and Hall of Fame recognition
+- Race predictions and coach consensus
+- Athlete Passport and learned traits
+- Training Blocks, Goals and adaptive weekly coaching
+- Journal, Learning and Recommended Next Run foundations
+- Treadmill pace-reliability policy across comparative consumers
 
----
+### Product design
 
-## Sprint 3.0 – Live Dashboard Foundation
-
-- ✅ Added working dashboard view
-- ✅ Athlete selector
-- ✅ Lifetime summary
-- ✅ Current year summary
-- ✅ Recent activities list
-- ✅ Sport type display foundation
+- Pathmark PP identity and Design System v1
+- Approved responsive Coach Home
+- Active Goal, Performance Intelligence, Race Outlook, This Week, Up Next and
+  Best Runs hierarchy
+- Desktop Passport/Race Outlook alignment
+- Compact-screen Active Goal treatment
+- Activity Review hierarchy with a 10px type floor and responsive evidence cards
 
 ---
 
-## Sprint 3.1 – Dashboard Presentation Improvements
+## Completed Sprint — Activity Review
 
-- ✅ Improved dashboard presentation
-- ✅ Added activity cards
-- ✅ Added sport icons and readable sport names
-- ✅ Improved date, duration, distance, elevation and heart-rate formatting
-- ✅ Improved "Coming Next" product messaging
+### Coaching question
 
----
+**How good was this run, really—and why?**
 
-## Sprint 3.2 – Coaching Engine Foundation
+### Delivered
 
-- ✅ Added `core/coaching.py`
-- ✅ Created reusable deterministic coaching calculation foundation
-- ✅ Added distance conversion helpers
-- ✅ Added pace formatting helpers
-- ✅ Added min/mile and min/km pace support
-- ✅ Dashboard now consumes coaching calculations instead of calculating pace directly
-- ✅ Added placeholder for future aerobic efficiency calculation
-- ✅ No database changes
-- ✅ No architecture changes
+The Activities placeholder is now an evidence-backed review destination.
 
----
+### Complete slice
 
-## Sprint 3.3 – Training Session Classification
+- Select and open a real activity.
+- Show the shared session classification and confidence.
+- Explain the evidence supporting that classification.
+- Show moving, elapsed and interruption context.
+- Present split/work-recovery structure where source data allows.
+- Compare the run only with genuinely comparable sessions.
+- Show rank, percentile and the reason it performed well or poorly.
+- Make pace-reliability exclusions visible, including treadmill handling.
+- Provide a concise coaching interpretation grounded in the calculations.
+- Validate the complete screen against representative Richard and Jo sessions.
 
-- ✅ Introduced `RunProfile` dataclass
-- ✅ Added reusable training session classification engine
-- ✅ Implemented deterministic classification rules
-- ✅ Dashboard now displays run classifications
-- ✅ Maintained backwards compatibility with Sprint 3.2
-- ✅ No database changes
-- ✅ No architecture changes
+### Preserved exclusions
+
+- No manual activity editing.
+- No route-map rebuild.
+- No AI-generated unsupported scoring.
+- No new top-level architecture.
+- No combined-condition Race Outlook yet.
 
 ---
 
-# Current Focus
+## Following Priorities
 
-## Sprint 3.4 – Athlete Baseline Foundation
-
-Goal:
-
-Teach Performance Passport what is "normal" for each athlete by building historical performance baselines.
-
-Objectives:
-
-- Build athlete baseline calculations.
-- Compare each run against the athlete's own history.
-- Prepare percentile-based coaching insights.
-- Build the foundation for Best Ever Easy Run.
-- Avoid database schema changes.
-- Avoid architecture changes.
+1. Link Home Latest Run and Best Runs into Activity Review and complete visual
+   approval at desktop and compact widths.
+2. Progress: longitudinal fitness, efficiency and durability trends.
+3. Passport detail: learned traits, evidence confidence and achievements.
+4. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
+5. Login-led athlete identity and Coach Mode athlete switching.
+6. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 
-# Flagship Milestone
-
-## Best Ever Easy Run
-
-This is the first major flagship feature.
-
-Goal:
-
-Identify when an easy run was unusually good after comparing it with similar runs from the same athlete.
-
-Future inputs may include:
-
-- Session classification
-- Athlete baseline
-- Percentile ranking
-- Pace
-- Heart rate
-- Distance
-- Duration
-- Elevation
-- Terrain
-- Heat
-- Humidity
-- Fatigue
-- Recent training load
-- Athlete history
-
-Principle:
-
-Build transparent deterministic calculations first.  
-AI should explain the result, not invent it.
-
----
-
-# Future Roadmap
-
-## Dashboard
-
-- Athlete summary
-- Total activities
-- Distance
-- Time
-- Weekly mileage
-- Monthly mileage
-- Training consistency
-- Coaching highlights
-- Best recent run
-- Best ever easy run
-
----
-
-## Activity Analysis
-
-- Activity explorer
-- Filters
-- Workout types
-- Route analysis
-- Activity detail view
-- Session classification
-
----
-
-## Performance Analysis
-
-- Heat adjustment
-- Trail adjustment
-- Wind adjustment
-- Altitude adjustment
-- Grade adjustment
-- Surface adjustment
-
----
-
-## Training Intelligence
-
-- Run Classification
-- Athlete Baselines
-- Percentile Rankings
-- Best Ever Easy Run
-- Benchmark Workouts
-- Durability
-- Fatigue
-- Freshness
-- Race Readiness
-- Coaching Insights
-- Training Trend Explanations
-
----
-
-## Coaching Engine
-
-- Run Classification
-- Athlete Baselines
-- Percentile Engine
-- Aerobic Efficiency
-- Running Economy
-- Heat Adjustment
-- Terrain Adjustment
-- Elevation Adjustment
-- Durability Score
-- Fatigue Score
-- Race Readiness
-- Passport Score
-
----
-
-## Equipment
-
-- Shoe management
-- Shoe mileage
-- Cost per mile
-- Shoe recommendations
-- Shoe performance comparison
-
----
-
-## Performance Passport
-
-- Endurance Score
-- Speed Score
-- Durability Score
-- Consistency Score
-- Efficiency Score
-- Race Readiness Score
-
-Combined into one overall Performance Passport Score.
-
----
-
-# Development Rules
+## Development Rules
 
 Every sprint must:
 
-- Start from a clean Git status.
+- Start from a clean Git status in Richard's real repository.
 - Use the agreed architecture.
-- Build one feature.
-- Finish one feature.
+- Build one feature to completion.
 - Keep changes small and testable.
-- Explain why each change is being made.
-- Test thoroughly.
+- Validate calculations against the real current database.
+- Preserve Richard and Jo as independent athletes.
+- Explain any measurement exclusions and confidence limits.
+- Update tests and documentation.
 - Commit only after successful testing.
-
-Architecture changes require a dedicated refactoring sprint.
-
-When in doubt, optimise for correctness, maintainability and coaching value rather than speed of implementation. Small, well-tested improvements are preferred over large speculative changes.

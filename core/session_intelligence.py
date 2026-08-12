@@ -14,6 +14,7 @@ from core.session import (
 from core.database import get_athlete_sport_roles
 from core.race_detection import score_race_evidence
 from core.splits import is_boundary_fragment, parse_splits, recognise_workout
+from core.workout_title_intent import parse_workout_title
 
 
 RACE_WORDS = (
@@ -23,8 +24,15 @@ RACE_WORDS = (
 
 WORKOUT_WORDS = (
     "threshold", "tempo", "interval", "intervals", "reps",
-    "fartlek", "hill reps", "track", "vo2", "cruise",
+    "repetition", "repetitions", "fartlek", "hill reps",
+    "track session", "vo2", "cruise", "strides",
+    "drills", "ladder", "workout", "session",
 )
+
+# Downstream features may use a confident shared classification as their source
+# of truth. Below this floor, they should retain conservative legacy/fallback
+# handling rather than turning an ambiguous historical split pattern into fact.
+RELIABLE_SESSION_CONFIDENCE = 0.70
 
 
 @dataclass(frozen=True)
@@ -223,9 +231,16 @@ def _score_continuous(
         elif ratio < 0.94:
             score -= 8.0
 
+    title_intent = parse_workout_title(title)
     if _contains_any(title, WORKOUT_WORDS):
         score -= 22.0
         reasons.append("Workout wording reduced continuous-run confidence.")
+
+    if title_intent is not None:
+        score -= 18.0
+        reasons.append(
+            "The title describes explicit repetition structure."
+        )
 
     return max(0.0, min(score, 100.0)), reasons
 
@@ -240,9 +255,18 @@ def _score_structured(
     score = 15.0
     reasons = []
 
-    if _contains_any(title, WORKOUT_WORDS):
+    title_intent = parse_workout_title(title)
+    has_workout_wording = _contains_any(title, WORKOUT_WORDS)
+
+    if has_workout_wording:
         score += 42.0
         reasons.append("Title contains explicit workout language.")
+
+    if title_intent is not None:
+        score += 20.0
+        reasons.append(
+            f"Title describes {title_intent.total_reps} planned repetition(s)."
+        )
 
     recovery_count = split_details.get("recovery_count", 0) or 0
     unknown_recovery_count = (
@@ -290,7 +314,7 @@ def _score_structured(
             f"Split decoder recognised {recognition.workout_type.lower()}."
         )
 
-    if continuous_pattern and not _contains_any(title, WORKOUT_WORDS):
+    if continuous_pattern and not has_workout_wording and title_intent is None:
         score -= 20.0
         reasons.append(
             "No clear interruption evidence reduced workout confidence."
@@ -449,14 +473,22 @@ def classify_session(facts: ActivityFacts) -> Session:
     elif winner == "structured_workout":
         routes.extend([CoachRoute.WORKOUT, CoachRoute.THRESHOLD])
         session_type = SessionType.STRUCTURED_WORKOUT
-        purpose = (
-            SessionPurpose.THRESHOLD
-            if _contains_any(
-                facts.title,
-                ("threshold", "tempo", "cruise"),
-            )
-            else SessionPurpose.UNKNOWN
-        )
+        if _contains_any(
+            facts.title,
+            ("threshold", "tempo", "cruise"),
+        ):
+            purpose = SessionPurpose.THRESHOLD
+        elif _contains_any(facts.title, ("fartlek",)):
+            purpose = SessionPurpose.FARTLEK
+        elif _contains_any(facts.title, ("hill rep", "hill session")):
+            purpose = SessionPurpose.HILLS
+        elif _contains_any(
+            facts.title,
+            ("vo2", "5k pace", "3k pace"),
+        ):
+            purpose = SessionPurpose.VO2
+        else:
+            purpose = SessionPurpose.UNKNOWN
     else:
         routes.append(CoachRoute.EASY)
         session_type = SessionType.CONTINUOUS_RUN

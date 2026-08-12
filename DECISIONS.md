@@ -348,6 +348,100 @@ Race and record performance should reflect the full time taken to complete the d
 
 Training quality analysis should focus on the active running portion of the session so that stops, pauses and non-running interruptions do not distort coaching insight.
 
+---
+
+# Decision 015
+
+**Date**
+12 August 2026
+
+## One Shared Split-Aware Session Classification
+
+### Status
+
+Accepted
+
+### Decision
+
+The explainable classifier in `core/session_intelligence.py` is the source of
+truth for activity type across Performance Recognition, Latest Run and Hall of
+Fame.
+
+Recorded workout structure outranks whole-activity averages and generic source
+titles. In particular:
+
+- work/recovery splits, manual-lap boundaries and stopped-watch recovery gaps
+  identify structured workouts;
+- downstream features only treat the shared result as authoritative from 70%
+  classification confidence; ambiguous older patterns retain conservative
+  fallback handling;
+- an average heart rate below LT1 cannot turn a structured workout into an easy
+  run;
+- explicit workout titles provide a fallback when detailed splits are absent;
+- titles and summary averages remain supporting evidence, not separate
+  downstream classifiers;
+- whole-run aerobic awards exclude structured workouts because stopped
+  recoveries can distort moving pace and average heart rate.
+
+### Reason
+
+Activity 3177 on 13 August 2025 contained a progressive warm-up, strides and a
+1–2–3–4–5–4–3–2–1 ladder at 5K pace. Its 35 recorded segments clearly showed a
+structured session, but Hall of Fame independently treated its generic
+Runalyze title and average heart rate as evidence of an easy run.
+
+A single evidence hierarchy prevents the same activity receiving contradictory
+labels in different parts of the product and creates one explainable place to
+improve classification as FIT, Garmin and Strava data become richer.
+
+---
+
+# Decision 016
+
+**Date**
+12 August 2026
+
+## Treadmill Pace Reliability
+
+### Status
+
+Accepted
+
+### Decision
+
+Treadmill sessions remain valid training activities, but their recorded
+distance and pace are not used for comparative performance intelligence.
+
+Explicitly identified treadmill, indoor-running and virtual-running activities
+are excluded from:
+
+- personal best and fastest-distance records;
+- Hall of Fame and Best Runs awards;
+- pace-efficiency calculations;
+- athlete-relative pace rankings and pace-derived trends;
+- environmental pace-response comparisons.
+
+They remain eligible to contribute trustworthy evidence including:
+
+- completed-session history;
+- moving duration and training frequency;
+- heart rate and time-based training load;
+- workout structure where splits or laps support it;
+- continuity, subject to the normal source-data rules.
+
+Session classification and measurement reliability are separate decisions. A
+treadmill activity may still be correctly classified as Easy, Recovery or a
+Structured Workout even though its distance and pace are excluded from
+comparison.
+
+### Reason
+
+Richard's treadmill pace is usually inaccurate. Activity 3428 on 11 January
+2026 was therefore appearing as Best Easy Run primarily because unreliable
+treadmill distance and pace produced an artificially strong efficiency score.
+Keeping the activity while excluding only the unreliable measurements protects
+training history without contaminating records or coaching intelligence.
+
 
 ## Decision 014 – Training Blocks as the Version 1.0 Organising Context
 
@@ -367,3 +461,87 @@ Mode features.
 This preserves the architecture freeze: the feature is implemented through
 `core/training_blocks.py`, the existing database module and a UI page. No new
 top-level architecture is introduced.
+
+---
+
+# Decision 017
+
+**Date**
+12 August 2026
+
+## Approved Home Becomes the Production Coach Entry Point
+
+### Status
+
+Accepted
+
+### Decision
+
+The v11 responsive Home composition is the approved production Home baseline
+for version 0.22.0.
+
+`app.py` routes the existing Coach navigation item to `ui/home.py`. The
+approved preview versions remain in the repository as visual rollback history
+while the production wrapper preserves their tested calculations and layout.
+
+The locked Home hierarchy is:
+
+1. Athlete identity and Active Goal.
+2. Athlete Passport and Performance Intelligence.
+3. Race Outlook aligned with the Passport baseline.
+4. This Week and Up Next.
+5. Best Runs.
+
+The current athlete selector is temporary. A future authenticated athlete view
+will infer identity from login, allow Active Goal to span the page and move
+athlete switching into Coach Mode navigation.
+
+The future detailed Race Outlook will support combined selectable conditions
+such as Hot, Hilly, Trail and Windy. Combined effects must use personal athlete
+responses rather than simply adding independent penalties.
+
+### Reason
+
+The Home now expresses Performance Passport's differentiator in the correct
+order: identity, goal, interpretation, race outlook, coaching action and
+historical evidence. It has been visually approved at desktop and compact
+widths and verified against Richard's and Jo's real data.
+
+---
+
+# Decision 018
+
+**Date**
+12 August 2026
+
+## Activity Review Separates Classification, Reliability and Recognition
+
+### Status
+
+Accepted
+
+### Decision
+
+Activity Review is the athlete-facing evidence layer for one session. It joins
+the existing shared engines without creating new competing calculations:
+
+- Session Intelligence decides what kind of activity it was and states its
+  confidence.
+- Activity Reliability decides whether recorded distance and pace are suitable
+  for comparison.
+- Split Intelligence reconstructs supported work, recovery and boundary
+  structure.
+- Performance Recognition ranks the activity only inside its athlete-relative
+  comparable category.
+
+The UI must expose conflicts and confidence thresholds. A moderate possible
+race classification, for example, does not silently override the conservative
+comparison category below the shared 70% confidence floor. Stopped-watch gaps
+may be identified, but their missing duration must not be invented.
+
+### Reason
+
+Classification and performance quality answer different questions. Keeping
+them separate prevents a structured session being called Easy because of its
+whole-run average, prevents treadmill pace entering outdoor rankings, and lets
+athletes see exactly which evidence supports each conclusion.
