@@ -187,8 +187,8 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.23.3 preserves the approved Home and adds the production Activity
-Review destination:
+Version 0.24.1 preserves the approved Home and connects its evidence cards to
+the production Activity Review destination:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
@@ -205,6 +205,14 @@ Review destination:
   classification, reliability, split and recognition engines.
 - `ui/activities.py` contains presentation and selection only; it does not
   recalculate classifications or rankings.
+- `ui/activity_navigation.py` owns the small, stable query-parameter contract
+  used by Home evidence links. It contains no coaching calculation.
+- `ui/sidebar.py` honours a validated Activity Review navigation request before
+  its existing radio widget is created.
+- `ui/activities.py` consumes the request once, selects the correct athlete and
+  activity, and then returns control to the normal selectors.
+- Production Home uses the shared canonical athlete ID as its selector widget
+  state, preventing a page-specific display value diverging from its content.
 - The production Home wrapper reuses the approved generated intelligence
   sections in an intermediate-only grid: Passport and Performance Intelligence
   share the first-row baseline, while Race Outlook spans the second row. The
@@ -213,9 +221,9 @@ Review destination:
 
 Next Sprint Direction
 
-Link Home Latest Run and Best Runs to Activity Review inside the existing
-`core/`, `ui/` and `tests/` architecture. Do not introduce Streamlit `pages/`,
-`utils/` or `services/`.
+Build the Progress foundation inside the existing `core/`, `ui/` and `tests/`
+architecture. Start with longitudinal fitness, efficiency and durability
+trends; do not introduce Streamlit `pages/`, `utils/` or `services/`.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

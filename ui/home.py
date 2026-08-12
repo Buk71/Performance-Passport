@@ -7,6 +7,7 @@ preview modules remain available as the visual rollback history.
 
 from __future__ import annotations
 
+import html
 import re
 
 import streamlit as st
@@ -17,11 +18,113 @@ from ui import home_preview as home_components
 from ui import home_preview_v8 as approved_v8
 from ui import home_preview_v10 as approved_v10
 from ui import home_preview_v11 as approved_v11
+from ui.activity_navigation import activity_review_url
+from ui import athlete_selection
+
+
+def _linked_card(
+    markup: str,
+    *,
+    css_class: str,
+    athlete_id: int,
+    activity_id: int | None,
+    label: str,
+) -> str:
+    """Turn one existing production card into an accessible same-app link."""
+    if activity_id is None:
+        return markup
+
+    pattern = re.compile(
+        rf'<article class="{re.escape(css_class)}">(.*?)</article>',
+        re.DOTALL,
+    )
+    url = html.escape(
+        activity_review_url(athlete_id, activity_id),
+        quote=True,
+    )
+    aria_label = html.escape(label, quote=True)
+    return pattern.sub(
+        lambda match: (
+            f'<a class="{css_class} production-activity-link" '
+            f'href="{url}" target="_self" aria-label="{aria_label}">'
+            f'{match.group(1)}</a>'
+        ),
+        markup,
+        count=1,
+    )
+
+
+def _activity_link_styles() -> str:
+    return """
+    <style>
+        .production-activity-link {
+            color:inherit;
+            text-decoration:none;
+            cursor:pointer;
+        }
+        .production-activity-link:focus-visible {
+            outline:3px solid rgba(240,90,40,.72);
+            outline-offset:2px;
+        }
+    </style>
+    """
+
+
+def _linked_text_action(
+    markup: str,
+    *,
+    css_class: str,
+    text: str,
+    athlete_id: int,
+    activity_id: int | None = None,
+    label: str,
+) -> str:
+    url = html.escape(
+        activity_review_url(athlete_id, activity_id),
+        quote=True,
+    )
+    aria_label = html.escape(label, quote=True)
+    original = f'<div class="{css_class}">{text}</div>'
+    replacement = (
+        f'<a class="{css_class} production-activity-link" '
+        f'href="{url}" target="_self" aria-label="{aria_label}">'
+        f'{text}</a>'
+    )
+    return markup.replace(original, replacement, 1)
 
 
 def build_production_goal_html(summary, *, mobile: bool = False) -> str:
     """Expose the approved goal treatment through the production module."""
     return approved_v11.build_v11_goal_html(summary, mobile=mobile)
+
+
+def render_production_athlete_selector() -> int | None:
+    """Render Home from the same canonical athlete ID used by its content."""
+    athletes = athlete_selection.get_athletes()
+    if not athletes:
+        return None
+
+    athlete_selection.initialise_selected_athlete(athletes)
+    rows_by_id = {int(row[0]): row for row in athletes}
+    athlete_ids = list(rows_by_id)
+    current_id = st.session_state.get(athlete_selection.SESSION_ID_KEY)
+    if current_id not in rows_by_id:
+        current_id = athlete_ids[0]
+        st.session_state[athlete_selection.SESSION_ID_KEY] = current_id
+
+    selected_id = st.selectbox(
+        "Athlete",
+        athlete_ids,
+        key=athlete_selection.SESSION_ID_KEY,
+        label_visibility="collapsed",
+        format_func=lambda athlete_id: approved_v10._athlete_display_name(
+            rows_by_id[athlete_id]
+        ),
+    )
+    st.session_state[athlete_selection.SESSION_NAME_KEY] = (
+        athlete_selection.athlete_name(rows_by_id[selected_id])
+    )
+    return int(selected_id)
 
 
 def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
@@ -52,16 +155,40 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
     if intelligence_section is None or outlook_section is None:
         # Safe fallback: the approved v11 output remains fully functional if
         # a future renderer changes its internal HTML contract.
-        return approved_v11.build_v11_hero_html(
+        fallback = approved_v11.build_v11_hero_html(
             athlete_id,
             summary,
             predictions,
             latest,
         )
+        return _activity_link_styles() + _linked_card(
+            fallback,
+            css_class="v8-panel v8-latest",
+            athlete_id=athlete_id,
+            activity_id=latest.activity_id,
+            label=f"Review {latest.title}",
+        )
+
+    linked_intelligence = _linked_card(
+        intelligence_section.group(0),
+        css_class="v8-panel v8-latest",
+        athlete_id=athlete_id,
+        activity_id=latest.activity_id,
+        label=f"Review {latest.title}",
+    )
+    linked_intelligence = _linked_text_action(
+        linked_intelligence,
+        css_class="v8-link",
+        text="View full analysis &nbsp;→",
+        athlete_id=athlete_id,
+        activity_id=latest.activity_id,
+        label=f"View the full Activity Review for {latest.title}",
+    )
 
     return f"""
     <div class="production-home-hero-container">
         {styles}
+        {_activity_link_styles()}
         <div class="production-home-hero v9-intelligence-shell v10-intelligence-shell">
             <div class="production-home-passport v8-passport">
                 {approved_v8.build_athlete_card_html(athlete_id)}
@@ -71,7 +198,7 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
                 {build_production_goal_html(summary, mobile=True)}
             </div>
             <div class="production-home-intelligence">
-                {intelligence_section.group(0)}
+                {linked_intelligence}
             </div>
             <div class="production-home-outlook">
                 {outlook_section.group(0)}
@@ -189,6 +316,38 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
     """
 
 
+def build_production_lower_html(home_summary, best_runs) -> str:
+    """Add Activity Review links without changing the approved lower layout."""
+    markup = approved_v10.build_v10_lower_html(home_summary, best_runs)
+    if not best_runs.available or best_runs.main is None:
+        return markup
+
+    markup = _linked_card(
+        markup,
+        css_class="br-main",
+        athlete_id=best_runs.athlete_id,
+        activity_id=best_runs.main.activity_id,
+        label=f"Review best run {best_runs.main.title}",
+    )
+    for run in best_runs.category_bests:
+        markup = _linked_card(
+            markup,
+            css_class="br-category-card",
+            athlete_id=best_runs.athlete_id,
+            activity_id=run.activity_id,
+            label=f"Review {run.short_category} run {run.title}",
+        )
+
+    markup = _linked_text_action(
+        markup,
+        css_class="br-link",
+        text="View all runs &nbsp;→",
+        athlete_id=best_runs.athlete_id,
+        label="Open Activity Review",
+    )
+    return _activity_link_styles() + markup
+
+
 def show_home_page() -> None:
     """Render the locked production Home using real athlete data."""
     st.markdown(
@@ -254,9 +413,7 @@ def show_home_page() -> None:
             '<span class="production-home-selector-marker"></span>',
             unsafe_allow_html=True,
         )
-        athlete_id = approved_v10.render_v10_athlete_selector(
-            key="production_home_athlete_selector",
-        )
+        athlete_id = render_production_athlete_selector()
 
     if athlete_id is None:
         st.warning("No athletes found. Add an athlete first.")
@@ -286,4 +443,4 @@ def show_home_page() -> None:
             latest,
         )
     )
-    st.html(approved_v10.build_v10_lower_html(summary, best_runs))
+    st.html(build_production_lower_html(summary, best_runs))

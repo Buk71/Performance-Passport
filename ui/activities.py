@@ -15,6 +15,11 @@ from core.activity_review import (
     list_review_activities,
 )
 from core.database import get_connection
+from ui.activity_navigation import (
+    clear_activity_review_params,
+    read_activity_review_request,
+)
+from ui import athlete_selection
 from ui.athlete_selection import render_athlete_selector
 
 
@@ -23,6 +28,34 @@ WINDOWS = {
     "Last 12 months": 365,
     "All time": None,
 }
+
+
+def _apply_home_activity_request() -> None:
+    """Preselect a linked Home activity once, then return control to the UI."""
+    request = read_activity_review_request(st.query_params)
+    if request is None:
+        return
+
+    athletes = athlete_selection.get_athletes()
+    row = next(
+        (item for item in athletes if int(item[0]) == request.athlete_id),
+        None,
+    )
+    if row is not None:
+        selected_name = athlete_selection.athlete_name(row)
+        st.session_state[athlete_selection.SESSION_ID_KEY] = request.athlete_id
+        st.session_state[athlete_selection.SESSION_NAME_KEY] = selected_name
+        st.session_state["activity_review_athlete"] = selected_name
+        # v0.24.0 briefly used a second Home widget state. Remove any stale
+        # value so production Home has one canonical athlete source again.
+        st.session_state.pop("production_home_athlete_selector", None)
+
+        if request.activity_id is not None:
+            # Best Runs may be older than the current activity-history window.
+            st.session_state["activity_review_window"] = "All time"
+            st.session_state["activity_review_activity_id"] = request.activity_id
+
+    clear_activity_review_params(st.query_params)
 
 
 def _safe(value) -> str:
@@ -491,6 +524,7 @@ def _inject_activity_styles() -> None:
 
 
 def show_activities_page() -> None:
+    _apply_home_activity_request()
     _inject_activity_styles()
 
     _html(

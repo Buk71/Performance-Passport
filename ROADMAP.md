@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.23.3 — Activity Review Foundation**
+Current release: **v0.24.1 — Home Evidence Links**
 
 Architecture status: **Frozen**
 
@@ -16,6 +16,9 @@ Approved production baseline:
 - Production Activity Review using the shared intelligence engines
 - Home and Activities production navigation labels
 - Intermediate-width Home composition for an expanded sidebar
+- Latest Run and Best Runs deep-link to their exact supporting Activity Review
+- Athlete and historical activity selection survive Home evidence navigation
+- Home's displayed selector and coaching content share one canonical athlete ID
 
 ---
 
@@ -99,15 +102,34 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ---
 
+## Completed Sprint — Home Evidence Links
+
+### Product question
+
+**What evidence supports this Home conclusion?**
+
+### Delivered
+
+- Latest Run card and its visible analysis action open the exact activity.
+- Featured and category Best Runs open their exact supporting activities.
+- View All Runs opens Activity Review for the selected athlete.
+- Linked historical activities automatically use the all-time selector window.
+- Athlete and activity identity are carried through stable same-app URLs.
+- Activity Review validates the linked activity against the athlete's own
+  canonical history before rendering it.
+- Richard and Jo deep links are covered by real-data and Streamlit handoff
+  tests.
+- Approved Home structure and rollback previews remain unchanged.
+
+---
+
 ## Following Priorities
 
-1. Link Home Latest Run and Best Runs into Activity Review and complete visual
-   approval at desktop and compact widths.
-2. Progress: longitudinal fitness, efficiency and durability trends.
-3. Passport detail: learned traits, evidence confidence and achievements.
-4. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
-5. Login-led athlete identity and Coach Mode athlete switching.
-6. Direct Strava/Garmin integration through the canonical activity model.
+1. Progress: longitudinal fitness, efficiency and durability trends.
+2. Passport detail: learned traits, evidence confidence and achievements.
+3. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
+4. Login-led athlete identity and Coach Mode athlete switching.
+5. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

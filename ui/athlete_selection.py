@@ -40,18 +40,26 @@ def initialise_selected_athlete(athletes):
         return None
 
     names = [athlete_name(row) for row in athletes]
+    names_by_id = {
+        int(row[0]): athlete_name(row)
+        for row in athletes
+    }
     ids_by_name = {
-        athlete_name(row): row[0]
+        athlete_name(row): int(row[0])
         for row in athletes
     }
 
     selected_name = st.session_state.get(SESSION_NAME_KEY)
     selected_id = st.session_state.get(SESSION_ID_KEY)
 
-    if (
-        selected_name not in ids_by_name
-        or ids_by_name.get(selected_name) != selected_id
-    ):
+    # The numeric ID is canonical. A page transition may legitimately update
+    # it before a page-specific selector is mounted, so derive the display
+    # name from a valid ID instead of resetting both values to the first row.
+    if selected_id in names_by_id:
+        selected_name = names_by_id[selected_id]
+    elif selected_name in ids_by_name:
+        selected_id = ids_by_name[selected_name]
+    else:
         selected_name = names[0]
         selected_id = ids_by_name[selected_name]
 

@@ -52,5 +52,13 @@ visually distinct treatments. Uncertain results use explicit confidence text;
 excluded pace never appears as a valid performance number. The 10px type floor
 from Home applies here too.
 
+## Evidence links — v0.24
+
+Home evidence cards remain visually identical when they become links. The
+visible “View full analysis” and “View all runs” actions provide the primary
+affordance, while the complete Latest Run and Best Run cards are also clickable
+and keyboard accessible. Linked cards use the performance-orange focus ring;
+no information or navigation may depend on hover alone.
+
 ## Merchandise
 The Pathmark, contour motif and achievement system must work on premium performance apparel as well as digital UI. Earned kit should feel like sportswear, not promotional merchandise.

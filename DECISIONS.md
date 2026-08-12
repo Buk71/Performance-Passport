@@ -545,3 +545,38 @@ Classification and performance quality answer different questions. Keeping
 them separate prevents a structured session being called Easy because of its
 whole-run average, prevents treadmill pace entering outdoor rankings, and lets
 athletes see exactly which evidence supports each conclusion.
+
+---
+
+# Decision 019
+
+**Date**
+12 August 2026
+
+## Home Evidence Links Use Stable Activity Review URLs
+
+### Status
+
+Accepted
+
+### Decision
+
+Home evidence cards link to Activity Review through a small same-app URL
+contract carrying the destination, athlete ID and optional activity ID.
+
+The URL selects navigation state only. Activity Review remains responsible for
+validating that the requested activity belongs to the requested athlete before
+it is displayed. Linked historical Best Runs switch the selector to All Time,
+and the navigation parameters are consumed once so normal manual selection can
+resume immediately.
+
+The production wrapper adds links around the approved Home markup. Locked
+preview modules and all coaching calculations remain unchanged.
+
+### Reason
+
+Home conclusions should be directly auditable without duplicating Activity
+Review or introducing a second routing architecture. Stable URLs also preserve
+browser behaviour, provide accessible links and create a future-compatible
+entry point for shared activities while keeping athlete isolation inside the
+canonical review layer.

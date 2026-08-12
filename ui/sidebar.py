@@ -1,6 +1,7 @@
 import streamlit as st
 
 from config import APP_NAME, VERSION, VERSION_NAME
+from ui.activity_navigation import read_activity_review_request
 
 
 PRIMARY_NAVIGATION = [
@@ -58,6 +59,9 @@ def show_sidebar():
         "pp_navigation_request",
         None,
     )
+
+    if read_activity_review_request(st.query_params) is not None:
+        requested_page = "Activities"
 
     if requested_page == "Coach":
         requested_page = "Home"

@@ -12,6 +12,7 @@ def test_richard_latest_run_uses_real_recognition():
     result = _latest(1)
 
     assert result.available is True
+    assert result.activity_id == 9366
     assert result.activity_date == "2026-08-09"
     assert result.title == "SLR 12 miles"
     assert result.category == "Long Easy"
@@ -28,6 +29,7 @@ def test_jo_latest_run_is_independent():
     jo = _latest(3)
 
     assert jo.available is True
+    assert jo.activity_id == 5577
     assert jo.activity_date == "2026-08-09"
     assert jo.title == "Easy"
     assert jo.category == "Easy"

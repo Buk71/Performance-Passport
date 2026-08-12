@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.23.3 — Activity Review Foundation**
+**v0.24.1 — Home Evidence Links**
 
 The production app now brings together:
 
@@ -37,17 +37,21 @@ The production app now brings together:
 - Classification scores, continuity, splits and comparable-session ranking
 - A Home navigation label that matches the production Home route
 - Sidebar-aware Home composition without an over-stretched Passport
+- Direct Latest Run and Best Runs links into the exact supporting Activity
+  Review
+- Athlete and activity selection preserved across Home evidence links
+- Home selector and athlete content locked to one canonical athlete ID
 
 ---
 
 ## Next Sprint
 
-**Home-to-Activity Review integration** will make Latest Run and Best Runs
-open the exact supporting activity evidence.
+**Progress Foundation** will introduce longitudinal fitness, efficiency and
+durability trends grounded in each athlete's comparable real sessions.
 
-Activity Review already answers:
+The next coaching question is:
 
-> How good was this run, really—and why?
+> Am I improving—and which parts of my running are changing?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

@@ -22,6 +22,7 @@ from core.performance_recognition import (
 @dataclass(frozen=True)
 class HomeLatestRun:
     athlete_id: int
+    activity_id: int | None
     available: bool
     activity_date: str | None
     title: str
@@ -57,13 +58,14 @@ BENEFITS = {
 }
 
 
-def _load_runs(athlete_id: int) -> list[RunProfile]:
+def _load_activity_runs(athlete_id: int) -> list[tuple[int, RunProfile]]:
     thresholds = get_effective_athlete_thresholds(athlete_id)
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute(
         """
         SELECT
+            id,
             activity_date,
             title,
             distance_m,
@@ -83,10 +85,10 @@ def _load_runs(athlete_id: int) -> list[RunProfile]:
     rows = cursor.fetchall()
     connection.close()
 
-    runs = []
+    runs: list[tuple[int, RunProfile]] = []
     for row in rows:
         try:
-            distance_value = float(row[2] or 0.0)
+            distance_value = float(row[3] or 0.0)
         except (TypeError, ValueError):
             distance_value = 0.0
         distance_km = (
@@ -95,40 +97,49 @@ def _load_runs(athlete_id: int) -> list[RunProfile]:
             else distance_value
         )
         runs.append(
-            RunProfile(
-                athlete_id=athlete_id,
-                activity_date=row[0],
-                title=row[1],
-                distance_km=distance_km,
-                moving_time_seconds=row[3],
-                avg_hr=row[4],
-                run_max_hr=row[5],
-                sport_id=row[6],
-                elevation_m=row[7],
-                temperature_c=row[8],
-                humidity=row[9],
-                lt1_hr=thresholds.get("lt1_hr"),
-                lt2_hr=thresholds.get("lt2_hr"),
-                athlete_max_hr=thresholds.get("athlete_max_hr"),
+            (
+                int(row[0]),
+                RunProfile(
+                    athlete_id=athlete_id,
+                    activity_date=row[1],
+                    title=row[2],
+                    distance_km=distance_km,
+                    moving_time_seconds=row[4],
+                    avg_hr=row[5],
+                    run_max_hr=row[6],
+                    sport_id=row[7],
+                    elevation_m=row[8],
+                    temperature_c=row[9],
+                    humidity=row[10],
+                    lt1_hr=thresholds.get("lt1_hr"),
+                    lt2_hr=thresholds.get("lt2_hr"),
+                    athlete_max_hr=thresholds.get("athlete_max_hr"),
+                ),
             )
         )
     return runs
 
 
+def _load_runs(athlete_id: int) -> list[RunProfile]:
+    """Preserve the original profile-only contract for shared consumers."""
+    return [run for _activity_id, run in _load_activity_runs(athlete_id)]
+
+
 def _latest_recognised(
-    runs: list[RunProfile],
+    runs: list[tuple[int, RunProfile]],
     index: dict[str, Recognition],
-) -> tuple[RunProfile | None, Recognition | None]:
-    for run in runs:
+) -> tuple[int | None, RunProfile | None, Recognition | None]:
+    for activity_id, run in runs:
         recognition = index.get(recognition_key(run))
         if recognition is not None:
-            return run, recognition
-    return None, None
+            return activity_id, run, recognition
+    return None, None, None
 
 
 def _empty(athlete_id: int) -> HomeLatestRun:
     return HomeLatestRun(
         athlete_id=athlete_id,
+        activity_id=None,
         available=False,
         activity_date=None,
         title="Latest run is still building",
@@ -153,16 +164,19 @@ def _empty(athlete_id: int) -> HomeLatestRun:
 
 
 def build_home_latest_run(athlete_id: int) -> HomeLatestRun:
-    runs = _load_runs(athlete_id)
-    if not runs:
+    activity_runs = _load_activity_runs(athlete_id)
+    if not activity_runs:
         return _empty(athlete_id)
 
     recognition_index = build_recognition_index(
-        runs,
+        (run for _activity_id, run in activity_runs),
         athlete_id=athlete_id,
     )
-    run, recognition = _latest_recognised(runs, recognition_index)
-    if run is None or recognition is None:
+    activity_id, run, recognition = _latest_recognised(
+        activity_runs,
+        recognition_index,
+    )
+    if activity_id is None or run is None or recognition is None:
         return _empty(athlete_id)
 
     benefit = BENEFITS.get(
@@ -172,6 +186,7 @@ def build_home_latest_run(athlete_id: int) -> HomeLatestRun:
 
     return HomeLatestRun(
         athlete_id=athlete_id,
+        activity_id=activity_id,
         available=True,
         activity_date=run.activity_date,
         title=str(run.title or recognition.category_label),
