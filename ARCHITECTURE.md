@@ -187,8 +187,8 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.24.1 preserves the approved Home and connects its evidence cards to
-the production Activity Review destination:
+Version 0.25.1 preserves the approved Home and Activity Review and adds the
+production Progress evidence layer:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
@@ -218,12 +218,34 @@ the production Activity Review destination:
   share the first-row baseline, while Race Outlook spans the second row. The
   approved full-width and compact v11 layouts remain intact, and no calculation
   is duplicated.
+- `core/progress.py` owns longitudinal evidence selection, comparison windows,
+  confidence and verdicts. It consumes the shared reliability, environment,
+  recognition and race-anchor engines rather than duplicating them.
+- `core/performance_recognition.py` exposes its conservative environment pace
+  normalisation as an auditable result. Existing recognition ranks continue to
+  use the unchanged generic wrapper; Progress may provide a sufficiently
+  supported personal environment profile.
+- `ui/progress.py` owns Progress presentation and responsive charts only. It
+  receives a complete `ProgressSummary` and does not calculate coaching
+  conclusions.
+- Progress monthly and stacked weekly charts use ordinary HTML/CSS inside the
+  Streamlit HTML component for consistent Safari rendering. Weekly purpose
+  mileage comes from the existing shared recognition categories.
+- Race evidence always exposes factual elapsed results. Environmental context
+  may support interpretation but never mutates a PB or source result.
+- Threshold comparisons use supported work-phase pace. Durability comparisons
+  use decoupling only from continuous Long Easy evidence.
+- Threshold stores observed phase pace separately from its conditions-normalised
+  comparison value. The UI may show a deliberately broad 12°C flat-road
+  equivalent range, but must not relabel that estimate as confirmed threshold.
+- `ui/athlete_selection.py` exposes the canonical numeric selector used by both
+  Home and Progress, preventing page-specific athlete state from diverging.
 
 Next Sprint Direction
 
-Build the Progress foundation inside the existing `core/`, `ui/` and `tests/`
-architecture. Start with longitudinal fitness, efficiency and durability
-trends; do not introduce Streamlit `pages/`, `utils/` or `services/`.
+Build Passport Detail inside the existing `core/`, `ui/` and `tests/`
+architecture. Reuse learned traits and their evidence confidence; do not
+introduce Streamlit `pages/`, `utils/` or `services/`.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

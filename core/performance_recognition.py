@@ -54,6 +54,7 @@ from core.coaching import (
     get_athlete_sport_roles,
 )
 from core.database import get_connection, get_effective_athlete_thresholds
+from core.environment_profile import PersonalEnvironmentProfile
 from core.session import SessionPurpose, SessionType
 from core.session_intelligence import (
     ActivityFacts,
@@ -117,6 +118,21 @@ class RecognitionAchievement:
     detail: str
     strength: float
     icon: str
+
+
+@dataclass(frozen=True)
+class EnvironmentAdjustedPace:
+    """Auditable historical pace normalisation shared by product consumers."""
+
+    actual_pace_s_per_km: float
+    adjusted_pace_s_per_km: float
+    total_penalty_s_per_km: float
+    heat_humidity_penalty_s_per_km: float
+    elevation_penalty_s_per_km: float
+    wind_penalty_s_per_km: float
+    surface_penalty_s_per_km: float
+    factors: tuple[str, ...]
+    personalised_factors: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -490,11 +506,18 @@ def _wind_penalty(
     return penalty, f"{wind_speed:.0f} km/h wind"
 
 
-def _environment_adjusted_pace(
+def environment_adjusted_pace(
     run: RunProfile,
     *,
     wind_speed: float | None,
-) -> tuple[float, float, tuple[str, ...]]:
+    personal_profile: PersonalEnvironmentProfile | None = None,
+) -> EnvironmentAdjustedPace:
+    """Return conservative, optionally personalised equivalent pace.
+
+    Recognition calls this with the generic model to preserve its established
+    rankings. Progress may supply a high-confidence personal environment
+    profile so trends compare like with like for the individual athlete.
+    """
     actual = (
         float(run.moving_time_seconds)
         / float(run.distance_km)
@@ -535,6 +558,18 @@ def _environment_adjusted_pace(
     elevation_penalty, elevation_note = _elevation_penalty(run)
     wind_penalty, wind_note = _wind_penalty(wind_speed)
     surface_penalty, surface_note = _trail_surface_penalty(run)
+    personalised = []
+
+    if personal_profile is not None:
+        if personal_profile.heat_confidence >= 0.50 and existing_penalty > 0:
+            existing_penalty *= personal_profile.heat_multiplier
+            personalised.append("heat")
+        if personal_profile.hill_confidence >= 0.50 and elevation_penalty > 0:
+            elevation_penalty *= personal_profile.hill_multiplier
+            personalised.append("hills")
+        if personal_profile.trail_confidence >= 0.50 and surface_penalty > 0:
+            surface_penalty *= personal_profile.trail_multiplier
+            personalised.append("trail")
 
     for note in (
         elevation_note,
@@ -562,7 +597,30 @@ def _environment_adjusted_pace(
         150.0,
     )
 
-    return adjusted, total_penalty, tuple(factors)
+    return EnvironmentAdjustedPace(
+        actual_pace_s_per_km=round(actual, 3),
+        adjusted_pace_s_per_km=round(adjusted, 3),
+        total_penalty_s_per_km=round(total_penalty, 3),
+        heat_humidity_penalty_s_per_km=round(existing_penalty, 3),
+        elevation_penalty_s_per_km=round(elevation_penalty, 3),
+        wind_penalty_s_per_km=round(wind_penalty, 3),
+        surface_penalty_s_per_km=round(surface_penalty, 3),
+        factors=tuple(factors),
+        personalised_factors=tuple(personalised),
+    )
+
+
+def _environment_adjusted_pace(
+    run: RunProfile,
+    *,
+    wind_speed: float | None,
+) -> tuple[float, float, tuple[str, ...]]:
+    result = environment_adjusted_pace(run, wind_speed=wind_speed)
+    return (
+        result.adjusted_pace_s_per_km,
+        result.total_penalty_s_per_km,
+        result.factors,
+    )
 
 
 def _aerobic_control(run: RunProfile) -> float:

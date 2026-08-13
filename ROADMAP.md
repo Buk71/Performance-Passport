@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.24.1 — Home Evidence Links**
+Current release: **v0.25.1 — Progress Foundation**
 
 Architecture status: **Frozen**
 
@@ -19,6 +19,19 @@ Approved production baseline:
 - Latest Run and Best Runs deep-link to their exact supporting Activity Review
 - Athlete and historical activity selection survive Home evidence navigation
 - Home's displayed selector and coaching content share one canonical athlete ID
+- Progress separates aerobic fitness, training rhythm, race results, threshold
+  and durability into honest evidence streams
+- Supported heat, humidity/dew point, climbing, wind and trail effects are
+  normalised before aerobic and threshold comparisons
+- Home and Progress share the same canonical numeric athlete selector
+- Aerobic efficiency uses a browser-safe monthly chart; training rhythm keeps
+  total reliable mileage while showing its Easy, Long Run, Session and Other
+  composition
+- Threshold evidence leads with observed work-phase pace in min/mile and keeps
+  the estimated 12°C flat-road equivalent as a separate limited-confidence
+  range
+- Race cards label both six-month comparison windows and use unambiguous
+  improvement/slower wording rather than implying future capability
 
 ---
 
@@ -123,13 +136,39 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ---
 
+## Completed Sprint — Progress Foundation
+
+### Coaching question
+
+**Am I improving—and which parts of my running are changing?**
+
+### Delivered
+
+- A production Progress destination driven by each athlete's real history.
+- Conditions-normalised aerobic efficiency over twelve months.
+- Generic heat/humidity, climbing, wind and trail allowances scaled by a
+  personal response only where the athlete-specific confidence is sufficient.
+- Strong, moderate and limited confidence based on comparable sample support.
+- Twelve-week training rhythm using active days, moving time and reliable
+  distance without pretending consistency itself is fitness.
+- Factual 5K, 10K and Half Marathon progress using trusted elapsed results;
+  official results and PBs are never environmentally rewritten.
+- Threshold evidence based on trusted work phases rather than whole-run pace.
+- Durability evidence based on pace decoupling from continuous Long Easy runs,
+  with interrupted runs excluded.
+- Treadmill time remains useful for rhythm while unreliable treadmill pace and
+  distance remain excluded from performance trends.
+- Richard and Jo regression coverage plus a Streamlit production-route smoke
+  test and canonical athlete-state validation.
+
+---
+
 ## Following Priorities
 
-1. Progress: longitudinal fitness, efficiency and durability trends.
-2. Passport detail: learned traits, evidence confidence and achievements.
-3. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
-4. Login-led athlete identity and Coach Mode athlete switching.
-5. Direct Strava/Garmin integration through the canonical activity model.
+1. Passport detail: learned traits, evidence confidence and achievements.
+2. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
+3. Login-led athlete identity and Coach Mode athlete switching.
+4. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

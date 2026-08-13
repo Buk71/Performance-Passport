@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.24.1 — Home Evidence Links**
+**v0.25.1 — Progress Foundation**
 
 The production app now brings together:
 
@@ -41,17 +41,29 @@ The production app now brings together:
   Review
 - Athlete and activity selection preserved across Home evidence links
 - Home selector and athlete content locked to one canonical athlete ID
+- A production Progress view answering whether the athlete is improving
+- Conditions-normalised aerobic efficiency with explicit sample confidence
+- Twelve-week training rhythm using days, time and reliable distance
+- Factual race progression that never rewrites official elapsed results
+- Work-phase threshold evidence and interruption-aware durability evidence
+- Shared canonical athlete selection across Home and Progress
+- Safari-safe monthly aerobic efficiency chart
+- Weekly training rhythm split into Easy, Long Run, Sessions and honest Other
+- Threshold pace shown in min/mile as observed work pace, with a separate
+  cautious 12°C flat-road equivalent range
+- Race progression explicitly compares the recent six-month best with the
+  previous six-month best, while keeping the all-time result separate
 
 ---
 
 ## Next Sprint
 
-**Progress Foundation** will introduce longitudinal fitness, efficiency and
-durability trends grounded in each athlete's comparable real sessions.
+**Passport Detail** will bring the app's learned athlete traits, confidence and
+supporting achievements together in one auditable identity view.
 
 The next coaching question is:
 
-> Am I improving—and which parts of my running are changing?
+> What has the app learned about me—and how strong is the evidence?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

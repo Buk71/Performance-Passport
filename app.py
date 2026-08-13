@@ -6,6 +6,7 @@ from theme import inject_global_theme, render_page_placeholder
 from ui.athletes import show_athletes_page
 from ui.activities import show_activities_page
 from ui.home import show_home_page
+from ui.progress import show_progress_page
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.hall_of_fame import show_hall_of_fame_page
@@ -47,15 +48,7 @@ elif page == "Activities":
     show_activities_page()
 
 elif page == "Progress":
-    render_page_placeholder(
-        title="Progress",
-        question="Am I improving?",
-        description=(
-            "This screen will track aerobic fitness, threshold, running "
-            "economy, consistency, durability and recovery—with direction, "
-            "context and confidence."
-        ),
-    )
+    show_progress_page()
 
 elif page == "Goals":
     show_goals_page()

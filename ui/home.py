@@ -100,31 +100,10 @@ def build_production_goal_html(summary, *, mobile: bool = False) -> str:
 
 def render_production_athlete_selector() -> int | None:
     """Render Home from the same canonical athlete ID used by its content."""
-    athletes = athlete_selection.get_athletes()
-    if not athletes:
-        return None
-
-    athlete_selection.initialise_selected_athlete(athletes)
-    rows_by_id = {int(row[0]): row for row in athletes}
-    athlete_ids = list(rows_by_id)
-    current_id = st.session_state.get(athlete_selection.SESSION_ID_KEY)
-    if current_id not in rows_by_id:
-        current_id = athlete_ids[0]
-        st.session_state[athlete_selection.SESSION_ID_KEY] = current_id
-
-    selected_id = st.selectbox(
-        "Athlete",
-        athlete_ids,
-        key=athlete_selection.SESSION_ID_KEY,
+    return athlete_selection.render_athlete_id_selector(
+        label="Athlete",
         label_visibility="collapsed",
-        format_func=lambda athlete_id: approved_v10._athlete_display_name(
-            rows_by_id[athlete_id]
-        ),
     )
-    st.session_state[athlete_selection.SESSION_NAME_KEY] = (
-        athlete_selection.athlete_name(rows_by_id[selected_id])
-    )
-    return int(selected_id)
 
 
 def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:

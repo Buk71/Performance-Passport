@@ -60,5 +60,36 @@ affordance, while the complete Latest Run and Best Run cards are also clickable
 and keyboard accessible. Linked cards use the performance-orange focus ring;
 no information or navigation may depend on hover alone.
 
+## Progress — v0.25
+
+Progress answers one question first: **Am I improving?** The hierarchy is:
+
+1. Overall verdict and confidence.
+2. Aerobic fitness, training rhythm, threshold and durability status cards.
+3. Twelve-month aerobic and twelve-week rhythm charts.
+4. Factual race progression.
+5. Threshold and durability evidence rules.
+
+Progress green is reserved for supported positive direction and confidence,
+not decorative emphasis. Limited evidence remains visible rather than being
+hidden or converted into a score. Race times use factual elapsed results; the
+conditions-normalised treatment is visually and verbally confined to aerobic
+and threshold comparisons. Charts have text summaries and tooltips, use a 10px
+type floor and collapse to single-column evidence at compact widths.
+
+Weekly rhythm preserves total reliable mileage as bar height. Stacked colour
+shows Easy (green), Long Run (ink), Sessions (orange) and any genuinely Other
+distance (neutral). Monthly aerobic efficiency uses browser-safe CSS bars so
+the evidence remains visible in Safari as well as Chromium-based browsers.
+
+Athlete-facing pace in Progress is displayed in min/mile. Threshold cards lead
+with observed trusted work-phase pace. Any 12°C flat-road equivalent appears
+as a separate range with explicit confidence language; it is never styled as a
+measured or confirmed threshold.
+
+Race Progression must label its comparison windows directly: Recent 6-month
+best, Previous 6-month best and All-time best. Direction language describes
+historical change (for example, “18s improvement”), never predicted headroom.
+
 ## Merchandise
 The Pathmark, contour motif and achievement system must work on premium performance apparel as well as digital UI. Earned kit should feel like sportswear, not promotional merchandise.

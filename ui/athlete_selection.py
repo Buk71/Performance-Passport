@@ -108,3 +108,32 @@ def render_athlete_selector(
     st.session_state[SESSION_ID_KEY] = selected_id
 
     return selected_id
+
+
+def render_athlete_id_selector(
+    *,
+    label: str = "Athlete",
+    label_visibility: str = "visible",
+):
+    """Render the canonical numeric athlete selector used across pages."""
+    athletes = get_athletes()
+    if not athletes:
+        return None
+
+    initialise_selected_athlete(athletes)
+    rows_by_id = {int(row[0]): row for row in athletes}
+    athlete_ids = list(rows_by_id)
+    current_id = st.session_state.get(SESSION_ID_KEY)
+    if current_id not in rows_by_id:
+        current_id = athlete_ids[0]
+        st.session_state[SESSION_ID_KEY] = current_id
+
+    selected_id = st.selectbox(
+        label,
+        athlete_ids,
+        key=SESSION_ID_KEY,
+        label_visibility=label_visibility,
+        format_func=lambda athlete_id: athlete_name(rows_by_id[athlete_id]),
+    )
+    st.session_state[SESSION_NAME_KEY] = athlete_name(rows_by_id[selected_id])
+    return int(selected_id)

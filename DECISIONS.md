@@ -580,3 +580,57 @@ Review or introducing a second routing architecture. Stable URLs also preserve
 browser behaviour, provide accessible links and create a future-compatible
 entry point for shared activities while keeping athlete isolation inside the
 canonical review layer.
+
+---
+
+# Decision 020
+
+**Date**
+12 August 2026
+
+## Progress Separates Fitness Signals and Normalises Comparable Pace
+
+### Status
+
+Accepted
+
+### Decision
+
+Progress will not collapse different longitudinal questions into a single
+opaque score.
+
+- Aerobic fitness compares pace relative to heart rate after conservative
+  normalisation for supported heat, humidity/dew point, climbing, wind and
+  trail effects. High-confidence personal response may scale the corresponding
+  generic allowance.
+- Training rhythm reports running days, moving time and reliable distance. It
+  is consistency context, not a claim of improved fitness.
+- Race progression uses trusted factual elapsed results. Conditions may be
+  shown as context but never rewrite an official result or PB.
+- Race direction compares the best trusted result in the recent 180 days with
+  the best result from days 181–365. Both windows must be labelled; the change
+  is historical progress and must not read like predicted future improvement.
+- Threshold progression uses trusted work-phase pace, not whole-run pace that
+  mixes warm-up and recovery.
+- The threshold headline is the observed work-phase pace in the athlete-facing
+  unit. Conditions-normalised pace remains useful for like-for-like trend
+  calculation, while a displayed 12°C flat-road equivalent is a cautious range
+  and not a confirmed physiological threshold.
+- Durability uses within-run pace decoupling from continuous Long Easy runs and
+  excludes materially interrupted sessions.
+- Missing or incomparable data reduces confidence. It is never silently filled
+  or converted into certainty.
+- Treadmill moving time may support rhythm; unreliable treadmill distance and
+  pace remain excluded from comparative performance evidence.
+
+The calculation layer lives in `core/progress.py`; `ui/progress.py` presents
+its typed summary. Both Progress and Home use the canonical numeric athlete
+selector.
+
+### Reason
+
+An athlete can become more consistent without becoming fitter, set a faster
+race result while threshold evidence is sparse, or improve durability while
+volume falls. Keeping those signals separate makes Progress useful, auditable
+and honest while still allowing a concise headline when the strongest evidence
+supports one.
