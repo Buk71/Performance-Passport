@@ -187,8 +187,8 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.25.1 preserves the approved Home and Activity Review and adds the
-production Progress evidence layer:
+Version 0.26.1 preserves the approved Home, Activity Review and Progress and
+adds the production Passport Detail evidence layer:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
@@ -240,12 +240,25 @@ production Progress evidence layer:
   equivalent range, but must not relabel that estimate as confirmed threshold.
 - `ui/athlete_selection.py` exposes the canonical numeric selector used by both
   Home and Progress, preventing page-specific athlete state from diverging.
+- `core/passport_detail.py` composes athlete identity, Progress anchors,
+  effective thresholds, Training Blueprint, personal environment profile and
+  observational Learning Engine output. It does not create a parallel zone or
+  prediction model.
+- `ui/passport.py` owns Passport presentation and receives one typed
+  `PassportDetail`. Pace is displayed in min/mile; factual results are never
+  conditions-normalised.
+- Passport labels configured LT1/LT2 boundaries with their source. Historical
+  pace/HR ranges are training patterns rather than laboratory zones or
+  mandatory prescriptions.
+- `core/home_predictions.py` exposes its existing run-profile loader and
+  environment story adapter so Passport can reuse those calculations without
+  invoking the slower active-goal prediction pipeline.
 
 Next Sprint Direction
 
-Build Passport Detail inside the existing `core/`, `ui/` and `tests/`
-architecture. Reuse learned traits and their evidence confidence; do not
-introduce Streamlit `pages/`, `utils/` or `services/`.
+Build the interactive Race Outlook inside the existing `core/`, `ui/` and
+`tests/` architecture. Reuse capability and environment forecast engines; do
+not introduce Streamlit `pages/`, `utils/` or `services/`.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

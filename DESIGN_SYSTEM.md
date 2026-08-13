@@ -91,5 +91,25 @@ Race Progression must label its comparison windows directly: Recent 6-month
 best, Previous 6-month best and All-time best. Direction language describes
 historical change (for example, “18s improvement”), never predicted headroom.
 
+## Passport Detail — v0.26.1
+
+Passport answers one question first: **What has the app learned about me?**
+The hierarchy is:
+
+1. Athlete identity, age grade and overall evidence confidence.
+2. Current LT1, LT2, threshold, aerobic-direction and durability anchors.
+3. Historical training profile by runner-friendly purpose.
+4. Personal environmental responses and distinctive trait.
+5. Observational workout-response learning.
+6. Factual achievement ledger and expandable evidence rules.
+
+Training profiles must label pace in min/mile and place heart rate and typical
+distance beside pace, not merge them into an opaque zone score. Development
+work may show repetition structure and total quality distance. Strong, moderate and limited
+evidence remain visible. Current anchors use compact equal-weight cards; the
+training profile uses an aligned table on desktop and readable stacked rows at
+compact widths. Orange identifies development work and audit focus; green is
+reserved for supported confidence and positive direction.
+
 ## Merchandise
 The Pathmark, contour motif and achievement system must work on premium performance apparel as well as digital UI. Earned kit should feel like sportswear, not promotional merchandise.

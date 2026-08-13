@@ -634,3 +634,52 @@ race result while threshold evidence is sparse, or improve durability while
 volume falls. Keeping those signals separate makes Progress useful, auditable
 and honest while still allowing a concise headline when the strongest evidence
 supports one.
+
+---
+
+# Decision 021
+
+**Date**
+13 August 2026
+
+## Passport Is an Evidence Identity, Not a Second Zone Model
+
+### Status
+
+Accepted
+
+### Decision
+
+Passport answers what the app currently knows about the athlete. It composes
+existing evidence rather than recalculating Progress or inventing physiological
+zones.
+
+- LT1 and LT2 remain configured boundaries and always show their source.
+- Recovery, Easy and Long Easy pace/HR bands describe the athlete's strongest
+  conditions-adjusted historical patterns; they are not mandatory limits.
+- Training profile rows show typical distance beside pace and heart rate.
+  Development rows use repetition distance/count and quality volume when that
+  split-level evidence exists.
+- Threshold leads with observed trusted work-phase pace and keeps any cautious
+  12°C flat-road equivalent visibly separate.
+- VO₂ and Speed prioritise trusted repetition pace and effort because heart
+  rate lags short work.
+- Personal heat, hills and trail effects retain sample size and confidence and
+  are described as modifiers of the generic penalty model, not percentages of
+  total running pace.
+- Workout-response patterns remain observational and never claim causation.
+- Threshold evidence keeps three denominators visibly separate: decoded
+  threshold workouts, the stricter current Progress pace-trend set and the
+  smaller subset with complete before/after response windows.
+- PBs and official race results remain factual and unnormalised.
+
+The data composition lives in `core/passport_detail.py`; `ui/passport.py`
+presents the typed result. The canonical athlete selector remains shared with
+Home and Progress.
+
+### Reason
+
+Progress already answers what is changing, while Next Run answers what to do.
+Passport is most useful as the stable, auditable current identity connecting
+physiological boundaries, historical training behaviour, distinctive traits,
+learned associations and achievements without blurring those evidence types.

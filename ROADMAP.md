@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.25.1 — Progress Foundation**
+Current release: **v0.26.1 — Passport Distance Evidence**
 
 Architecture status: **Frozen**
 
@@ -32,6 +32,11 @@ Approved production baseline:
   range
 - Race cards label both six-month comparison windows and use unambiguous
   improvement/slower wording rather than implying future capability
+- Passport Detail composes current physiological boundaries, Progress anchors,
+  historical training patterns, personal environmental responses, learned
+  workout associations and factual achievements
+- Passport pace is shown in min/mile; configured thresholds, historical
+  patterns and cautious estimates retain distinct source/confidence language
 
 ---
 
@@ -165,10 +170,9 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ## Following Priorities
 
-1. Passport detail: learned traits, evidence confidence and achievements.
-2. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
-3. Login-led athlete identity and Coach Mode athlete switching.
-4. Direct Strava/Garmin integration through the canonical activity model.
+1. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
+2. Login-led athlete identity and Coach Mode athlete switching.
+3. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

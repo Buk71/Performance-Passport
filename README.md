@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.25.1 — Progress Foundation**
+**v0.26.1 — Passport Distance Evidence**
 
 The production app now brings together:
 
@@ -53,17 +53,31 @@ The production app now brings together:
   cautious 12°C flat-road equivalent range
 - Race progression explicitly compares the recent six-month best with the
   previous six-month best, while keeping the all-time result separate
+- A production Passport Detail answering what the app currently knows about
+  each athlete
+- Current LT1/LT2, threshold, aerobic-direction and durability anchors with
+  explicit source and confidence
+- Recovery, Easy, Long Easy, Threshold and VO₂/Speed training profiles drawn
+  from the existing historical Blueprint evidence
+- Typical distance and development repetition/quality volume shown beside pace
+  and heart-rate or effort guidance
+- Threshold support separated into decoded workouts, the strict Progress trend
+  subset and complete before/after learning windows
+- Athlete-specific heat, hill and trail responses, learned traits and
+  cautious workout-response associations
+- A factual achievement ledger that keeps all-time and recent results separate
 
 ---
 
 ## Next Sprint
 
-**Passport Detail** will bring the app's learned athlete traits, confidence and
-supporting achievements together in one auditable identity view.
+**Interactive Race Outlook** will allow combined Hot, Hilly, Trail and Windy
+conditions to be explored without rewriting the athlete's factual results.
 
 The next coaching question is:
 
-> What has the app learned about me—and how strong is the evidence?
+> How does my current capability change under a specific combination of race
+> conditions?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

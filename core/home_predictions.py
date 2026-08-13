@@ -165,7 +165,7 @@ def _response_label(multiplier: float, confidence: float) -> str:
     return f"{difference:.0%} more affected"
 
 
-def _environment_story(
+def build_environment_story(
     personal_profile,
 ) -> tuple[
     tuple[HomeEnvironmentResponse, ...],
@@ -237,7 +237,7 @@ def _environment_story(
     return responses, trait
 
 
-def _load_run_profiles(athlete_id: int) -> list[RunProfile]:
+def load_run_profiles(athlete_id: int) -> list[RunProfile]:
     thresholds = get_effective_athlete_thresholds(athlete_id)
     connection = get_connection()
     cursor = connection.cursor()
@@ -314,7 +314,7 @@ def build_home_predictions(athlete_id: int) -> HomePredictions:
         evidence,
     )
 
-    runs = _load_run_profiles(athlete_id)
+    runs = load_run_profiles(athlete_id)
     evidence_connection = get_connection()
     evidence_profile = build_athlete_evidence_profile(
         evidence_connection,
@@ -352,7 +352,7 @@ def build_home_predictions(athlete_id: int) -> HomePredictions:
         runs,
         athlete_id=athlete_id,
     )
-    environment_responses, performance_trait = _environment_story(
+    environment_responses, performance_trait = build_environment_story(
         personal_profile
     )
     forecast = build_environment_forecast(

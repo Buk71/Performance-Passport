@@ -2,11 +2,12 @@ import streamlit as st
 
 from config import APP_NAME
 from core.database import initialise_database
-from theme import inject_global_theme, render_page_placeholder
+from theme import inject_global_theme
 from ui.athletes import show_athletes_page
 from ui.activities import show_activities_page
 from ui.home import show_home_page
 from ui.progress import show_progress_page
+from ui.passport import show_passport_page
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
 from ui.hall_of_fame import show_hall_of_fame_page
@@ -60,15 +61,7 @@ elif page == "Hall of Fame":
     show_hall_of_fame_page()
 
 elif page == "Passport":
-    render_page_placeholder(
-        title="Passport",
-        question="What has the app learned about me?",
-        description=(
-            "Your Performance Passport will bring together discoveries, "
-            "personal tendencies, evidence levels, achievements and the "
-            "unique patterns learned from your running history."
-        ),
-    )
+    show_passport_page()
 
 elif page == "Athletes":
     show_athletes_page()
