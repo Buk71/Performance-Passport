@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Architecture baseline: v0.33.0  
+Architecture baseline: v0.34.0  
 Status: Frozen until explicitly changed
 
 ## Purpose
@@ -186,6 +186,23 @@ Explain architectural decisions.
 Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
+
+Version 0.34.0 adds a branded, public-safe entry without changing application
+routing or authentication:
+
+- `ui/welcome.py` owns the product story, real-logo composition and a small
+  session entry contract.
+- `app.py` evaluates that entry before mounting the existing sidebar and page
+  router. Stable product deep links remain authoritative and bypass the welcome
+  gate without losing their query parameters.
+- The welcome surface contains no athlete-specific data and has no database
+  write path.
+- Login, user roles and hosted persistence remain deliberately deferred. A
+  future identity layer must authorise athlete IDs centrally rather than merely
+  hiding selectors in the UI.
+- `theme.py` now gives both known Streamlit sidebar-toggle states explicit
+  warm-paper, ink and orange focus/hover contrast, including dark browser
+  colour schemes.
 
 Version 0.33.0 adds a downstream Weekly Fuel Planner within the frozen
 architecture:

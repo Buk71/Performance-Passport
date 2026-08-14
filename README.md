@@ -22,9 +22,20 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.33.1 — Dietary Choice Balance Hotfix**
+**v0.34.0 — Performance Passport Welcome**
 
 The production app now brings together:
+
+- a full-screen, responsive product welcome using the real Pathmark identity,
+  motto and Design System v1 route/topographic language;
+- a public-safe product story with no athlete names, performances or private
+  training data;
+- an explicit session entry into the existing product while stable activity
+  and Training Block deep links continue directly to their evidence;
+- a clear Understand → Plan → Adapt proposition spanning analysis, Training
+  Blocks, deliberate review and Fuel Planner;
+- an explicit warm-paper navigation-toggle surface and ink SVG colour that
+  remain visible when browser or operating-system chrome switches to dark mode;
 
 - balanced Omnivore lunch and dinner choices: one rotating meat/fish option
   alongside one plant-based alternative rather than unrestricted catalogue
@@ -152,10 +163,13 @@ The production app now brings together:
 
 ## Next Sprint
 
-The next small interface hotfix will restore clear sidebar open/close contrast
-when the browser or operating system applies a dark colour scheme. Further
-nutrition work can then add preparation instructions and deliberate meal swaps
-without weakening the v0.33 shopping-list contract.
+Product functionality remains the priority before hosted login. The next
+vertical slice can add Fuel Planner preparation instructions and deliberate
+meal swaps without weakening the saved-selection and shopping-list contract,
+or extend deliberate Block Review to a second evidence-backed trigger.
+
+Commercial authentication is intentionally deferred until the product is ready
+for a durable hosted database and athlete/coach authorisation model.
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

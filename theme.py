@@ -139,6 +139,46 @@ def inject_global_theme():
             backdrop-filter: blur(12px);
         }}
 
+        /* Keep the sidebar open/close control visible when the browser or
+           operating system applies a dark colour scheme to Streamlit chrome. */
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="stSidebarCollapsedControl"] button {{
+            color: #10263D !important;
+            background: #F7F3EC !important;
+            border: 1px solid #BDB4A8 !important;
+            border-radius: 999px !important;
+            box-shadow: 0 4px 12px rgba(16, 38, 61, 0.16) !important;
+        }}
+
+        [data-testid="stSidebarCollapseButton"] button:hover,
+        [data-testid="stSidebarCollapsedControl"] button:hover {{
+            color: #FFFFFF !important;
+            background: #F05A28 !important;
+            border-color: #F05A28 !important;
+        }}
+
+        [data-testid="stSidebarCollapseButton"] button:focus-visible,
+        [data-testid="stSidebarCollapsedControl"] button:focus-visible {{
+            outline: 3px solid rgba(240, 90, 40, 0.34) !important;
+            outline-offset: 2px !important;
+        }}
+
+        [data-testid="stSidebarCollapseButton"] button svg,
+        [data-testid="stSidebarCollapsedControl"] button svg {{
+            color: currentColor !important;
+            fill: currentColor !important;
+            stroke: currentColor !important;
+        }}
+
+        @media (prefers-color-scheme: dark) {{
+            [data-testid="stSidebarCollapseButton"] button,
+            [data-testid="stSidebarCollapsedControl"] button {{
+                color: #10263D !important;
+                background: #F7F3EC !important;
+                border-color: #9F9588 !important;
+            }}
+        }}
+
         [data-testid="stSidebar"] {{
             background:
                 radial-gradient(circle at 18% 8%, rgba(240,90,40,.055), transparent 24%),

@@ -51,3 +51,14 @@ def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection
     assert 'label:has(input[type="radio"]:checked)' in theme
     assert "border-left-color: var(--pp-accent)" in theme
     assert ".pp-sidebar-logo" in theme
+
+
+def test_sidebar_toggle_keeps_explicit_contrast_in_dark_browser_chrome():
+    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+
+    assert '[data-testid="stSidebarCollapseButton"] button' in theme
+    assert '[data-testid="stSidebarCollapsedControl"] button' in theme
+    assert "@media (prefers-color-scheme: dark)" in theme
+    assert "background: #F7F3EC !important" in theme
+    assert "background: #F05A28 !important" in theme
+    assert "fill: currentColor !important" in theme

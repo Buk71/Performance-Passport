@@ -20,6 +20,7 @@ from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
 from ui.training_blocks import show_training_blocks_page
 from ui.fuel_planner import show_fuel_planner_page
+from ui.welcome import product_entry_granted, show_welcome_page
 from ui.settings import show_settings_page
 
 
@@ -32,6 +33,10 @@ st.set_page_config(
 
 inject_global_theme()
 initialise_database()
+
+if not product_entry_granted(st.session_state, st.query_params):
+    show_welcome_page()
+    st.stop()
 
 page = show_sidebar()
 

@@ -148,7 +148,9 @@ def test_streamlit_deep_link_preselects_exact_real_activity(
 
 
 def test_home_selector_and_content_share_one_athlete_after_round_trip():
-    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=180)
+    app = AppTest.from_file(str(ROOT / "app.py"))
+    app.session_state["pp_product_entered"] = True
+    app.run(timeout=180)
 
     home_selector = next(
         item for item in app.selectbox if item.label == "Athlete"

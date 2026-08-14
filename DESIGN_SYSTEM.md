@@ -264,3 +264,26 @@ than allowing the larger plant-based catalogue to dominate through simple
 rotation. The first lunch/dinner option represents the selected mixed-diet
 style; the second remains a complete plant-based alternative. Breakfast and
 recovery snacks stay naturally mixed without token meat additions.
+
+## Product Welcome — v0.34
+
+The unauthenticated product entry is not a dashboard and never exposes athlete
+data. It introduces the brand and product logic in this order:
+
+1. Real Pathmark identity and the locked motto.
+2. The athlete-level promise: understand evidence, decide what comes next and
+   build around real life.
+3. A public-safe product preview connecting capability, direction and Race Day.
+4. Understand → Plan → Adapt principles.
+5. One clear action into the product.
+
+Warm paper remains the primary field, with ink for authority, orange for the
+route and entry action, and green only for genuine current/progress status.
+Topographic contours and a moving route line provide depth; reduced-motion
+preferences remove the route animation. The sidebar and its control are absent
+until entry, and the mobile composition preserves the same reading order.
+
+Browser colour-scheme changes must not make the sidebar control disappear.
+Both expanded and collapsed Streamlit toggle states use an explicit warm-paper
+circle, ink icon/border and orange hover/focus treatment, including explicit SVG
+fill and stroke colours.

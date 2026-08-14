@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.33.1 — Dietary Choice Balance Hotfix**
+Current release: **v0.34.0 — Performance Passport Welcome**
 
 Architecture status: **Frozen**
 
@@ -390,16 +390,50 @@ recommend a change without taking control away from the athlete?**
 
 ---
 
+## Completed Sprint — Performance Passport Welcome
+
+### Product question
+
+**Can the first screen communicate why Performance Passport deserves to exist
+before asking someone to navigate the product?**
+
+### Delivered
+
+- A full-screen branded entry using the approved Pathmark asset, motto, ink,
+  warm paper, performance orange, progress green and route/topographic motifs.
+- A clear Understand → Plan → Adapt story rather than another athlete dashboard.
+- Product-preview cards describe capability, direction, Race Day, latest-run
+  interpretation, Training Blocks and Fuel Planner without exposing real names,
+  results or training data.
+- One accessible entry action opens the unchanged app for the browser session.
+- Existing activity and Training Block deep links bypass the welcome screen and
+  preserve their exact athlete/evidence request.
+- The sidebar is absent on the welcome surface and returns unchanged after
+  entry; no new parallel navigation state was introduced.
+- Desktop, intermediate and mobile compositions plus reduced-motion behaviour
+  are protected by regression tests.
+- The sidebar open/close control now has explicit warm-paper, ink and orange
+  contrast under dark browser/operating-system colour schemes.
+
+### Preserved exclusions
+
+- No login or self-selected athlete/coach role.
+- No private athlete information on the opening page.
+- No hosting, database or authentication migration.
+- No changes to coaching calculations or the production Home dashboard.
+
+---
+
 ## Following Priorities
 
-1. Sidebar open/close contrast hotfix for browser/operating-system dark mode.
-2. Fuel Planner preparation instructions and deliberate meal swaps while
+1. Fuel Planner preparation instructions and deliberate meal swaps while
    retaining the saved-selection and shopping-list audit contract.
-3. Additional deliberate review types for missed weeks and sustained volume
+2. Additional deliberate review types for missed weeks and sustained volume
    disruption, reusing the v0.32 audit and overlay contract.
-4. Saved course/weather profiles and route-specific Race Predictor evidence.
-5. Login-led athlete identity and Coach Mode athlete switching.
-6. Direct Strava/Garmin integration through the canonical activity model.
+3. Saved course/weather profiles and route-specific Race Predictor evidence.
+4. Direct Strava/Garmin integration through the canonical activity model.
+5. Hosted PostgreSQL, login-led athlete identity and authorised Coach Mode once
+   the product's functional scope is ready for a commercial pilot.
 
 ---
 

@@ -974,3 +974,41 @@ The running plan is the athlete's approved commitment. Treating nutrition as a
 downstream support layer preserves that ownership, while curated recipes make
 the resulting shopping list useful, reproducible and safe to test across
 different dietary styles.
+
+---
+
+# Decision 029
+
+**Date**
+15 August 2026
+
+## Product Welcome Precedes Authentication
+
+### Status
+
+Accepted
+
+### Decision
+
+- Performance Passport has a public-safe branded welcome before the existing
+  application navigation is mounted.
+- The welcome screen uses the real Pathmark and contains no athlete identity,
+  performance or training evidence.
+- Entry is session-scoped presentation, not authentication. The product must
+  not describe the current release as secure multi-user access.
+- Stable activity and Training Block deep links remain authoritative and bypass
+  the welcome screen without losing athlete or evidence parameters.
+- The existing production Home remains the authenticated/product dashboard; it
+  is not redesigned or renamed by the welcome release.
+- Athlete/coach login is deferred until a durable hosted database and central
+  athlete authorisation contract can be implemented together.
+
+`ui/welcome.py` owns the product entry and `app.py` evaluates it before the
+existing sidebar router. No schema migration is required.
+
+### Reason
+
+A compelling first impression can be completed and tested without pretending a
+session-level welcome is security. Deferring login avoids bolting identity onto
+local SQLite and preserves the option to choose hosting, PostgreSQL and role
+authorisation together when the product is ready for a commercial pilot.
