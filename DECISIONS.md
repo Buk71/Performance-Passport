@@ -735,3 +735,89 @@ An athlete's fitness does not change when the weather slider moves, and an
 exploratory distance should not silently change the coaching goal. Separating
 capability, goal choice and race-day realisation makes the model understandable
 and keeps Goals free to develop a proper primary/secondary hierarchy.
+
+---
+
+# Decision 023
+
+**Date**
+14 August 2026
+
+## One Active Primary Goal Drives Coaching
+
+### Status
+
+Accepted
+
+### Decision
+
+Goal priority is an explicit coaching hierarchy rather than a display label.
+
+- Exactly one Active Primary goal may drive Home, Next Run and Training Block
+  direction. `get_active_goal` never falls back to an Active Secondary goal.
+- Secondary goals are tune-ups, benchmarks or supporting outcomes. They may be
+  included in the active block but cannot replace its Primary direction.
+- Future goals remain visible and editable but have no current coaching or
+  block influence.
+- Complete and Archived goals remain available as history.
+- Promoting a goal preserves the previous Primary as an Active Secondary goal.
+  The existing Training Block is not regenerated or reinterpreted; any mismatch
+  is surfaced for deliberate review.
+- Only the Primary goal can create the simple distance/date block starting
+  point. A later sprint will replace that starting point with a history-led,
+  customisable generator.
+
+`core/goals.py` owns hierarchy composition and lifecycle transitions;
+`ui/goals.py` owns the responsive Goal Centre and explicit management actions.
+No schema change is required.
+
+### Reason
+
+Several saved goals are useful only if the athlete can see which one controls
+today's coaching. Separating one direction from supporting and future outcomes
+prevents accidental plan changes and gives the forthcoming Training Block
+engine a stable, auditable contract.
+
+---
+
+# Decision 024
+
+**Date**
+14 August 2026
+
+## Training History Proposes; Athlete Constraints Decide
+
+### Status
+
+Accepted
+
+### Decision
+
+The Training Block generator starts from demonstrated behaviour rather than a
+generic race-plan template.
+
+- Recent six-week days, hours and reliable mileage establish the baseline.
+- The twelve-week rhythm, typical Long Easy distance and recent quality miles
+  establish a cautious sustainable ceiling and session frequency.
+- The athlete explicitly chooses running days, long-run day, session days,
+  strength days, maximum weekly mileage and any recovery or life constraint.
+- One Active Primary goal sets the end date and race-specific direction.
+  Relevant Secondary races may enter the block, but replace normal quality
+  load rather than silently adding intensity.
+- The generated plan uses deterministic Base, Build, Specific, Taper and Race
+  phases, regular cutbacks and explicit hard-day spacing warnings.
+- Saving persists the evidence snapshot, athlete preferences and generated
+  week/day shape. Changing the Primary goal never silently rewrites it.
+- The block defines direction and weekly structure. Next Run continues to own
+  the exact next workout prescription.
+
+The pure generator lives in `core/training_block_designer.py`, persistence uses
+schema v10 through `core/training_blocks.py`, and the responsive controls live
+in `ui/training_blocks.py`.
+
+### Reason
+
+The safest useful plan is neither a frozen generic schedule nor an opaque
+algorithm. Starting with what the athlete has sustainably completed and then
+making real-life constraints first-class produces a plan that is explainable,
+editable and much more likely to be followed.

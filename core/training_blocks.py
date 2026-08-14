@@ -19,9 +19,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import datetime
+import json
 from typing import Any
 
-from core.database import get_connection
+from core.database import create_training_block_designs_table, get_connection
 
 
 BLOCK_STATUSES = (
@@ -104,6 +105,19 @@ class BlockProgress:
     progress_fraction: float | None
     days_remaining: int | None
     date_status: str
+
+
+@dataclass(frozen=True)
+class SavedBlockDesign:
+    id: int
+    athlete_id: int
+    training_block_id: int
+    primary_goal_id: int
+    preferences: dict[str, Any]
+    evidence: dict[str, Any]
+    plan: dict[str, Any]
+    model_version: int
+    updated_at: str | None
 
 
 def _date(value: str | None) -> datetime.date | None:
@@ -561,3 +575,99 @@ def assign_goal_to_block(
     )
     conn.commit()
     conn.close()
+
+
+def save_training_block_design(
+    *,
+    athlete_id: int,
+    training_block_id: int,
+    primary_goal_id: int,
+    preferences: dict[str, Any],
+    evidence: dict[str, Any],
+    plan: dict[str, Any],
+    model_version: int = 1,
+) -> int:
+    """Save the athlete-approved generator inputs and resulting plan."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_training_block_designs_table(cursor)
+    cursor.execute(
+        """
+        INSERT INTO training_block_designs (
+            athlete_id, training_block_id, primary_goal_id,
+            preferences_json, evidence_json, plan_json, model_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(training_block_id) DO UPDATE SET
+            athlete_id = excluded.athlete_id,
+            primary_goal_id = excluded.primary_goal_id,
+            preferences_json = excluded.preferences_json,
+            evidence_json = excluded.evidence_json,
+            plan_json = excluded.plan_json,
+            model_version = excluded.model_version,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            athlete_id,
+            training_block_id,
+            primary_goal_id,
+            json.dumps(preferences, sort_keys=True),
+            json.dumps(evidence, sort_keys=True),
+            json.dumps(plan, sort_keys=True),
+            model_version,
+        ),
+    )
+    cursor.execute(
+        "SELECT id FROM training_block_designs WHERE training_block_id = ?",
+        (training_block_id,),
+    )
+    design_id = int(cursor.fetchone()[0])
+    conn.commit()
+    conn.close()
+    return design_id
+
+
+def get_training_block_design(
+    training_block_id: int,
+    *,
+    athlete_id: int | None = None,
+) -> SavedBlockDesign | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    create_training_block_designs_table(cursor)
+    if athlete_id is None:
+        cursor.execute(
+            """
+            SELECT id, athlete_id, training_block_id, primary_goal_id,
+                   preferences_json, evidence_json, plan_json,
+                   model_version, updated_at
+            FROM training_block_designs
+            WHERE training_block_id = ?
+            """,
+            (training_block_id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id, athlete_id, training_block_id, primary_goal_id,
+                   preferences_json, evidence_json, plan_json,
+                   model_version, updated_at
+            FROM training_block_designs
+            WHERE training_block_id = ? AND athlete_id = ?
+            """,
+            (training_block_id, athlete_id),
+        )
+    row = cursor.fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return SavedBlockDesign(
+        id=int(row[0]),
+        athlete_id=int(row[1]),
+        training_block_id=int(row[2]),
+        primary_goal_id=int(row[3]),
+        preferences=json.loads(row[4]),
+        evidence=json.loads(row[5]),
+        plan=json.loads(row[6]),
+        model_version=int(row[7]),
+        updated_at=row[8],
+    )

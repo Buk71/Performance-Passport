@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 
 def get_connection():
@@ -282,11 +282,10 @@ def get_active_goal(athlete_id):
             target_time_s, target_date, race_name, priority,
             status, motivation, created_at, updated_at
         FROM goals
-        WHERE athlete_id = ? AND status = 'Active'
-        ORDER BY
-            CASE WHEN priority = 'Primary' THEN 0 ELSE 1 END,
-            updated_at DESC,
-            id DESC
+        WHERE athlete_id = ?
+          AND status = 'Active'
+          AND priority = 'Primary'
+        ORDER BY updated_at DESC, id DESC
         LIMIT 1
         """,
         (athlete_id,),
@@ -357,6 +356,16 @@ def save_goal(
     motivation=None,
     goal_id=None,
 ):
+    if priority not in {"Primary", "Secondary", "Future"}:
+        raise ValueError(f"Unsupported goal priority: {priority}")
+    if status not in {"Active", "Planned", "Complete", "Archived"}:
+        raise ValueError(f"Unsupported goal status: {status}")
+
+    if priority == "Primary" and status not in {"Complete", "Archived"}:
+        status = "Active"
+    elif priority == "Future" and status not in {"Complete", "Archived"}:
+        status = "Planned"
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -364,7 +373,7 @@ def save_goal(
         cursor.execute(
             """
             UPDATE goals
-            SET status = 'Planned', updated_at = CURRENT_TIMESTAMP
+            SET priority = 'Secondary', updated_at = CURRENT_TIMESTAMP
             WHERE athlete_id = ?
               AND status = 'Active'
               AND priority = 'Primary'
@@ -1268,6 +1277,45 @@ def migrate_to_schema_v9(cursor):
     set_schema_version(cursor, 9)
 
 
+def create_training_block_designs_table(cursor):
+    """Persist the athlete-approved shape behind a Training Block."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS training_block_designs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            training_block_id INTEGER NOT NULL UNIQUE,
+            primary_goal_id INTEGER NOT NULL,
+            preferences_json TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            plan_json TEXT NOT NULL,
+            model_version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(training_block_id) REFERENCES training_blocks(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(primary_goal_id) REFERENCES goals(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_training_block_designs_athlete
+        ON training_block_designs (athlete_id, updated_at)
+        """
+    )
+
+
+def migrate_to_schema_v10(cursor):
+    """Add persisted history-led Training Block designs."""
+    create_training_blocks_table(cursor)
+    create_training_block_designs_table(cursor)
+    set_schema_version(cursor, 10)
+
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -1309,9 +1357,14 @@ def initialise_database():
         migrate_to_schema_v9(cursor)
         schema_version = 9
 
+    if schema_version < 10:
+        migrate_to_schema_v10(cursor)
+        schema_version = 10
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
+    create_training_block_designs_table(cursor)
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)

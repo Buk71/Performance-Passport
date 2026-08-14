@@ -215,21 +215,70 @@ def inject_global_theme():
         }}
 
         .stButton > button,
-        .stDownloadButton > button {{
+        .stDownloadButton > button,
+        .stFormSubmitButton > button {{
             min-height: 2.65rem;
             padding: 0.6rem 1.1rem;
-            color: white;
-            font-weight: 660;
-            background: var(--pp-accent);
-            border: 0;
+            color: #10263D;
+            font-weight: 700;
+            background: #FFFFFF;
+            border: 1px solid #D7D0C6;
             border-radius: 11px;
-            box-shadow: 0 5px 14px rgba(241, 90, 36, 0.20);
+            box-shadow: 0 3px 10px rgba(16, 38, 61, 0.055);
+            transition:
+                color 140ms ease,
+                background-color 140ms ease,
+                border-color 140ms ease,
+                box-shadow 140ms ease,
+                transform 140ms ease;
         }}
 
         .stButton > button:hover,
-        .stDownloadButton > button:hover {{
-            color: white;
-            background: var(--pp-accent-dark);
+        .stDownloadButton > button:hover,
+        .stFormSubmitButton > button:hover {{
+            color: #10263D;
+            background: #F3EFE8;
+            border-color: #BDB4A8;
+            box-shadow: 0 5px 14px rgba(16, 38, 61, 0.09);
+            transform: translateY(-1px);
+        }}
+
+        .stButton > button:focus-visible,
+        .stDownloadButton > button:focus-visible,
+        .stFormSubmitButton > button:focus-visible {{
+            outline: 0;
+            border-color: var(--pp-accent);
+            box-shadow: 0 0 0 3px rgba(241, 90, 36, 0.18);
+        }}
+
+        .stButton > button[kind="primary"],
+        .stDownloadButton > button[kind="primary"],
+        .stFormSubmitButton > button[kind="primary"],
+        [data-testid="stBaseButton-primary"] {{
+            color: #FFFFFF;
+            background: #10263D;
+            border-color: #10263D;
+            box-shadow: 0 6px 16px rgba(16, 38, 61, 0.18);
+        }}
+
+        .stButton > button[kind="primary"]:hover,
+        .stDownloadButton > button[kind="primary"]:hover,
+        .stFormSubmitButton > button[kind="primary"]:hover,
+        [data-testid="stBaseButton-primary"]:hover {{
+            color: #FFFFFF;
+            background: #193B59;
+            border-color: #193B59;
+            box-shadow: 0 8px 19px rgba(16, 38, 61, 0.23);
+        }}
+
+        .stButton > button:disabled,
+        .stDownloadButton > button:disabled,
+        .stFormSubmitButton > button:disabled {{
+            color: #89929D;
+            background: #F4F1EC;
+            border-color: #E2DDD5;
+            box-shadow: none;
+            transform: none;
         }}
 
         [data-testid="stMetric"] {{

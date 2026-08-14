@@ -187,8 +187,8 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.27.1 preserves the approved Home, Activity Review, Progress and
-Passport Detail and adds the standalone Race Predictor layer:
+Version 0.29.1 preserves the approved Home, Activity Review, Progress,
+Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
@@ -268,12 +268,31 @@ Passport Detail and adds the standalone Race Predictor layer:
   contains no coaching formula.
 - `ui/goals.py` retains goal and training-block management and the canonical
   numeric athlete selector. It does not own race-condition exploration.
+- `core/goals.py` owns Primary, Secondary, Future and Past composition plus
+  deliberate role/lifecycle transitions. It never recalculates fitness or
+  silently changes Training Block design.
+- `core/database.py::get_active_goal` returns only an Active Primary goal. An
+  Active Secondary goal can never become the implicit coaching goal.
+- Promoting a goal demotes the previous Active Primary to Active Secondary.
+  Existing Training Block links remain factual and are surfaced for review.
+- `ui/goals.py` presents one direction and multiple outcomes, allows explicit
+  role/lifecycle actions and offers block creation only for the Primary goal.
+- `core/training_block_designer.py` owns deterministic history composition,
+  preference validation, safe phase/volume progression, Secondary-event
+  placement and serialisable weekly plans. It does not prescribe the next
+  detailed workout.
+- `core/training_blocks.py` persists the athlete-approved preferences, evidence
+  snapshot and generated plan against the existing Training Block identity.
+- Database schema v10 adds `training_block_designs`; existing blocks and goals
+  are preserved and upgraded in place.
+- `ui/training_blocks.py` owns controls and responsive presentation. It may
+  deliberately save or update a block, but never hides a Primary-goal mismatch
+  or silently rewrites the previous active block.
 
 Next Sprint Direction
 
-Develop primary, secondary and future goal semantics, followed by a
-history-led, constraint-aware Training Block generator inside the existing
-`core/`, `ui/` and `tests/` architecture.
+Connect the saved weekly shape to Next Run and completed activity evidence,
+with auditable adaptations that preserve athlete-approved constraints.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

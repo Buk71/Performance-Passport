@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.27.1 — Standalone Race Predictor**
+Current release: **v0.29.1 — History-Led Training Blocks**
 
 Architecture status: **Frozen**
 
@@ -28,6 +28,19 @@ Approved production baseline:
   athlete selector
 - Any saved goal can be forecast read-only, while six standard race distances
   can be explored without changing the active goal
+- Exactly one Active Primary goal drives Home and coaching direction
+- Secondary goals are explicit tune-up or benchmark candidates; Future goals
+  remain parked with no current influence
+- Changing the Primary goal preserves the previous goal as Secondary and never
+  silently rewrites the active Training Block
+- Training Block Designer starts from each athlete's demonstrated frequency,
+  reliable volume, quality rhythm and long-run history
+- Running days, session days, long-run day, strength days, volume ceiling and
+  recovery constraints are athlete-controlled and persisted
+- Generated blocks include safe progression, cutbacks, phase changes, tapering
+  and relevant Secondary races without adding hidden intensity
+- Buttons now distinguish consequential primary actions from routine choices;
+  performance orange is no longer used as the default fill for every action
 - Aerobic efficiency uses a browser-safe monthly chart; training rhythm keeps
   total reliable mileage while showing its Easy, Long Run, Session and Other
   composition
@@ -178,14 +191,60 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ---
 
+## Completed Sprint — Goal Hierarchy Foundation
+
+### Product question
+
+**Which goal is actually directing my coaching?**
+
+### Delivered
+
+- One Active Primary goal as the only current coaching direction.
+- Secondary goals labelled as tune-ups, benchmarks or supporting outcomes.
+- Future goals kept visible with no current coaching effect.
+- Complete goals retained as history and restorable as Future.
+- Explicit promotion, role changes, editing and lifecycle actions.
+- Previous Primary preserved as Secondary when another goal is promoted.
+- Existing Training Block preserved and flagged for review after a Primary
+  change rather than being silently regenerated.
+- Block creation offered only from the Primary goal.
+- Richard and Jo validated independently against their current saved goals and
+  block links.
+
+---
+
+## Completed Sprint — History-Led Training Blocks
+
+### Product question
+
+**How should this athlete's real history become a safe, realistic block?**
+
+### Delivered
+
+- Recent running frequency, hours, reliable mileage, quality load and long-run
+  pattern composed into a transparent history profile.
+- Primary goal as the sole block direction, with relevant Secondary races
+  placed as tune-ups without adding hidden quality load.
+- Athlete-controlled running, long-run, session and strength days, weekly
+  mileage ceiling, race substitution and recovery/life note.
+- Base, Build, Specific, Taper and Race phases with cutbacks and cautious volume
+  progression.
+- Back-to-back hard-day, unsupported session-frequency and excessive-volume
+  warnings.
+- Persisted evidence snapshot, preferences and complete week/day shape using
+  database schema v10.
+- Independent Richard and Jo real-data coverage plus pure generator,
+  persistence and responsive UI contracts.
+
+---
+
 ## Following Priorities
 
-1. Primary, secondary and future goal hierarchy with explicit block influence.
-2. History-led, customisable Training Blocks using available days, long-run day,
-   session days, sustainable volume and safe workout spacing.
-3. Saved course/weather profiles and route-specific Race Predictor evidence.
-4. Login-led athlete identity and Coach Mode athlete switching.
-5. Direct Strava/Garmin integration through the canonical activity model.
+1. Operational Block Coaching connecting the saved week to Next Run and
+   completed-activity review, with deliberate rather than silent adaptation.
+2. Saved course/weather profiles and route-specific Race Predictor evidence.
+3. Login-led athlete identity and Coach Mode athlete switching.
+4. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

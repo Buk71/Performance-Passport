@@ -129,3 +129,50 @@ inputs. Below the headline comparison, equal factor cards show heat/humidity,
 climbing, wind and surface cost with personalised/generic provenance. Compact
 layouts stack the comparison in reading order and preserve all factor evidence
 without hover.
+
+## Goal Hierarchy — v0.28
+
+Goals answers **What am I targeting?** before exposing forms or block actions.
+The hierarchy hero states the one goal leading coaching and keeps current block
+context visually separate. Three equal role summaries explain Primary,
+Secondary and Future before the detailed goals.
+
+Primary uses progress green and states that it drives Home, Next Run and block
+direction. Secondary uses performance orange for tune-ups and benchmarks.
+Future uses a neutral treatment and explicitly states that it has no current
+coaching effect. Every detailed card keeps target, distance and date together,
+followed by a distinct coaching-influence explanation. Role changes require
+visible actions; changing Primary never silently restyles or regenerates a
+Training Block. Compact layouts preserve the same reading order without hover.
+
+## History-Led Training Blocks — v0.29
+
+Training Blocks answers **How should I prepare?** using this hierarchy:
+
+1. Primary goal and the athlete's demonstrated starting point.
+2. Explicit, editable real-life constraints.
+3. Generated block direction and safety explanations.
+4. Week-by-week progression, recovery, taper and event placement.
+5. One selected week's daily shape.
+
+Recent rhythm, reliable mileage, typical long run and supported session count
+appear as evidence, not prescriptions. User controls remain clearly separate
+from the generated result. Weekly cards use total mileage as the dominant
+number, green for planned progression and orange only for events or cautions.
+Secondary races replace quality load rather than visually or physiologically
+stacking on top of it. Exact workout prescription remains owned by Next Run.
+
+## Action hierarchy — v0.29.1
+
+Native app buttons use purpose rather than page identity:
+
+- Primary actions use ink navy with white text. These are reserved for the one
+  consequential action in a section, such as saving an active Training Block,
+  saving a goal or deliberately changing the Primary goal.
+- Secondary actions use a white/warm-paper surface, ink text and a visible
+  neutral border. Scenario presets, lifecycle alternatives and supporting
+  actions belong here.
+- Performance orange is an accent for focus rings, warnings, events, selected
+  states and progress marks; it is not the default button background.
+- Keyboard focus keeps an orange ring, while hover never carries information
+  unavailable to touch users.

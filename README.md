@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.27.1 — Standalone Race Predictor**
+**v0.29.1 — History-Led Training Blocks**
 
 The production app now brings together:
 
@@ -69,6 +69,25 @@ The production app now brings together:
   5 miles, 10K, 10 miles, Half Marathon and Marathon
 - Optional comparison targets for exploratory distances without changing the
   athlete's active goal
+- One Active Primary goal as the sole source of current coaching direction
+- Secondary tune-up and benchmark goals that can support the active block
+  without replacing the Primary goal
+- Future goals that remain visible but have no current coaching influence
+- Explicit promotion, role changes, completion, restoration and goal editing
+- Safe Primary-goal changes that preserve the previous goal as Secondary and
+  flag the existing Training Block for review rather than silently rewriting it
+- History-led Training Block design starting from recent days, hours, reliable
+  mileage, quality load and the athlete's long-run pattern
+- Custom running, session, long-run and strength days plus an explicit weekly
+  mileage ceiling and recovery/life constraints
+- Deterministic Base, Build, Specific, Taper and Race phases with cutbacks,
+  cautious progression and week-by-week daily shapes
+- Relevant Secondary races placed inside the Primary-goal block as replacement
+  quality rather than hidden additional load
+- Persisted evidence, athlete choices and generated weekly plan behind the
+  active Training Block
+- Accessible action hierarchy: ink-navy primary actions, warm-paper secondary
+  actions and orange reserved for focus, warning and selected-state emphasis
 - Adjustable temperature, humidity, total ascent, wind speed/exposure and
   road or firm-trail surface, plus useful scenario presets
 - A factor-by-factor condition-cost audit showing personal versus generic
@@ -81,12 +100,13 @@ The production app now brings together:
 
 ## Next Sprint
 
-**Goal hierarchy and Training Block foundation** will distinguish primary,
-secondary and future outcomes before building a history-led, customisable plan.
+**Operational Block Coaching** will connect the saved weekly shape to Next Run,
+completed activities and deliberate weekly adaptation without silently
+rewriting athlete-approved constraints.
 
 The next coaching question is:
 
-> How should multiple goals shape one safe, realistic training block?
+> How should the saved block respond to what the athlete actually completes?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 
