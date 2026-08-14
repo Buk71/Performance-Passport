@@ -890,3 +890,46 @@ Accepted
 The sidebar is the product's most persistent expression. Using the real identity
 and one unambiguous current route makes the growing product feel coherent without
 changing any page's evidence or coaching contract.
+
+---
+
+# Decision 027
+
+**Date**
+14 August 2026
+
+## Accepted Adaptations Are Overlays, Not Plan Rewrites
+
+### Status
+
+Accepted
+
+### Decision
+
+- The athlete-approved Training Block design remains the factual original.
+- A Block Review shows the original commitment, proposed alternative and the
+  operational evidence that caused the review.
+- Accept, Defer and Reject are append-only audit actions. Every action may
+  retain an athlete-entered reason and no earlier decision is deleted.
+- The latest action for a deterministic review key controls the effective
+  result. Only Accept activates the proposal.
+- An accepted proposal is applied as a read-time overlay to one dated
+  commitment. It never updates `training_block_designs.plan_json`.
+- A later Defer or Reject removes the overlay while preserving the complete
+  action history.
+- The first supported review type protects recovery when an unexpected
+  demanding run occurs within one day of the next saved hard commitment.
+- Training Blocks, Home and Adaptive Coach/Next Run consume the same effective
+  Operational Week rather than maintaining page-specific decisions.
+
+Schema v11 stores the audit events in `block_review_actions`.
+`core/block_review.py` owns persistence and overlay composition;
+`core/operational_block.py` owns evidence and the review trigger; and
+`ui/training_blocks.py` owns presentation and explicit athlete controls.
+
+### Reason
+
+Changing the saved JSON would make it impossible to distinguish what the
+athlete originally approved from what coaching later recommended. An
+append-only decision history plus a read-time overlay preserves ownership,
+supports reversal and gives every consumer one transparent effective plan.

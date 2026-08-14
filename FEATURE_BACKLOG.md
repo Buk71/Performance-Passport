@@ -81,6 +81,24 @@ Planned additions:
 
 Priority: Very High
 
+## Training Fuel & Nutrition Foundation ⭐⭐⭐⭐⭐
+
+Translate the approved Training Block into a separate supportive layer:
+
+- daily meals and snacks for rest, easy, session, long-run and race days;
+- pre-run, during-run and post-run fuelling where appropriate;
+- hydration guidance with an adjustable evidence basis;
+- ingredient quantities and substitution options;
+- a weekly shopping list that aggregates repeated ingredients;
+- pantry exclusions, serving-size changes and leftover-aware lunches;
+- independent Richard and Jo plans with an optional combined household list.
+
+Before implementation, capture dietary style, allergies/intolerances, dislikes,
+meal pattern, cooking complexity, household servings, budget, leftovers,
+performance/body-weight objectives, sports fuel and preferred level of
+calorie/macro precision. Nutrition composition must never alter the approved
+running plan and must be framed as supportive guidance rather than treatment.
+
 ## Best Ever Easy Run ⭐⭐⭐⭐⭐
 
 Adjust every easy run for:

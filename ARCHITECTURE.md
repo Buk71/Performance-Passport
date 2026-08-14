@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Architecture baseline: Sprint 2.1  
+Architecture baseline: v0.32.0  
 Status: Frozen until explicitly changed
 
 ## Purpose
@@ -187,8 +187,9 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.29.1 preserves the approved Home, Activity Review, Progress,
-Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
+Version 0.32.0 preserves the approved Home, Activity Review, Progress,
+Passport Detail, Race Predictor, Training Blocks and Pathmark navigation and
+adds deliberate Block Review:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
@@ -283,8 +284,9 @@ Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
   detailed workout.
 - `core/training_blocks.py` persists the athlete-approved preferences, evidence
   snapshot and generated plan against the existing Training Block identity.
-- Database schema v10 adds `training_block_designs`; existing blocks and goals
-  are preserved and upgraded in place.
+- Database schema v10 adds `training_block_designs`; schema v11 adds append-only
+  `block_review_actions`. Existing blocks, goals and designs are preserved and
+  upgraded in place.
 - `ui/training_blocks.py` owns controls and responsive presentation. It may
   deliberately save or update a block, but never hides a Primary-goal mismatch
   or silently rewrites the previous active block.
@@ -297,8 +299,18 @@ Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
 - `core/home_summary.py` and `core/adaptive_coach_live.py` consume the same
   operational week contract. If no saved custom design exists, their existing
   Adaptive Weekly Plan and coaching fallbacks remain unchanged.
-- Operational suggestions are immutable advice. This layer has no persistence
-  write path and cannot alter approved weekdays, sessions or volume limits.
+- `core/block_review.py` owns deterministic review identity, append-only
+  Accept/Defer/Reject actions and read-time application of accepted overlays.
+  It never updates `training_block_designs.plan_json`.
+- `core/operational_block.py` remains the observation and recommendation layer.
+  It builds the review candidate from original-plan evidence, then composes an
+  effective week only when the latest explicit action is Accept.
+- A later Defer or Reject becomes the latest audit event and removes the
+  accepted overlay without deleting history or mutating the approved plan.
+- `ui/training_blocks.py` owns the side-by-side review surface and decision
+  controls. It contains no adaptation trigger or plan-mutation logic.
+- Home and Adaptive Coach/Next Run continue to consume the one Operational Week
+  contract, so an accepted result is consistent without page-specific state.
 - Week-card selection is presentation-only, carried by the `pp_training_week`
   navigation request and validated against the generated plan. The request
   carries `pp_page`, `pp_athlete` and `pp_training_week`, restores the canonical
@@ -311,8 +323,9 @@ Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
 
 Next Sprint Direction
 
-Add an explicit review action for accepting, deferring or rejecting suggested
-future-week changes while preserving the original plan and evidence trail.
+Add a separate Fuel & Nutrition composition layer that reads approved daily
+training demand, supports athlete-specific preferences and produces a weekly
+ingredient roll-up without altering the Training Block generator.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

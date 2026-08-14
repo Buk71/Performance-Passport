@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 
 def get_connection():
@@ -1316,6 +1316,50 @@ def migrate_to_schema_v10(cursor):
     set_schema_version(cursor, 10)
 
 
+def create_block_review_actions_table(cursor):
+    """Persist append-only athlete decisions without rewriting the saved plan."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS block_review_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            training_block_id INTEGER NOT NULL,
+            review_key TEXT NOT NULL,
+            review_type TEXT NOT NULL,
+            week_number INTEGER NOT NULL,
+            target_date TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK (
+                decision IN ('Accept', 'Defer', 'Reject')
+            ),
+            original_json TEXT NOT NULL,
+            proposed_json TEXT NOT NULL,
+            evidence TEXT NOT NULL,
+            reason TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(training_block_id) REFERENCES training_blocks(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_block_review_actions_lookup
+        ON block_review_actions (
+            athlete_id, training_block_id, review_key, id
+        )
+        """
+    )
+
+
+def migrate_to_schema_v11(cursor):
+    """Add the auditable Deliberate Block Review action history."""
+    create_training_blocks_table(cursor)
+    create_block_review_actions_table(cursor)
+    set_schema_version(cursor, 11)
+
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -1361,10 +1405,15 @@ def initialise_database():
         migrate_to_schema_v10(cursor)
         schema_version = 10
 
+    if schema_version < 11:
+        migrate_to_schema_v11(cursor)
+        schema_version = 11
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
     create_training_block_designs_table(cursor)
+    create_block_review_actions_table(cursor)
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)

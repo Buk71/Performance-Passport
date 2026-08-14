@@ -20,7 +20,7 @@ The primary design goals are:
 
 Current Database Version
 
-Schema v1
+Schema v11
 
 ## Tables
 
@@ -96,6 +96,21 @@ No imported data is overwritten.
 ### benchmarks
 
 Stores benchmark performances and key workouts.
+
+---
+
+### training_block_designs
+
+Stores the athlete-approved generator preferences, evidence snapshot and
+original `plan_json` for each saved Training Block.
+
+### block_review_actions
+
+Stores append-only Accept, Defer and Reject events for a deterministic review
+key. Each event retains the original commitment, proposed alternative,
+supporting evidence and optional athlete reason. The latest event determines
+whether a read-time overlay is active; this table never rewrites the saved
+Training Block design.
 
 ---
 
@@ -216,11 +231,28 @@ Each schema evolution should follow this order.
 - Derived Metrics
 - Benchmarks
 
-## Schema v2 (Planned)
+## Schema v2
 
 - Athlete identities
 - Athlete ID relationships
 - Schema version tracking
+
+## Schema v3–v9
+
+- Goals, decoded workouts, sport mappings and workout evidence foundations
+- Physiological threshold overrides
+- Training Blocks and goal/block relationships
+- Activity identity and duplicate-safety improvements
+
+## Schema v10
+
+- Persisted history-led `training_block_designs`
+
+## Schema v11
+
+- Append-only `block_review_actions`
+- Athlete- and block-scoped review history
+- Original and proposed commitment evidence preserved as JSON
 
 ---
 

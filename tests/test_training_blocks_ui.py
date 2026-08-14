@@ -10,11 +10,13 @@ from core.training_block_designer import (
 )
 from ui.training_blocks import (
     _selected_week_number,
+    build_block_review_html,
     build_operational_week_html,
     build_training_block_overview_html,
     build_week_timeline_html,
 )
 from core.operational_block import compose_operational_week, OperationalActivity
+from core.block_review import BlockReviewProposal, SessionCommitment
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -142,3 +144,51 @@ def test_operational_surface_shows_execution_and_preserves_approved_plan():
     assert "QUALITY COMMITMENTS" in markup
     assert "Saved weekdays and mileage ceiling remain unchanged" in markup
     assert "container-type:inline-size" in markup
+
+
+def _review(decision=None):
+    return BlockReviewProposal(
+        athlete_id=1,
+        training_block_id=2,
+        review_key="block-review-test",
+        review_type="protect_adjacent_hard_day",
+        week_number=1,
+        target_date="2026-08-14",
+        title="Protect recovery before the next hard commitment",
+        evidence="A demanding run was completed within one day.",
+        original=SessionCommitment(
+            session_type="Threshold",
+            detail="6 mi total",
+            family="threshold",
+            is_hard=True,
+        ),
+        proposed=SessionCommitment(
+            session_type="Recovery / easy running",
+            detail="One easy day",
+            family="recovery",
+            is_hard=False,
+        ),
+        latest_decision=decision,
+        latest_reason="Legs still heavy" if decision else None,
+    )
+
+
+def test_block_review_surface_compares_original_and_proposal_explicitly():
+    markup = build_block_review_html(_review())
+
+    assert "BLOCK REVIEW · WEEK 1" in markup
+    assert "APPROVED COMMITMENT" in markup
+    assert "PROPOSED FOR THIS DAY" in markup
+    assert "Threshold" in markup
+    assert "Recovery / easy running" in markup
+    assert "never silently rewritten" in markup
+    assert "container-type:inline-size" in markup
+
+
+def test_block_review_surface_shows_accepted_decision_and_reason():
+    markup = build_block_review_html(_review("Accept"))
+
+    assert "ACCEPT" in markup
+    assert "Accepted overlay active" in markup
+    assert "Legs still heavy" in markup
+    assert "One-day overlay only" in markup

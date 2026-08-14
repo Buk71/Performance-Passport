@@ -20,6 +20,10 @@ from core.training_block_designer import (
     recommend_preferences,
 )
 from core.goals import GoalHierarchy, build_goal_hierarchy
+from core.block_review import (
+    BlockReviewProposal,
+    save_block_review_action,
+)
 from core.operational_block import OperationalWeek, build_operational_block_week
 from core.training_blocks import (
     assign_goal_to_block,
@@ -39,7 +43,7 @@ from ui.training_block_navigation import (
 
 
 TRAINING_BLOCK_CACHE_SCHEMA = 1
-OPERATIONAL_BLOCK_CACHE_SCHEMA = 1
+OPERATIONAL_BLOCK_CACHE_SCHEMA = 2
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -328,6 +332,87 @@ def build_operational_week_html(week: OperationalWeek) -> str:
     """
 
 
+def build_block_review_html(review: BlockReviewProposal) -> str:
+    decision = review.latest_decision or "Pending"
+    decision_class = {
+        "Accept": "is-accepted",
+        "Defer": "is-deferred",
+        "Reject": "is-rejected",
+    }.get(decision, "is-pending")
+    decision_copy = {
+        "Accept": "Accepted overlay active — the approved plan remains preserved.",
+        "Defer": "Decision deferred — the approved commitment remains effective.",
+        "Reject": "Recommendation rejected — the approved commitment remains effective.",
+    }.get(decision, "Your decision is required before any change can take effect.")
+    reason = (
+        f'<p class="br-athlete-reason"><strong>Your reason</strong> · {_escape(review.latest_reason)}</p>'
+        if review.latest_reason else ""
+    )
+    return f"""
+    <main class="br-shell">
+      <section class="br-head">
+        <div><small>BLOCK REVIEW · WEEK {review.week_number}</small><h3>{_escape(review.title)}</h3><p>{_escape(review.evidence)}</p></div>
+        <span class="{decision_class}">{_escape(decision.upper())}</span>
+      </section>
+      <section class="br-compare">
+        <article class="br-original"><small>APPROVED COMMITMENT</small><strong>{_escape(review.original.session_type)}</strong><p>{_escape(review.original.detail)}</p><i>{_escape(_date_text(review.target_date))}</i></article>
+        <div class="br-arrow">→</div>
+        <article class="br-proposed"><small>PROPOSED FOR THIS DAY</small><strong>{_escape(review.proposed.session_type)}</strong><p>{_escape(review.proposed.detail)}</p><i>One-day overlay only</i></article>
+      </section>
+      <section class="br-state"><strong>{_escape(decision_copy)}</strong>{reason}<p>Accept, Defer and Reject are recorded in the audit history. The saved Training Block is never silently rewritten.</p></section>
+    </main>
+    <style>
+      .br-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:9px;margin:-4px 0 12px}}
+      .br-shell *{{box-sizing:border-box}} .br-head,.br-compare,.br-state{{background:#fff;border:1px solid #DED8CE;border-radius:16px;box-shadow:0 8px 22px rgba(16,38,61,.04)}}
+      .br-head{{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:17px 20px;border-top:3px solid #F05A28}}
+      .br-head small,.br-compare small{{font-size:9px;letter-spacing:.14em;font-weight:850;color:#718091}} .br-head h3{{font-size:20px;margin:4px 0;letter-spacing:-.02em}} .br-head p{{font-size:11px;line-height:1.4;color:#68798A;margin:0}}
+      .br-head>span{{font-size:9px;font-weight:900;letter-spacing:.11em;border-radius:999px;padding:7px 10px;white-space:nowrap}} .br-head .is-pending,.br-head .is-deferred{{color:#C84D24;background:#FFF0E8}} .br-head .is-accepted{{color:#28755B;background:#E8F5EE}} .br-head .is-rejected{{color:#6C7780;background:#EEF1F2}}
+      .br-compare{{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr);align-items:stretch;overflow:hidden}} .br-compare article{{padding:16px 19px}} .br-original{{background:#F7F3EC}} .br-proposed{{background:#EDF7F1}} .br-compare strong{{display:block;font-size:15px;margin:6px 0 4px}} .br-compare p{{font-size:10px;line-height:1.4;color:#68798A;margin:0 0 8px}} .br-compare i{{font-size:9px;font-style:normal;font-weight:800;color:#3E8E72}} .br-arrow{{display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#F05A28}}
+      .br-state{{padding:13px 18px}} .br-state>strong{{font-size:11px}} .br-state p{{font-size:10px;color:#718091;margin:5px 0 0}} .br-athlete-reason{{color:#4E6172!important}}
+      @container (max-width:600px){{.br-head{{flex-direction:column}}.br-compare{{grid-template-columns:1fr}}.br-arrow{{height:28px;transform:rotate(90deg)}}}}
+    </style>
+    """
+
+
+def _render_block_review_controls(review: BlockReviewProposal) -> None:
+    st.html(build_block_review_html(review))
+    reason = st.text_input(
+        "Reason or note (optional)",
+        value=review.latest_reason or "",
+        key=f"block_review_reason_{review.review_key}",
+        placeholder="For example: legs still heavy, work travel, or feeling recovered",
+    )
+    accept_col, defer_col, reject_col = st.columns(3)
+    decision = None
+    with accept_col:
+        if st.button(
+            "Accept change",
+            type="primary",
+            use_container_width=True,
+            key=f"block_review_accept_{review.review_key}",
+        ):
+            decision = "Accept"
+    with defer_col:
+        if st.button(
+            "Defer",
+            use_container_width=True,
+            key=f"block_review_defer_{review.review_key}",
+        ):
+            decision = "Defer"
+    with reject_col:
+        if st.button(
+            "Reject",
+            use_container_width=True,
+            key=f"block_review_reject_{review.review_key}",
+        ):
+            decision = "Reject"
+    if decision is not None:
+        save_block_review_action(review, decision=decision, reason=reason)
+        st.cache_data.clear()
+        st.success(f"Block Review decision recorded: {decision}.")
+        st.rerun()
+
+
 def _initial_preferences(athlete_id, history, hierarchy):
     defaults = recommend_preferences(history)
     active = get_active_training_block(athlete_id)
@@ -510,6 +595,8 @@ def show_training_blocks_page():
         )
         if operational is not None:
             st.html(build_operational_week_html(operational))
+            if operational.review is not None:
+                _render_block_review_controls(operational.review)
         else:
             st.warning(
                 "A custom block is saved, but its operational week could not be built. "

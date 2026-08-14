@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.31.1 — Pathmark Navigation Hotfix**
+Current release: **v0.32.0 — Block Review and Deliberate Adaptation**
 
 Architecture status: **Frozen**
 
@@ -290,13 +290,43 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ---
 
+## Completed Sprint — Block Review and Deliberate Adaptation
+
+### Product question
+
+**When real training changes the safest next step, how can Performance Passport
+recommend a change without taking control away from the athlete?**
+
+### Delivered
+
+- The first review trigger reuses Operational Block evidence when an unexpected
+  demanding run sits within one day of the next saved hard commitment.
+- Approved and proposed commitments remain visible side by side.
+- Accept, Defer and Reject each append a dated audit event with an optional
+  athlete reason; the latest decision controls the result.
+- An accepted recommendation overlays one future day at read time. The original
+  `training_block_designs.plan_json` is never modified.
+- A later Defer or Reject removes a previously accepted overlay while preserving
+  the earlier decision history.
+- Training Blocks, Home and Adaptive Coach/Next Run consume the same effective
+  Operational Week contract.
+- Schema v11 adds `block_review_actions` without changing imported activities,
+  existing goals or saved Training Block designs.
+- Regression coverage protects persistence, athlete/block scoping, original
+  plan preservation, operational integration, responsive UI and Jo's real
+  upcoming saved block.
+
+---
+
 ## Following Priorities
 
-1. Deliberate Block Review allowing suggested changes to be accepted, deferred
-   or rejected with an audit trail; never silently mutate future weeks.
-2. Saved course/weather profiles and route-specific Race Predictor evidence.
-3. Login-led athlete identity and Coach Mode athlete switching.
-4. Direct Strava/Garmin integration through the canonical activity model.
+1. Training Fuel & Nutrition Foundation: daily guidance, meals and a weekly
+   ingredient roll-up derived from the approved Training Block.
+2. Additional deliberate review types for missed weeks and sustained volume
+   disruption, reusing the v0.32 audit and overlay contract.
+3. Saved course/weather profiles and route-specific Race Predictor evidence.
+4. Login-led athlete identity and Coach Mode athlete switching.
+5. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

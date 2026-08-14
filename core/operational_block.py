@@ -14,12 +14,17 @@ distance. Adaptations are advice only and never mutate the persisted design.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import datetime
 import re
 from typing import Any
 
 from core.activity_reliability import has_reliable_distance_and_pace
+from core.block_review import (
+    BlockReviewProposal,
+    apply_accepted_block_reviews,
+    build_recovery_review,
+)
 from core.database import (
     get_athlete_sport_roles,
     get_connection,
@@ -121,6 +126,7 @@ class OperationalWeek:
     summary: str
     source: str = "Saved Training Block + real activities"
     model_version: int = 1
+    review: BlockReviewProposal | None = None
 
 
 def _date(value: Any) -> datetime.date | None:
@@ -695,11 +701,55 @@ def build_operational_block_week(
     if start is None or end is None:
         return None
     activities = _load_operational_activities(athlete_id, start, end)
-    return compose_operational_week(
+    original = compose_operational_week(
         athlete_id=athlete_id,
         training_block_id=block.id,
         block_name=block.name,
         plan=saved.plan,
         activities=activities,
         today=today,
+    )
+    if original is None:
+        return None
+    review = None
+    if original.next_run.adapted and original.next_run.date is not None:
+        original_day = next(
+            (
+                day for day in original.days
+                if day.date == original.next_run.date
+            ),
+            None,
+        )
+        if original_day is not None:
+            review = build_recovery_review(
+                athlete_id=athlete_id,
+                training_block_id=block.id,
+                week_number=original.week_number,
+                target_date=original.next_run.date,
+                planned_type=original_day.planned_type,
+                planned_detail=original_day.planned_detail,
+                planned_family=original_day.planned_family,
+                reason=original.next_run.reason,
+            )
+    if review is None or not review.is_accepted:
+        return replace(original, review=review)
+    effective_plan = apply_accepted_block_reviews(
+        saved.plan,
+        athlete_id=athlete_id,
+        training_block_id=block.id,
+    )
+    effective = compose_operational_week(
+        athlete_id=athlete_id,
+        training_block_id=block.id,
+        block_name=block.name,
+        plan=effective_plan,
+        activities=activities,
+        today=today,
+    )
+    if effective is None:
+        return replace(original, review=review)
+    return replace(
+        effective,
+        review=review,
+        source="Saved Training Block + accepted Block Review + real activities",
     )

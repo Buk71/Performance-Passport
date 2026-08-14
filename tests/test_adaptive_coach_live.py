@@ -58,6 +58,22 @@ class UpcomingOperational(Operational):
     status = "Ready to start"
 
 
+class AcceptedReviewNext(OperationalNext):
+    session_type = "Recovery / easy running"
+    timing = "Tomorrow"
+    detail = "Accepted one-day recovery overlay"
+    family = "recovery"
+    planned_type = "Recovery / easy running"
+    day = "Tuesday"
+    reason = "The athlete accepted the Block Review recommendation."
+
+
+class AcceptedReviewOperational(Operational):
+    status = "Review accepted"
+    next_run = AcceptedReviewNext()
+    source = "Saved Training Block + accepted Block Review + real activities"
+
+
 class LiveCoachTests(unittest.TestCase):
     @patch("core.adaptive_coach_live.build_operational_block_week", return_value=None)
     @patch("core.adaptive_coach_live.build_coaching_arbitration", return_value=Arbitration())
@@ -94,6 +110,18 @@ class LiveCoachTests(unittest.TestCase):
         self.assertNotEqual(result.immediate_label, "Long run")
         self.assertEqual(result.source, "Adaptive Coach + Arbitration")
         self.assertEqual(result.operational_status, "Ready to start")
+
+    @patch("core.adaptive_coach_live.build_operational_block_week", return_value=AcceptedReviewOperational())
+    @patch("core.adaptive_coach_live.build_coaching_arbitration", return_value=Arbitration())
+    @patch("core.adaptive_coach_live.build_next_run_recommendation", return_value=Legacy())
+    def test_accepted_block_review_drives_next_run_consistently(
+        self, legacy, arbitration, operational
+    ):
+        result = build_live_coach_decision(1)
+
+        self.assertEqual(result.immediate_label, "Recovery / easy running")
+        self.assertEqual(result.immediate_timing, "Tomorrow")
+        self.assertIn("accepted Block Review", result.source)
 
 
 if __name__ == "__main__":

@@ -212,3 +212,19 @@ Quiet waypoint dots make the route scannable. The active destination uses ink
 text on warm paper with an orange leading edge, while hover and keyboard focus
 remain distinct. Visual groups do not create independent selection states and
 the interface never exposes a `None` destination.
+
+## Deliberate Block Review — v0.32
+
+Block Review appears directly beneath the Operational Week that produced it.
+The comparison is always explicit: warm-paper Approved Commitment on the left,
+the green-supported Proposed Commitment on the right and an orange direction
+marker between them. Compact layouts stack the same reading order.
+
+Pending and Deferred use restrained orange because athlete attention is still
+required. Accepted uses progress green; Rejected uses neutral ink/grey. Colour
+never replaces the written decision. The evidence, original session, proposed
+session, date, latest decision and athlete reason remain visible without hover.
+
+Accept is the one primary action. Defer and Reject remain secondary actions.
+Every review states that the saved Training Block remains preserved and that
+the accepted result is a one-day overlay, not a hidden plan rewrite.

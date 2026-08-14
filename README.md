@@ -22,10 +22,17 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.31.1 — Pathmark Navigation Hotfix**
+**v0.32.0 — Block Review and Deliberate Adaptation**
 
 The production app now brings together:
 
+- an explicit Block Review when an unexpected demanding run makes the next
+  saved hard commitment unsafe;
+- a side-by-side approved commitment and one-day recovery proposal;
+- Accept, Defer and Reject actions with an optional athlete reason;
+- append-only decision history and an accepted read-time overlay that never
+  rewrites the saved Training Block;
+- consistent accepted outcomes across Training Blocks, Home and Next Run;
 - the approved Pathmark artwork in the persistent sidebar, replacing the
   temporary inline mark;
 - one coherent navigation state across running, analysis, planning and
@@ -124,13 +131,13 @@ The production app now brings together:
 
 ## Next Sprint
 
-**Block Review and Deliberate Adaptation** will let the athlete accept, reject
-or defer suggested changes after a disrupted week, while retaining the original
-saved plan and its evidence trail.
+**Training Fuel & Nutrition Foundation** will translate the approved daily
+training demand into adjustable meals, training fuelling and a weekly
+ingredient shopping list without changing the running plan.
 
 The next coaching question is:
 
-> Which suggested adaptations should become deliberate changes to future weeks?
+> How should each athlete fuel the training they have deliberately approved?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 
