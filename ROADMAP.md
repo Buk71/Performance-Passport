@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.32.0 — Block Review and Deliberate Adaptation**
+Current release: **v0.32.1 — Training Blocks Readability Hotfix**
 
 Architecture status: **Frozen**
 
@@ -315,6 +315,20 @@ recommend a change without taking control away from the athlete?**
 - Regression coverage protects persistence, athlete/block scoping, original
   plan preservation, operational integration, responsive UI and Jo's real
   upcoming saved block.
+
+---
+
+## Completed Hotfix — Training Blocks Readability
+
+- Increased the rationale and supporting evidence type scale to use the clear
+  space already available inside desktop cards.
+- Enlarged week phase labels, mileage, emphasis, dates, session counts and the
+  daily-shape action while retaining the four-card desktop grid.
+- Applied the same readable hierarchy to selected daily shape, Operational
+  Block Coaching and Deliberate Block Review surfaces.
+- Preserved all existing container breakpoints, coaching logic, persistence and
+  navigation behaviour.
+- Added a regression test enforcing the new minimum supporting-text sizes.
 
 ---
 

@@ -22,10 +22,14 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.32.0 — Block Review and Deliberate Adaptation**
+**v0.32.1 — Training Blocks Readability Hotfix**
 
 The production app now brings together:
 
+- a larger, more legible Training Blocks type scale that uses the available
+  card space on desktop without changing the responsive structure;
+- clearer rationale, week-card metadata, daily prescriptions, operational
+  evidence and Block Review explanations;
 - an explicit Block Review when an unexpected demanding run makes the next
   saved hard commitment unsafe;
 - a side-by-side approved commitment and one-day recovery proposal;

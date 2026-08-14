@@ -228,3 +228,13 @@ session, date, latest decision and athlete reason remain visible without hover.
 Accept is the one primary action. Defer and Reject remain secondary actions.
 Every review states that the saved Training Block remains preserved and that
 the accepted result is a one-day overlay, not a hidden plan rewrite.
+
+## Training Blocks readability — v0.32.1
+
+Desktop Training Blocks cards use their available space rather than compressing
+supporting evidence into caption-sized type. Explanatory copy is at least 12px,
+with central rationale and week-card emphasis at 13–14px. Week dates, session
+counts and action labels remain visually secondary but must be readable without
+zooming. The same floor applies to daily-shape, Operational Week and Block
+Review supporting text. Existing container breakpoints preserve the hierarchy
+on narrower screens.

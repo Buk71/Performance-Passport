@@ -74,6 +74,19 @@ def test_training_block_surface_is_responsive_and_sidebar_safe():
     assert "@container (max-width:520px)" in timeline
 
 
+def test_training_block_typography_uses_readable_supporting_sizes():
+    overview, timeline = _surface(1)
+    source = (ROOT / "ui" / "training_blocks.py").read_text()
+
+    assert "font-size:14px;line-height:1.65" in overview
+    assert ".tb-week p{font-size:13px" in timeline
+    assert ".tb-week>small{display:block;font-size:11px" in timeline
+    assert ".tb-week>b{display:block;font-size:10px" in timeline
+    assert ".tb-day p{{font-size:11px" in source
+    assert ".ob-day p{{font-size:11px" in source
+    assert ".br-compare p{{font-size:12px" in source
+
+
 def test_week_cards_are_clickable_and_selected_week_is_visible():
     history = build_training_history_profile(1)
     hierarchy = build_goal_hierarchy(1, reference_date=REFERENCE_DATE)

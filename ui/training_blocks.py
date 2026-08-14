@@ -147,20 +147,20 @@ def build_training_block_overview_html(
       .tb-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:14px;margin-top:10px}}
       .tb-shell *{{box-sizing:border-box}} .tb-hero,.tb-section,.tb-plan-summary,.tb-rationale{{background:#fff;border:1px solid #DED8CE;border-radius:18px;box-shadow:0 8px 24px rgba(16,38,61,.05)}}
       .tb-hero{{padding:28px 30px;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:28px;align-items:center}}
-      .tb-eyebrow,.tb-heading small,.tb-goal-card small,.tb-plan-summary small,.tb-evidence-grid small,.tb-rationale small{{font-size:11px;letter-spacing:.16em;font-weight:800;color:#718091}}
+      .tb-eyebrow,.tb-heading small,.tb-goal-card small,.tb-plan-summary small,.tb-evidence-grid small,.tb-rationale small{{font-size:12px;letter-spacing:.15em;font-weight:800;color:#718091}}
       .tb-hero-row{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}} .tb-hero h1{{font-size:36px;line-height:1.03;margin:8px 0;color:#10263D;letter-spacing:-.04em}}
-      .tb-hero-row>span,.tb-heading>span{{font-size:10px;font-weight:900;letter-spacing:.12em;color:#3E8E72;background:#E8F5EE;padding:7px 10px;border-radius:999px}}
-      .tb-hero p,.tb-section p,.tb-plan-summary p,.tb-evidence-grid p{{margin:4px 0 0;color:#69798A;font-size:13px;line-height:1.45}}
+      .tb-hero-row>span,.tb-heading>span{{font-size:11px;font-weight:900;letter-spacing:.11em;color:#3E8E72;background:#E8F5EE;padding:7px 10px;border-radius:999px}}
+      .tb-hero p,.tb-section p,.tb-plan-summary p,.tb-evidence-grid p{{margin:4px 0 0;color:#69798A;font-size:14px;line-height:1.5}}
       .tb-goal-card{{background:#F7F3EC;border:1px solid #E3DCCF;border-radius:15px;padding:18px;display:grid;gap:6px}}
-      .tb-goal-card strong{{font-size:23px}} .tb-goal-card span{{font-size:12px;color:#56697B;font-weight:650}}
+      .tb-goal-card strong{{font-size:23px}} .tb-goal-card span{{font-size:13px;color:#56697B;font-weight:650}}
       .tb-section{{padding:22px 24px}} .tb-heading{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}}
       .tb-heading h2,.tb-plan-summary h2{{font-size:22px;margin:4px 0 0;letter-spacing:-.025em}} .tb-evidence-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}}
       .tb-evidence-grid article{{background:#F7F3EC;border:1px solid #E8E1D7;border-radius:14px;padding:16px;min-width:0}}
-      .tb-evidence-grid strong{{display:block;font-size:26px;margin-top:8px;letter-spacing:-.03em}} .tb-evidence-grid strong i{{font-size:12px;font-style:normal;color:#6D7B88}}
+      .tb-evidence-grid strong{{display:block;font-size:27px;margin-top:8px;letter-spacing:-.03em}} .tb-evidence-grid strong i{{font-size:13px;font-style:normal;color:#6D7B88}}
       .tb-plan-summary{{padding:20px 24px;display:flex;justify-content:space-between;gap:20px;align-items:center;border-top:3px solid #3E8E72}}
-      .tb-plan-metrics{{display:flex;gap:9px}} .tb-plan-metrics span{{min-width:112px;background:#F7F3EC;border-radius:12px;padding:12px;color:#667789;font-size:10px;font-weight:700;text-align:right}}
-      .tb-plan-metrics strong{{display:block;color:#10263D;font-size:22px}} .tb-rationale{{padding:18px 24px;display:grid;gap:8px}} .tb-rationale ul{{margin:8px 0 0;padding-left:18px;color:#5D6E7E;font-size:12px;line-height:1.55}}
-      .tb-warning{{background:#FFF0E8;border-left:3px solid #F05A28;border-radius:9px;padding:9px 12px;color:#9A451F;font-size:12px;font-weight:650}}
+      .tb-plan-metrics{{display:flex;gap:9px}} .tb-plan-metrics span{{min-width:118px;background:#F7F3EC;border-radius:12px;padding:13px;color:#667789;font-size:12px;font-weight:700;text-align:right}}
+      .tb-plan-metrics strong{{display:block;color:#10263D;font-size:24px}} .tb-rationale{{padding:20px 26px;display:grid;gap:8px}} .tb-rationale ul{{margin:9px 0 0;padding-left:20px;color:#4F6273;font-size:14px;line-height:1.65}}
+      .tb-warning{{background:#FFF0E8;border-left:3px solid #F05A28;border-radius:9px;padding:10px 13px;color:#9A451F;font-size:13px;line-height:1.45;font-weight:650}}
       @container (max-width:800px){{.tb-hero{{grid-template-columns:1fr}}.tb-evidence-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
       @container (max-width:560px){{.tb-hero{{padding:21px}}.tb-hero h1{{font-size:28px}}.tb-section{{padding:18px}}.tb-evidence-grid{{grid-template-columns:1fr}}.tb-plan-summary{{align-items:flex-start;flex-direction:column}}.tb-plan-metrics{{width:100%}}.tb-plan-metrics span{{flex:1;text-align:left}}}}
     </style>
@@ -211,13 +211,13 @@ def build_week_timeline_html(
     <style>
       .tb-timeline-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:18px;padding:22px 24px;color:#10263D;font-family:Inter,system-ui,sans-serif;margin-top:14px}}
       .tb-timeline-heading{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}} .tb-timeline-heading small{{font-size:11px;letter-spacing:.16em;font-weight:800;color:#718091}}
-      .tb-timeline-heading h2{{font-size:22px;margin:4px 0;letter-spacing:-.025em}} .tb-timeline-heading>span{{font-size:10px;font-weight:850;letter-spacing:.1em;color:#3E8E72;text-align:right}} .tb-timeline-heading>span>b{{display:block;font-size:8px;color:#718091;margin-top:5px}}
-      .tb-timeline{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}} .tb-week-link{{display:block;color:inherit;text-decoration:none;border-radius:13px;min-width:0}}
-      .tb-week{{height:100%;background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:13px;min-width:0;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}}
+      .tb-timeline-heading h2{{font-size:23px;margin:4px 0;letter-spacing:-.025em}} .tb-timeline-heading>span{{font-size:12px;font-weight:850;letter-spacing:.09em;color:#3E8E72;text-align:right;line-height:1.35}} .tb-timeline-heading>span>b{{display:block;font-size:10px;color:#718091;margin-top:5px}}
+      .tb-timeline{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}} .tb-week-link{{display:block;color:inherit;text-decoration:none;border-radius:13px;min-width:0}}
+      .tb-week{{height:100%;background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:16px;min-width:0;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}}
       .tb-week-link:hover .tb-week{{border-color:#A8B5BE;transform:translateY(-1px)}} .tb-week-link:focus-visible{{outline:3px solid #F05A28;outline-offset:3px}} .tb-week-link.is-selected .tb-week{{border:2px solid #10263D;box-shadow:0 7px 18px rgba(16,38,61,.12);background:#FFF}}
-      .tb-week-link.is-event .tb-week{{border-color:#F2A98D;background:#FFF7F2}} .tb-week-link.is-event.is-selected .tb-week{{border-color:#10263D}} .tb-week-top{{display:flex;justify-content:space-between;gap:5px;align-items:center}} .tb-week-top span,.tb-week-top i{{font-size:9px;font-style:normal;font-weight:850;letter-spacing:.08em;color:#718091}}
-      .tb-week-top i{{color:#F05A28;text-align:right}} .tb-week>strong{{display:block;font-size:22px;margin:8px 0 5px}} .tb-week-track{{height:5px;background:#E3DED5;border-radius:999px;overflow:hidden}} .tb-week-track span{{display:block;height:100%;background:#3E8E72;border-radius:999px}}
-      .tb-week p{{font-size:11px;font-weight:750;line-height:1.35;min-height:30px;margin:9px 0 5px}} .tb-week>small{{display:block;font-size:9px;line-height:1.35;color:#718091}} .tb-week>b{{display:block;font-size:8px;letter-spacing:.08em;color:#3E8E72;margin-top:9px}}
+      .tb-week-link.is-event .tb-week{{border-color:#F2A98D;background:#FFF7F2}} .tb-week-link.is-event.is-selected .tb-week{{border-color:#10263D}} .tb-week-top{{display:flex;justify-content:space-between;gap:5px;align-items:center}} .tb-week-top span,.tb-week-top i{{font-size:11px;font-style:normal;font-weight:850;letter-spacing:.075em;color:#718091}}
+      .tb-week-top i{{color:#F05A28;text-align:right}} .tb-week>strong{{display:block;font-size:25px;margin:9px 0 6px}} .tb-week-track{{height:6px;background:#E3DED5;border-radius:999px;overflow:hidden}} .tb-week-track span{{display:block;height:100%;background:#3E8E72;border-radius:999px}}
+      .tb-week p{{font-size:13px;font-weight:750;line-height:1.4;min-height:38px;margin:11px 0 7px}} .tb-week>small{{display:block;font-size:11px;line-height:1.45;color:#657687}} .tb-week>b{{display:block;font-size:10px;letter-spacing:.075em;color:#3E8E72;margin-top:11px}}
       @container (max-width:850px){{.tb-timeline{{grid-template-columns:repeat(2,minmax(0,1fr))}}}} @container (max-width:520px){{.tb-timeline-shell{{padding:18px}}.tb-timeline{{grid-template-columns:1fr}}.tb-timeline-heading{{flex-direction:column}}.tb-week p{{min-height:auto}}}}
     </style>
     """
@@ -241,9 +241,9 @@ def build_daily_week_html(week) -> str:
     </section>
     <style>
       .tb-daily-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:16px;padding:18px;color:#10263D;font-family:Inter,system-ui,sans-serif}}
-      .tb-daily-heading{{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}} .tb-daily-shell>div>div>small,.tb-day small{{font-size:9px;letter-spacing:.12em;font-weight:850;color:#718091}} .tb-daily-shell h3{{font-size:17px;margin:4px 0 13px}} .tb-daily-heading>span{{font-size:9px;font-weight:850;letter-spacing:.09em;color:#3E8E72}}
-      .tb-days{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}} .tb-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-radius:11px;padding:11px;min-width:0}}
-      .tb-day.is-hard{{border-top:3px solid #F05A28}} .tb-day strong{{display:block;font-size:12px;line-height:1.25;margin:6px 0}} .tb-day p{{font-size:9px;line-height:1.35;color:#68798A;margin:0;overflow-wrap:anywhere}}
+      .tb-daily-heading{{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}} .tb-daily-shell>div>div>small,.tb-day small{{font-size:11px;letter-spacing:.11em;font-weight:850;color:#718091}} .tb-daily-shell h3{{font-size:20px;margin:4px 0 14px}} .tb-daily-heading>span{{font-size:10px;font-weight:850;letter-spacing:.08em;color:#3E8E72}}
+      .tb-days{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}} .tb-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-radius:11px;padding:13px;min-width:0}}
+      .tb-day.is-hard{{border-top:3px solid #F05A28}} .tb-day strong{{display:block;font-size:14px;line-height:1.3;margin:7px 0}} .tb-day p{{font-size:11px;line-height:1.45;color:#68798A;margin:0;overflow-wrap:anywhere}}
       @container (max-width:800px){{.tb-days{{grid-template-columns:repeat(4,minmax(0,1fr))}}}} @container (max-width:480px){{.tb-days{{grid-template-columns:1fr 1fr}}.tb-daily-heading{{flex-direction:column}}}}
     </style>
     """
@@ -316,16 +316,16 @@ def build_operational_week_html(week: OperationalWeek) -> str:
       .ob-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:10px;margin:10px 0 18px}}
       .ob-shell *{{box-sizing:border-box}} .ob-head,.ob-metrics,.ob-days,.ob-coaching{{background:#fff;border:1px solid #DED8CE;border-radius:17px;box-shadow:0 8px 24px rgba(16,38,61,.045)}}
       .ob-head{{padding:20px 24px;display:flex;justify-content:space-between;gap:18px;align-items:flex-start;border-top:3px solid #3E8E72}}
-      .ob-head small,.ob-metrics small,.ob-coaching small,.ob-day small{{font-size:9px;letter-spacing:.14em;font-weight:850;color:#718091}} .ob-head h2{{font-size:27px;margin:4px 0 2px;letter-spacing:-.03em}}
-      .ob-head p{{font-size:12px;color:#68798A;margin:0}} .ob-head>span{{font-size:9px;font-weight:900;letter-spacing:.12em;color:#3E8E72;background:#E8F5EE;border-radius:999px;padding:7px 10px}}
+      .ob-head small,.ob-metrics small,.ob-coaching small,.ob-day small{{font-size:11px;letter-spacing:.12em;font-weight:850;color:#718091}} .ob-head h2{{font-size:28px;margin:4px 0 2px;letter-spacing:-.03em}}
+      .ob-head p{{font-size:14px;line-height:1.45;color:#68798A;margin:0}} .ob-head>span{{font-size:10px;font-weight:900;letter-spacing:.11em;color:#3E8E72;background:#E8F5EE;border-radius:999px;padding:7px 10px}}
       .ob-metrics{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}} .ob-metrics article{{padding:15px 17px;border-right:1px solid #E7E0D5;min-width:0}} .ob-metrics article:last-child{{border-right:0}}
-      .ob-metrics strong{{display:block;font-size:22px;margin:6px 0 2px;letter-spacing:-.025em}} .ob-metrics strong i{{font-size:12px;font-style:normal;color:#6A7988}} .ob-metrics p{{font-size:10px;color:#718091;margin:0}}
+      .ob-metrics strong{{display:block;font-size:24px;margin:6px 0 3px;letter-spacing:-.025em}} .ob-metrics strong i{{font-size:13px;font-style:normal;color:#6A7988}} .ob-metrics p{{font-size:12px;line-height:1.4;color:#718091;margin:0}}
       .ob-days{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:9px;gap:7px}} .ob-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-radius:11px;padding:10px;min-width:0;min-height:112px}}
       .ob-day.is-complete{{background:#EDF7F1;border-color:#BFDCCA}} .ob-day.is-review{{background:#FFF7F2;border-color:#F2B69D}} .ob-day.is-missed{{border-color:#D5A196}} .ob-day.is-today{{box-shadow:inset 0 0 0 2px #10263D}}
-      .ob-day-top{{display:flex;justify-content:space-between;gap:4px}} .ob-day-top span{{font-size:8px;font-weight:850;color:#3E8E72}} .ob-day.is-review .ob-day-top span,.ob-day.is-missed .ob-day-top span{{color:#D95426}}
-      .ob-day strong{{display:block;font-size:11px;line-height:1.25;margin:7px 0 4px}} .ob-day p{{font-size:9px;color:#68798A;line-height:1.3;margin:0;overflow-wrap:anywhere}} .ob-day i{{display:block;font-size:8px;font-style:normal;font-weight:750;color:#718091;margin-top:7px}}
-      .ob-coaching{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr);overflow:hidden}} .ob-coaching>div,.ob-coaching>aside{{padding:16px 19px}} .ob-coaching aside{{background:#102E49;color:#fff}} .ob-coaching ul{{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}} .ob-coaching li{{display:grid;gap:2px}} .ob-coaching li strong{{font-size:11px}} .ob-coaching li span{{font-size:10px;color:#68798A;line-height:1.35}}
-      .ob-coaching aside small{{color:#9FC4B4}} .ob-coaching aside strong{{display:block;font-size:15px;margin:7px 0}} .ob-coaching aside p{{font-size:10px;line-height:1.4;color:#D8E2E9;margin:0}} .ob-lock{{font-size:10px;color:#6D7B88;padding:0 5px}}
+      .ob-day-top{{display:flex;justify-content:space-between;gap:4px}} .ob-day-top span{{font-size:10px;font-weight:850;color:#3E8E72}} .ob-day.is-review .ob-day-top span,.ob-day.is-missed .ob-day-top span{{color:#D95426}}
+      .ob-day strong{{display:block;font-size:13px;line-height:1.3;margin:8px 0 5px}} .ob-day p{{font-size:11px;color:#68798A;line-height:1.4;margin:0;overflow-wrap:anywhere}} .ob-day i{{display:block;font-size:10px;font-style:normal;font-weight:750;color:#718091;margin-top:8px}}
+      .ob-coaching{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr);overflow:hidden}} .ob-coaching>div,.ob-coaching>aside{{padding:16px 19px}} .ob-coaching aside{{background:#102E49;color:#fff}} .ob-coaching ul{{display:grid;gap:8px;margin:9px 0 0;padding:0;list-style:none}} .ob-coaching li{{display:grid;gap:3px}} .ob-coaching li strong{{font-size:13px}} .ob-coaching li span{{font-size:12px;color:#68798A;line-height:1.45}}
+      .ob-coaching aside small{{color:#9FC4B4}} .ob-coaching aside strong{{display:block;font-size:17px;margin:8px 0}} .ob-coaching aside p{{font-size:12px;line-height:1.45;color:#D8E2E9;margin:0}} .ob-lock{{font-size:12px;line-height:1.4;color:#6D7B88;padding:0 5px}}
       @container (max-width:850px){{.ob-metrics{{grid-template-columns:1fr 1fr}}.ob-metrics article:nth-child(2){{border-right:0}}.ob-days{{grid-template-columns:repeat(4,minmax(0,1fr))}}}}
       @container (max-width:560px){{.ob-head{{flex-direction:column}}.ob-metrics{{grid-template-columns:1fr}}.ob-metrics article{{border-right:0;border-bottom:1px solid #E7E0D5}}.ob-days{{grid-template-columns:1fr 1fr}}.ob-coaching{{grid-template-columns:1fr}}}}
     </style>
@@ -365,10 +365,10 @@ def build_block_review_html(review: BlockReviewProposal) -> str:
       .br-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:9px;margin:-4px 0 12px}}
       .br-shell *{{box-sizing:border-box}} .br-head,.br-compare,.br-state{{background:#fff;border:1px solid #DED8CE;border-radius:16px;box-shadow:0 8px 22px rgba(16,38,61,.04)}}
       .br-head{{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:17px 20px;border-top:3px solid #F05A28}}
-      .br-head small,.br-compare small{{font-size:9px;letter-spacing:.14em;font-weight:850;color:#718091}} .br-head h3{{font-size:20px;margin:4px 0;letter-spacing:-.02em}} .br-head p{{font-size:11px;line-height:1.4;color:#68798A;margin:0}}
-      .br-head>span{{font-size:9px;font-weight:900;letter-spacing:.11em;border-radius:999px;padding:7px 10px;white-space:nowrap}} .br-head .is-pending,.br-head .is-deferred{{color:#C84D24;background:#FFF0E8}} .br-head .is-accepted{{color:#28755B;background:#E8F5EE}} .br-head .is-rejected{{color:#6C7780;background:#EEF1F2}}
-      .br-compare{{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr);align-items:stretch;overflow:hidden}} .br-compare article{{padding:16px 19px}} .br-original{{background:#F7F3EC}} .br-proposed{{background:#EDF7F1}} .br-compare strong{{display:block;font-size:15px;margin:6px 0 4px}} .br-compare p{{font-size:10px;line-height:1.4;color:#68798A;margin:0 0 8px}} .br-compare i{{font-size:9px;font-style:normal;font-weight:800;color:#3E8E72}} .br-arrow{{display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#F05A28}}
-      .br-state{{padding:13px 18px}} .br-state>strong{{font-size:11px}} .br-state p{{font-size:10px;color:#718091;margin:5px 0 0}} .br-athlete-reason{{color:#4E6172!important}}
+      .br-head small,.br-compare small{{font-size:11px;letter-spacing:.12em;font-weight:850;color:#718091}} .br-head h3{{font-size:22px;margin:4px 0;letter-spacing:-.02em}} .br-head p{{font-size:13px;line-height:1.45;color:#68798A;margin:0}}
+      .br-head>span{{font-size:10px;font-weight:900;letter-spacing:.1em;border-radius:999px;padding:7px 10px;white-space:nowrap}} .br-head .is-pending,.br-head .is-deferred{{color:#C84D24;background:#FFF0E8}} .br-head .is-accepted{{color:#28755B;background:#E8F5EE}} .br-head .is-rejected{{color:#6C7780;background:#EEF1F2}}
+      .br-compare{{display:grid;grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr);align-items:stretch;overflow:hidden}} .br-compare article{{padding:18px 20px}} .br-original{{background:#F7F3EC}} .br-proposed{{background:#EDF7F1}} .br-compare strong{{display:block;font-size:17px;margin:7px 0 5px}} .br-compare p{{font-size:12px;line-height:1.45;color:#68798A;margin:0 0 9px}} .br-compare i{{font-size:11px;font-style:normal;font-weight:800;color:#3E8E72}} .br-arrow{{display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#F05A28}}
+      .br-state{{padding:15px 19px}} .br-state>strong{{font-size:13px}} .br-state p{{font-size:12px;line-height:1.45;color:#718091;margin:6px 0 0}} .br-athlete-reason{{color:#4E6172!important}}
       @container (max-width:600px){{.br-head{{flex-direction:column}}.br-compare{{grid-template-columns:1fr}}.br-arrow{{height:28px;transform:rotate(90deg)}}}}
     </style>
     """
