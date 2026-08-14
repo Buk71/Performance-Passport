@@ -1,5 +1,5 @@
 APP_NAME = "Performance Passport"
 APP_SUBTITLE = "Personal Running Intelligence"
 
-VERSION = "0.26.1"
-VERSION_NAME = "Passport Distance Evidence"
+VERSION = "0.27.1"
+VERSION_NAME = "Standalone Race Predictor"

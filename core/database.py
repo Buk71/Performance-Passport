@@ -305,6 +305,45 @@ def get_active_goal(athlete_id):
     return dict(zip(columns, row))
 
 
+def get_goals_for_athlete(athlete_id):
+    """Return every saved goal in coaching priority order."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            id, athlete_id, training_block_id, goal_name, goal_type,
+            distance_m, target_time_s, target_date, race_name, priority,
+            status, motivation, created_at, updated_at
+        FROM goals
+        WHERE athlete_id = ?
+        ORDER BY
+            CASE priority
+                WHEN 'Primary' THEN 0
+                WHEN 'Secondary' THEN 1
+                ELSE 2
+            END,
+            CASE status
+                WHEN 'Active' THEN 0
+                WHEN 'Planned' THEN 1
+                ELSE 2
+            END,
+            target_date,
+            id
+        """,
+        (athlete_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    columns = (
+        "id", "athlete_id", "training_block_id", "goal_name", "goal_type",
+        "distance_m", "target_time_s", "target_date", "race_name",
+        "priority", "status", "motivation", "created_at", "updated_at",
+    )
+    return [dict(zip(columns, row)) for row in rows]
+
+
 def save_goal(
     athlete_id,
     goal_name,

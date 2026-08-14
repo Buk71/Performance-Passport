@@ -683,3 +683,55 @@ Progress already answers what is changing, while Next Run answers what to do.
 Passport is most useful as the stable, auditable current identity connecting
 physiological boundaries, historical training behaviour, distinctive traits,
 learned associations and achievements without blurring those evidence types.
+
+---
+
+# Decision 022
+
+**Date**
+13 August 2026
+
+## Interactive Race Outlook Translates Capability; It Does Not Change Fitness
+
+### Status
+
+Accepted
+
+### Decision
+
+Race Predictor is a standalone primary destination. Goals owns saved outcomes;
+Race Predictor answers what the athlete could run for a selected distance and
+set of conditions.
+
+- The user may select any saved goal without making it active, or explore 5K,
+  5 miles, 10K, 10 miles, Half Marathon or Marathon with an optional comparison
+  target.
+- Every specialist evidence provider recalculates for the selected distance.
+  The app does not scale the active-goal answer after the fact and never writes
+  an exploratory choice back to the goals table.
+- The current ideal-condition capability remains fixed while the user changes
+  temperature, humidity, total ascent, wind speed/exposure and surface.
+- Heat and humidity use the shared temperature/dew-point model; ascent uses the
+  shared conservative climbing-density allowance; wind remains generic because
+  direction is not known; firm trail uses the shared surface allowance.
+- Supported personal heat, hills and trail responses scale only their relevant
+  factor. Every factor retains sample/confidence provenance through the existing
+  environment-profile contract.
+- The result shows selected-race central time, range, pace, condition cost,
+  target gap and a recalculated coaching likelihood.
+- Combined summary adjustments are capped at 18% of ideal pace. This is a
+  safety boundary, not a promise that every extreme course can be modelled.
+- Quick-start scenarios are explicitly labelled as starting conditions. A
+  separate fine-tuning section keeps every actual value visible and adjustable.
+
+The deterministic translation lives in `core/race_outlook.py` and the controls
+and responsive presentation live in `ui/race_outlook.py`.
+`core/home_predictions.py` exposes an explicit-goal adapter while preserving
+the active-goal Home wrapper. Goals retains goal and training-block management.
+
+### Reason
+
+An athlete's fitness does not change when the weather slider moves, and an
+exploratory distance should not silently change the coaching goal. Separating
+capability, goal choice and race-day realisation makes the model understandable
+and keeps Goals free to develop a proper primary/secondary hierarchy.

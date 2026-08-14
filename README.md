@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.26.1 — Passport Distance Evidence**
+**v0.27.1 — Standalone Race Predictor**
 
 The production app now brings together:
 
@@ -63,6 +63,16 @@ The production app now brings together:
   and heart-rate or effort guidance
 - Threshold support separated into decoded workouts, the strict Progress trend
   subset and complete before/after learning windows
+- A standalone Race Predictor translating recalculated distance-specific
+  capability into user-selected race-day conditions
+- Read-only selection of any saved goal, plus independent exploration of 5K,
+  5 miles, 10K, 10 miles, Half Marathon and Marathon
+- Optional comparison targets for exploratory distances without changing the
+  athlete's active goal
+- Adjustable temperature, humidity, total ascent, wind speed/exposure and
+  road or firm-trail surface, plus useful scenario presets
+- A factor-by-factor condition-cost audit showing personal versus generic
+  support, selected-condition pace/range and revised goal likelihood
 - Athlete-specific heat, hill and trail responses, learned traits and
   cautious workout-response associations
 - A factual achievement ledger that keeps all-time and recent results separate
@@ -71,13 +81,12 @@ The production app now brings together:
 
 ## Next Sprint
 
-**Interactive Race Outlook** will allow combined Hot, Hilly, Trail and Windy
-conditions to be explored without rewriting the athlete's factual results.
+**Goal hierarchy and Training Block foundation** will distinguish primary,
+secondary and future outcomes before building a history-led, customisable plan.
 
 The next coaching question is:
 
-> How does my current capability change under a specific combination of race
-> conditions?
+> How should multiple goals shape one safe, realistic training block?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

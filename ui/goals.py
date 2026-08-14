@@ -4,7 +4,7 @@ import textwrap
 
 import streamlit as st
 
-from core.database import get_connection, save_goal
+from core.database import get_goals_for_athlete, save_goal
 from core.training_blocks import (
     BLOCK_FOCUSES,
     BLOCK_PHASES,
@@ -12,7 +12,7 @@ from core.training_blocks import (
     get_active_training_block,
     save_training_block,
 )
-from ui.athlete_selection import render_athlete_selector
+from ui.athlete_selection import render_athlete_id_selector
 
 
 def _safe(value):
@@ -50,61 +50,7 @@ def _time_text(seconds):
 
 
 def _load_goals(athlete_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            id,
-            athlete_id,
-            training_block_id,
-            goal_name,
-            goal_type,
-            distance_m,
-            target_time_s,
-            target_date,
-            race_name,
-            priority,
-            status,
-            motivation
-        FROM goals
-        WHERE athlete_id = ?
-        ORDER BY
-            CASE priority
-                WHEN 'Primary' THEN 0
-                WHEN 'Secondary' THEN 1
-                ELSE 2
-            END,
-            CASE status
-                WHEN 'Active' THEN 0
-                WHEN 'Planned' THEN 1
-                ELSE 2
-            END,
-            target_date,
-            id
-        """,
-        (athlete_id,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
-
-    return [
-        {
-            "id": row[0],
-            "athlete_id": row[1],
-            "training_block_id": row[2],
-            "goal_name": row[3],
-            "goal_type": row[4],
-            "distance_m": row[5],
-            "target_time_s": row[6],
-            "target_date": row[7],
-            "race_name": row[8],
-            "priority": row[9],
-            "status": row[10],
-            "motivation": row[11],
-        }
-        for row in rows
-    ]
+    return get_goals_for_athlete(athlete_id)
 
 
 def _goal_distance_label(goal):
@@ -427,16 +373,28 @@ def _new_goal_form(athlete_id):
 
 
 def show_goals_page():
-    st.title("🎯 Goals")
-    st.write(
-        "Goals define the outcome. Performance Passport can then recommend "
-        "the Training Block most likely to move you toward it."
+    st.markdown(
+        """
+        <style>
+            [data-testid="stMainBlockContainer"] { max-width:1450px; padding-top:4.25rem; padding-bottom:3rem; }
+            [data-testid="stHeader"] { background:transparent; }
+            [data-testid="stElementContainer"]:has(.goals-selector-marker) { display:none; }
+            [data-testid="stHorizontalBlock"]:has(.goals-selector-marker) { align-items:flex-start; gap:8px; }
+            .goals-context-strip { min-height:40px; border:1px solid #e5ddd2; border-radius:12px; background:#fff; padding:0 15px; display:flex; align-items:center; justify-content:space-between; gap:14px; color:#10263d; box-shadow:0 5px 18px rgba(16,38,61,.035); }
+            .goals-context-strip strong { font-size:12px; letter-spacing:.12em; }
+            .goals-context-strip span { color:#6c7885; font-size:11px; }
+            .goals-context-strip em { color:#238a52; font-size:10px; font-style:normal; font-weight:800; letter-spacing:.08em; }
+            @media (max-width:900px) { [data-testid="stHorizontalBlock"]:has(.goals-selector-marker) [data-testid="stColumn"]:last-child { display:none; } [data-testid="stHorizontalBlock"]:has(.goals-selector-marker) [data-testid="stColumn"]:first-child { flex:1 1 100%; width:100%; } }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-
-    athlete_id = render_athlete_selector(
-        key="goals_athlete_selector",
-        label="Athlete",
-    )
+    selector_col, context_col = st.columns([390, 1051], gap="small")
+    with selector_col:
+        st.markdown('<span class="goals-selector-marker"></span>', unsafe_allow_html=True)
+        athlete_id = render_athlete_id_selector(label_visibility="collapsed")
+    with context_col:
+        st.html('<div class="goals-context-strip"><strong>GOALS</strong><span>What am I targeting?</span><em>OUTCOMES &amp; PRIORITIES</em></div>')
 
     if athlete_id is None:
         st.info("Add an athlete before creating goals.")
@@ -467,6 +425,8 @@ def show_goals_page():
         )
         _new_goal_form(athlete_id)
         return
+
+    st.markdown("### Goal and Training Block")
 
     for goal in goals:
         _render_goal(goal, athlete_id)

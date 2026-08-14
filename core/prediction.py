@@ -74,21 +74,6 @@ class PredictionEngine:
                 ),
             )
 
-        if target_seconds is None:
-            return GoalPrediction(
-                athlete_id=athlete_id,
-                goal_id=goal_id,
-                available=False,
-                predicted_seconds=None,
-                target_seconds=None,
-                confidence=evidence.confidence,
-                evidence=evidence.items,
-                explanation=(
-                    "This goal does not have a target time, so a race-time "
-                    "prediction is not required."
-                ),
-            )
-
         prediction_items = evidence.prediction_items
 
         if len(prediction_items) < self.MINIMUM_PREDICTION_ITEMS:
@@ -97,7 +82,11 @@ class PredictionEngine:
                 goal_id=goal_id,
                 available=False,
                 predicted_seconds=None,
-                target_seconds=float(target_seconds),
+                target_seconds=(
+                    float(target_seconds)
+                    if target_seconds is not None
+                    else None
+                ),
                 confidence=evidence.confidence,
                 evidence=evidence.items,
                 explanation=(
@@ -117,7 +106,11 @@ class PredictionEngine:
                 goal_id=goal_id,
                 available=False,
                 predicted_seconds=None,
-                target_seconds=float(target_seconds),
+                target_seconds=(
+                    float(target_seconds)
+                    if target_seconds is not None
+                    else None
+                ),
                 confidence=evidence.confidence,
                 evidence=evidence.items,
                 explanation=(
@@ -143,7 +136,11 @@ class PredictionEngine:
                 goal_id=goal_id,
                 available=False,
                 predicted_seconds=None,
-                target_seconds=float(target_seconds),
+                target_seconds=(
+                    float(target_seconds)
+                    if target_seconds is not None
+                    else None
+                ),
                 confidence=confidence,
                 evidence=evidence.items,
                 explanation=(
@@ -157,7 +154,11 @@ class PredictionEngine:
             goal_id=goal_id,
             available=True,
             predicted_seconds=predicted_seconds,
-            target_seconds=float(target_seconds),
+            target_seconds=(
+                float(target_seconds)
+                if target_seconds is not None
+                else None
+            ),
             confidence=confidence,
             evidence=evidence.items,
             explanation=(

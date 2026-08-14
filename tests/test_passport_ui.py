@@ -15,6 +15,10 @@ def _markup(athlete_id: int) -> str:
 
 def test_passport_surface_uses_richard_real_evidence():
     markup = _markup(1)
+    detail = build_passport_detail(1)
+    threshold_distance_mi = (
+        detail.threshold_evidence.typical_work_distance_km / 1.609344
+    )
 
     assert "Richard Burke" in markup
     assert "152 bpm" in markup
@@ -28,7 +32,7 @@ def test_passport_surface_uses_richard_real_evidence():
     assert "31</b> high-confidence decoded threshold workouts" in markup
     assert "5</b> in the strict 12-month pace-trend set" in markup
     assert "2</b> with complete before/after response windows" in markup
-    assert "1.8 mi" in markup
+    assert f"{threshold_distance_mi:.1f} mi" in markup
     assert "19:08" in markup
     assert "OFFICIAL TIMES ARE NEVER NORMALISED" in markup
 

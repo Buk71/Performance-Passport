@@ -7,6 +7,7 @@ from ui.athletes import show_athletes_page
 from ui.activities import show_activities_page
 from ui.home import show_home_page
 from ui.progress import show_progress_page
+from ui.race_outlook import show_race_predictor_page
 from ui.passport import show_passport_page
 from ui.diagnostics import show_diagnostics_page
 from ui.import_page import show_import_page
@@ -50,6 +51,9 @@ elif page == "Activities":
 
 elif page == "Progress":
     show_progress_page()
+
+elif page == "Race Predictor":
+    show_race_predictor_page()
 
 elif page == "Goals":
     show_goals_page()

@@ -124,8 +124,17 @@ class CoachBrain:
             items=(history_item,),
         )
 
-    def build_evidence(self) -> EvidenceBundle:
-        goal = self.get_goal()
+    def build_evidence(
+        self,
+        goal: dict | None = None,
+    ) -> EvidenceBundle:
+        """Build evidence for an explicit goal or the athlete's active goal.
+
+        Passing a goal lets exploratory tools recalculate every specialist
+        coach for another distance without changing the saved active goal.
+        Existing callers keep the original active-goal behaviour.
+        """
+        goal = goal if goal is not None else self.get_goal()
         context = EvidenceContext(
             athlete_id=self.athlete_id,
             goal=goal,

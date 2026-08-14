@@ -296,10 +296,12 @@ def load_run_profiles(athlete_id: int) -> list[RunProfile]:
     return profiles
 
 
-def build_home_predictions(athlete_id: int) -> HomePredictions:
-    """Build the active-goal prediction using the existing real engines."""
+def build_goal_predictions(
+    athlete_id: int,
+    goal: dict | None,
+) -> HomePredictions:
+    """Build a prediction for an explicit goal without mutating persistence."""
     brain = CoachBrain(athlete_id)
-    goal = brain.get_goal()
     goal_name = str(
         (goal or {}).get("goal_name")
         or (goal or {}).get("race_name")
@@ -307,7 +309,7 @@ def build_home_predictions(athlete_id: int) -> HomePredictions:
     )
     distance_km = _goal_distance_km(goal)
 
-    evidence = brain.build_evidence()
+    evidence = brain.build_evidence(goal)
     prediction = brain.prediction_engine.predict_goal(
         athlete_id,
         goal,
@@ -431,3 +433,10 @@ def build_home_predictions(athlete_id: int) -> HomePredictions:
         scenarios=scenarios,
         explanation=explanation,
     )
+
+
+def build_home_predictions(athlete_id: int) -> HomePredictions:
+    """Build the active-goal prediction using the existing real engines."""
+    brain = CoachBrain(athlete_id)
+    goal = brain.get_goal()
+    return build_goal_predictions(athlete_id, goal)

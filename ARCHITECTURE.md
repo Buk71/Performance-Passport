@@ -187,14 +187,14 @@ Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
 
-Version 0.26.1 preserves the approved Home, Activity Review and Progress and
-adds the production Passport Detail evidence layer:
+Version 0.27.1 preserves the approved Home, Activity Review, Progress and
+Passport Detail and adds the standalone Race Predictor layer:
 
 - `ui/home.py` owns the production Home route.
 - The approved v11 responsive composition remains available as the visual
   reference and rollback history.
-- `app.py` routes Home to `show_home_page()` and Activities to
-  `show_activities_page()`.
+- `app.py` routes Home, Activities and Race Predictor to their production page
+  functions.
 - Home calculations continue to come from the existing `core/` coaching,
   prediction, recognition and summary modules.
 - Split-aware session classification is shared across product consumers.
@@ -253,12 +253,27 @@ adds the production Passport Detail evidence layer:
 - `core/home_predictions.py` exposes its existing run-profile loader and
   environment story adapter so Passport can reuse those calculations without
   invoking the slower active-goal prediction pipeline.
+- `core/home_predictions.py` exposes `build_goal_predictions` for explicit,
+  read-only goal or distance exploration and keeps `build_home_predictions` as
+  the active-goal Home contract.
+- `core/race_outlook.py` accepts the existing typed `HomePredictions` capability
+  plus explicit race conditions. It translates capability into selected-race
+  time without rebuilding or mutating the underlying fitness estimate.
+- Race Outlook reuses the shared temperature/dew-point, climbing-density, wind
+  and trail allowances. Supported personal heat, hill and trail response scales
+  the relevant factor only; wind remains generic because direction is absent.
+- `ui/race_outlook.py` owns the standalone Race Predictor route, explicit saved
+  goal or standard-distance selection, interactive controls and presentation.
+  Its schema-versioned cache keys include the selected prediction basis and it
+  contains no coaching formula.
+- `ui/goals.py` retains goal and training-block management and the canonical
+  numeric athlete selector. It does not own race-condition exploration.
 
 Next Sprint Direction
 
-Build the interactive Race Outlook inside the existing `core/`, `ui/` and
-`tests/` architecture. Reuse capability and environment forecast engines; do
-not introduce Streamlit `pages/`, `utils/` or `services/`.
+Develop primary, secondary and future goal semantics, followed by a
+history-led, constraint-aware Training Block generator inside the existing
+`core/`, `ui/` and `tests/` architecture.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

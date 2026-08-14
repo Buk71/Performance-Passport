@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.26.1 — Passport Distance Evidence**
+Current release: **v0.27.1 — Standalone Race Predictor**
 
 Architecture status: **Frozen**
 
@@ -24,6 +24,10 @@ Approved production baseline:
 - Supported heat, humidity/dew point, climbing, wind and trail effects are
   normalised before aerobic and threshold comparisons
 - Home and Progress share the same canonical numeric athlete selector
+- Race Predictor is a standalone primary destination with the same canonical
+  athlete selector
+- Any saved goal can be forecast read-only, while six standard race distances
+  can be explored without changing the active goal
 - Aerobic efficiency uses a browser-safe monthly chart; training rhythm keeps
   total reliable mileage while showing its Easy, Long Run, Session and Other
   composition
@@ -37,6 +41,12 @@ Approved production baseline:
   workout associations and factual achievements
 - Passport pace is shown in min/mile; configured thresholds, historical
   patterns and cautious estimates retain distinct source/confidence language
+- Goals now contains an interactive Race Outlook with preset and adjustable
+  heat/humidity, ascent, wind exposure and surface conditions
+- Selected conditions modify realised race time, range and goal likelihood
+  while the underlying capability remains visibly unchanged
+- Every condition factor reports its estimated cost and whether the response
+  is personalised or still generic
 
 ---
 
@@ -170,9 +180,12 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ## Following Priorities
 
-1. Interactive Race Outlook with combined Hot, Hilly, Trail and Windy inputs.
-2. Login-led athlete identity and Coach Mode athlete switching.
-3. Direct Strava/Garmin integration through the canonical activity model.
+1. Primary, secondary and future goal hierarchy with explicit block influence.
+2. History-led, customisable Training Blocks using available days, long-run day,
+   session days, sustainable volume and safe workout spacing.
+3. Saved course/weather profiles and route-specific Race Predictor evidence.
+4. Login-led athlete identity and Coach Mode athlete switching.
+5. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

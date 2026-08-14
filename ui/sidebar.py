@@ -11,6 +11,7 @@ PRIMARY_NAVIGATION = [
     "Learning",
     "Activities",
     "Progress",
+    "Race Predictor",
     "Goals",
     "Training Blocks",
     "Hall of Fame",

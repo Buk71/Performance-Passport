@@ -113,3 +113,19 @@ reserved for supported confidence and positive direction.
 
 ## Merchandise
 The Pathmark, contour motif and achievement system must work on premium performance apparel as well as digital UI. Earned kit should feel like sportswear, not promotional merchandise.
+
+## Standalone Race Predictor — v0.27.1
+
+Race Outlook keeps a stable left-to-right story: Current Capability → Condition
+Cost → Selected Race → Comparison Target. The ideal capability card must not
+visually change with the controls. Selected Race uses ink; condition cost uses
+orange; goal context uses the warm gold treatment.
+
+Prediction basis appears first and distinguishes a read-only saved goal from
+standard-distance exploration. Quick-start scenario buttons are introduced as
+starting conditions, followed by a separately labelled fine-tuning section
+that always exposes the actual numeric values. Presets never hide or lock
+inputs. Below the headline comparison, equal factor cards show heat/humidity,
+climbing, wind and surface cost with personalised/generic provenance. Compact
+layouts stack the comparison in reading order and preserve all factor evidence
+without hover.
