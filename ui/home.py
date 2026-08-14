@@ -22,6 +22,15 @@ from ui.activity_navigation import activity_review_url
 from ui import athlete_selection
 
 
+HOME_SUMMARY_CACHE_SCHEMA = 1
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _cached_home_summary(athlete_id: int, schema: int):
+    del schema
+    return build_home_summary(athlete_id)
+
+
 def _linked_card(
     markup: str,
     *,
@@ -398,7 +407,7 @@ def show_home_page() -> None:
         st.warning("No athletes found. Add an athlete first.")
         return
 
-    summary = build_home_summary(athlete_id)
+    summary = _cached_home_summary(athlete_id, HOME_SUMMARY_CACHE_SCHEMA)
     with goal_col:
         st.html(build_production_goal_html(summary))
 

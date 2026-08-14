@@ -288,11 +288,26 @@ Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
 - `ui/training_blocks.py` owns controls and responsive presentation. It may
   deliberately save or update a block, but never hides a Primary-goal mismatch
   or silently rewrites the previous active block.
+- `core/operational_block.py` is the read-only execution layer above a saved
+  Training Block. It selects the relevant saved week, matches real activities
+  by date and purpose, counts only reliable distance, and emits suggestions.
+- Operational matching prefers the existing athlete-relative Performance
+  Recognition category and falls back to the shared session classifier. It
+  never creates a second classification system.
+- `core/home_summary.py` and `core/adaptive_coach_live.py` consume the same
+  operational week contract. If no saved custom design exists, their existing
+  Adaptive Weekly Plan and coaching fallbacks remain unchanged.
+- Operational suggestions are immutable advice. This layer has no persistence
+  write path and cannot alter approved weekdays, sessions or volume limits.
+- Week-card selection is presentation-only, carried by the `pp_training_week`
+  navigation request and validated against the generated plan. The request
+  carries `pp_page`, `pp_athlete` and `pp_training_week`, restores the canonical
+  route/athlete once and is then consumed. It does not change the saved block.
 
 Next Sprint Direction
 
-Connect the saved weekly shape to Next Run and completed activity evidence,
-with auditable adaptations that preserve athlete-approved constraints.
+Add an explicit review action for accepting, deferring or rejecting suggested
+future-week changes while preserving the original plan and evidence trail.
 Notes
 The project should prioritise stability over restructuring.
 Architecture changes are allowed later, but only as deliberate refactoring sprints, not as accidental changes during feature development.

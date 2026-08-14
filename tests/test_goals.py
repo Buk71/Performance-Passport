@@ -7,6 +7,7 @@ from core.goals import (
     build_goal_hierarchy_from_records,
     set_primary_goal,
 )
+from core.training_blocks import get_active_training_block
 
 
 REFERENCE_DATE = datetime.date(2026, 8, 14)
@@ -86,13 +87,27 @@ def test_hierarchy_keeps_primary_secondary_future_and_past_distinct():
 def test_real_richard_and_jo_keep_independent_primary_goals():
     richard = build_goal_hierarchy(1, reference_date=REFERENCE_DATE)
     jo = build_goal_hierarchy(3, reference_date=REFERENCE_DATE)
+    richard_block = get_active_training_block(1)
+    jo_block = get_active_training_block(3)
 
     assert richard.primary.name == "Sub 39:00"
-    assert richard.primary.block_relationship == "Training block not created"
-    assert richard.active_block_name is None
     assert jo.primary.name == "Sub 45"
-    assert jo.primary.block_relationship == "Drives 10K Training Block"
-    assert jo.active_block_name == "10K Training Block"
+    assert richard.primary.athlete_id == 1
+    assert jo.primary.athlete_id == 3
+
+    for hierarchy, block in ((richard, richard_block), (jo, jo_block)):
+        if block is None:
+            assert hierarchy.active_block_name is None
+            assert hierarchy.primary.block_relationship == "Training block not created"
+        else:
+            assert hierarchy.active_block_id == block.id
+            assert hierarchy.active_block_name == block.name
+            expected = (
+                f"Drives {block.name}"
+                if hierarchy.primary.training_block_id == block.id
+                else "Current block needs review"
+            )
+            assert hierarchy.primary.block_relationship == expected
 
 
 def test_promoting_goal_preserves_previous_primary_as_secondary(

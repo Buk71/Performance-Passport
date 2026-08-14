@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.29.1 — History-Led Training Blocks**
+Current release: **v0.30.3 — Operational Block Coaching**
 
 Architecture status: **Frozen**
 
@@ -238,10 +238,41 @@ The Activities placeholder is now an evidence-backed review destination.
 
 ---
 
+## Completed Sprint — Operational Block Coaching
+
+### Coaching question
+
+**How should the saved block respond to what the athlete actually completes?**
+
+### Delivered
+
+- Current saved week matched to real running activities by date and training
+  purpose, preferring athlete-relative Performance Recognition evidence.
+- Reliable completed distance compared with planned mileage; treadmill or
+  otherwise unreliable runs count by time without invented distance.
+- Explicit Complete, Different, Missed, Extra, Planned and Today day states.
+- Planned running-day, quality-commitment and long-run completion summaries.
+- Next incomplete commitment promoted into Home and Recommended Next Run.
+- Recovery protection when actual hard running makes the next saved hard day
+  unsafe, while leaving athlete-approved days and volume ceiling unchanged.
+- Responsive operational evidence and suggestion surface in Training Blocks.
+- An explicit not-yet-active message when the current proposal has no persisted
+  custom design, including the exact save/update action required.
+- Clickable week cards that select, highlight and open their seven-day shape
+  directly below the timeline while preserving Next Run's prescription role.
+- Same-app week navigation carries the Training Blocks route, athlete ID and
+  week number, then consumes that URL state so normal sidebar navigation resumes.
+- Real-data tests derive the expected block name and date state from the current
+  database, while continuing to enforce athlete separation and goal/block links.
+- Pure matching, real Richard long-run recognition, Home/Next Run fallback and
+  responsive UI regression coverage.
+
+---
+
 ## Following Priorities
 
-1. Operational Block Coaching connecting the saved week to Next Run and
-   completed-activity review, with deliberate rather than silent adaptation.
+1. Deliberate Block Review allowing suggested changes to be accepted, deferred
+   or rejected with an audit trail; never silently mutate future weeks.
 2. Saved course/weather profiles and route-specific Race Predictor evidence.
 3. Login-led athlete identity and Coach Mode athlete switching.
 4. Direct Strava/Garmin integration through the canonical activity model.

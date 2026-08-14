@@ -4,7 +4,7 @@ import textwrap
 import streamlit as st
 
 from core.adaptive_coach_live import build_live_coach_decision
-from ui.athlete_selection import render_athlete_selector
+from ui.athlete_selection import render_athlete_id_selector
 
 
 def _safe(value):
@@ -26,8 +26,7 @@ def show_next_run_page():
         "needs, personal history and recent execution into one coaching decision."
     )
 
-    athlete_id = render_athlete_selector(
-        key="next_run_athlete_selector",
+    athlete_id = render_athlete_id_selector(
         label="Athlete",
     )
     if athlete_id is None:
@@ -40,6 +39,15 @@ def show_next_run_page():
     if decision is None:
         st.info("Performance Passport needs enough recent evidence to coach the next run.")
         return
+
+    if decision.operational_week_number is not None:
+        completed = decision.operational_completed_miles or 0.0
+        planned = decision.operational_planned_miles or 0.0
+        st.caption(
+            f"Saved Week {decision.operational_week_number} · "
+            f"{decision.operational_status} · "
+            f"{completed:.1f} of {planned:.1f} reliable miles complete"
+        )
 
     _html(
         f"""
@@ -99,5 +107,5 @@ def show_next_run_page():
         st.info(note)
 
     st.caption(
-        "Adaptive Coach is now the live source for Recommended Next Run and the next key workout."
+        "The saved Training Block sets the weekly commitments. Adaptive Coach uses real execution evidence to recommend the safest useful next step without silently changing that block."
     )

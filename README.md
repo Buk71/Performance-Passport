@@ -22,7 +22,7 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.29.1 — History-Led Training Blocks**
+**v0.30.3 — Operational Block Coaching**
 
 The production app now brings together:
 
@@ -88,6 +88,23 @@ The production app now brings together:
   active Training Block
 - Accessible action hierarchy: ink-navy primary actions, warm-paper secondary
   actions and orange reserved for focus, warning and selected-state emphasis
+- Operational current-week coaching for every saved custom Training Block
+- Planned-versus-completed reliable mileage, running days, quality commitments
+  and long-run purpose using real activity evidence
+- Athlete-relative recognition used before generic classification when matching
+  completed runs to the saved week
+- Auditable Complete, Different, Missed and Extra day states without rewriting
+  the athlete-approved weekdays or mileage ceiling
+- Home and Recommended Next Run driven by the next incomplete saved commitment,
+  with recovery protection when real execution changes the safest next step
+- Explicit activation guidance when a generated block has not yet been saved,
+  instead of leaving the operational area absent without explanation
+- Clickable week cards with a highlighted selection and immediate seven-day
+  breakdown beneath the block timeline
+- Stable week links that preserve the Training Blocks route and canonical
+  athlete across the browser refresh used to select a different week
+- Real-database goal and Home regression tests that follow each athlete's
+  current saved block identity rather than a superseded generic block name
 - Adjustable temperature, humidity, total ascent, wind speed/exposure and
   road or firm-trail surface, plus useful scenario presets
 - A factor-by-factor condition-cost audit showing personal versus generic
@@ -100,13 +117,13 @@ The production app now brings together:
 
 ## Next Sprint
 
-**Operational Block Coaching** will connect the saved weekly shape to Next Run,
-completed activities and deliberate weekly adaptation without silently
-rewriting athlete-approved constraints.
+**Block Review and Deliberate Adaptation** will let the athlete accept, reject
+or defer suggested changes after a disrupted week, while retaining the original
+saved plan and its evidence trail.
 
 The next coaching question is:
 
-> How should the saved block respond to what the athlete actually completes?
+> Which suggested adaptations should become deliberate changes to future weeks?
 
 See `ROADMAP.md` for the complete scope and exclusions.
 

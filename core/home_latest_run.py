@@ -120,6 +120,12 @@ def _load_activity_runs(athlete_id: int) -> list[tuple[int, RunProfile]]:
     return runs
 
 
+# Public read-only adapter for consumers that need the same activity-to-run
+# identity used by Performance Recognition.  Keep the original private name
+# above for compatibility with the established Home implementation.
+load_activity_runs = _load_activity_runs
+
+
 def _load_runs(athlete_id: int) -> list[RunProfile]:
     """Preserve the original profile-only contract for shared consumers."""
     return [run for _activity_id, run in _load_activity_runs(athlete_id)]

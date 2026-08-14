@@ -821,3 +821,43 @@ The safest useful plan is neither a frozen generic schedule nor an opaque
 algorithm. Starting with what the athlete has sustainably completed and then
 making real-life constraints first-class produces a plan that is explainable,
 editable and much more likely to be followed.
+
+---
+
+# Decision 025
+
+**Date**
+14 August 2026
+
+## Saved Plan and Real Execution Remain Separate
+
+### Status
+
+Accepted
+
+### Decision
+
+Operational Block Coaching is a read-only layer over the athlete-approved
+Training Block.
+
+- The saved week remains the factual plan.
+- Real activities are matched by date and training purpose, using existing
+  athlete-relative Performance Recognition before the shared classifier.
+- Reliable distance contributes to mileage. An unreliable treadmill or indoor
+  run may complete a day by time but never invents comparative distance.
+- Complete, Different, Missed and Extra are evidence states, not automatic
+  edits.
+- Home and Next Run use the next incomplete saved commitment when one exists.
+- If recent execution makes a hard commitment unsafe, recovery may be advised,
+  but the original commitment remains visible for deliberate review.
+- The operational module has no database write path. Any future adaptation
+  must be explicitly accepted and auditable.
+
+The read-only composition lives in `core/operational_block.py`. Training Blocks
+owns the execution view; Home and Adaptive Coach consume the same contract.
+
+### Reason
+
+A plan only becomes coaching when it responds to reality. Keeping observation,
+recommendation and plan mutation separate makes that response useful without
+making the athlete lose control of the schedule they approved.

@@ -20,6 +20,7 @@ from core.training_block_designer import (
     recommend_preferences,
 )
 from core.goals import GoalHierarchy, build_goal_hierarchy
+from core.operational_block import OperationalWeek, build_operational_block_week
 from core.training_blocks import (
     assign_goal_to_block,
     get_active_training_block,
@@ -29,9 +30,16 @@ from core.training_blocks import (
     save_training_block_design,
 )
 from ui.athlete_selection import render_athlete_id_selector
+from ui import athlete_selection
+from ui.training_block_navigation import (
+    clear_training_block_week_params,
+    read_training_block_week_request,
+    training_block_week_url,
+)
 
 
 TRAINING_BLOCK_CACHE_SCHEMA = 1
+OPERATIONAL_BLOCK_CACHE_SCHEMA = 1
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -41,6 +49,16 @@ def _cached_foundation(
 ) -> tuple[TrainingHistoryProfile | None, GoalHierarchy]:
     del schema
     return build_training_history_profile(athlete_id), build_goal_hierarchy(athlete_id)
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _cached_operational_week(
+    athlete_id: int,
+    reference_date: datetime.date,
+    schema: int,
+) -> OperationalWeek | None:
+    del schema
+    return build_operational_block_week(athlete_id, today=reference_date)
 
 
 def _escape(value) -> str:
@@ -145,7 +163,11 @@ def build_training_block_overview_html(
     """
 
 
-def build_week_timeline_html(design: TrainingBlockDesign) -> str:
+def build_week_timeline_html(
+    design: TrainingBlockDesign,
+    *,
+    selected_week_number: int | None = None,
+) -> str:
     ceiling = max((week.target_miles for week in design.weeks), default=1.0)
     cards = []
     for week in design.weeks:
@@ -156,30 +178,42 @@ def build_week_timeline_html(design: TrainingBlockDesign) -> str:
         if week.event_name:
             flags.append(_escape(week.event_name).upper())
         flag = " · ".join(flags) or _escape(week.phase.upper())
+        selected = week.week_number == selected_week_number
+        week_url = _escape(
+            training_block_week_url(design.athlete_id, week.week_number)
+        )
         cards.append(
             f"""
-            <article class="tb-week {'is-event' if week.event_name else ''}">
-              <div class="tb-week-top"><span>WEEK {week.week_number}</span><i>{flag}</i></div>
-              <strong>{week.target_miles:.1f} mi</strong>
-              <div class="tb-week-track"><span style="width:{width:.1f}%"></span></div>
-              <p>{_escape(week.emphasis)}</p>
-              <small>{_escape(_date_text(week.start_date))} · {week.long_run_miles:.1f} mi long · {week.session_count} session{'s' if week.session_count != 1 else ''}</small>
-            </article>
+            <a class="tb-week-link {'is-event' if week.event_name else ''} {'is-selected' if selected else ''}"
+               href="{week_url}"
+               target="_self" aria-label="View Week {week.week_number} daily shape"
+               {'aria-current="true"' if selected else ''}>
+              <article class="tb-week">
+                <div class="tb-week-top"><span>WEEK {week.week_number}</span><i>{flag}</i></div>
+                <strong>{week.target_miles:.1f} mi</strong>
+                <div class="tb-week-track"><span style="width:{width:.1f}%"></span></div>
+                <p>{_escape(week.emphasis)}</p>
+                <small>{_escape(_date_text(week.start_date))} · {week.long_run_miles:.1f} mi long · {week.session_count} session{'s' if week.session_count != 1 else ''}</small>
+                <b>VIEW DAILY SHAPE →</b>
+              </article>
+            </a>
             """
         )
     return f"""
     <section class="tb-timeline-shell">
-      <div class="tb-timeline-heading"><div><small>WEEK-BY-WEEK SHAPE</small><h2>Progression, recovery and taper</h2></div><span>SESSION DETAIL STAYS IN NEXT RUN</span></div>
+      <div class="tb-timeline-heading"><div><small>WEEK-BY-WEEK SHAPE</small><h2>Progression, recovery and taper</h2></div><span>CLICK A WEEK FOR ITS DAILY SHAPE<b>SESSION DETAIL STAYS IN NEXT RUN</b></span></div>
       <div class="tb-timeline">{''.join(cards)}</div>
     </section>
     <style>
       .tb-timeline-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:18px;padding:22px 24px;color:#10263D;font-family:Inter,system-ui,sans-serif;margin-top:14px}}
       .tb-timeline-heading{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}} .tb-timeline-heading small{{font-size:11px;letter-spacing:.16em;font-weight:800;color:#718091}}
-      .tb-timeline-heading h2{{font-size:22px;margin:4px 0;letter-spacing:-.025em}} .tb-timeline-heading>span{{font-size:10px;font-weight:850;letter-spacing:.1em;color:#3E8E72}}
-      .tb-timeline{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}} .tb-week{{background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:13px;min-width:0}}
-      .tb-week.is-event{{border-color:#F2A98D;background:#FFF7F2}} .tb-week-top{{display:flex;justify-content:space-between;gap:5px;align-items:center}} .tb-week-top span,.tb-week-top i{{font-size:9px;font-style:normal;font-weight:850;letter-spacing:.08em;color:#718091}}
+      .tb-timeline-heading h2{{font-size:22px;margin:4px 0;letter-spacing:-.025em}} .tb-timeline-heading>span{{font-size:10px;font-weight:850;letter-spacing:.1em;color:#3E8E72;text-align:right}} .tb-timeline-heading>span>b{{display:block;font-size:8px;color:#718091;margin-top:5px}}
+      .tb-timeline{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}} .tb-week-link{{display:block;color:inherit;text-decoration:none;border-radius:13px;min-width:0}}
+      .tb-week{{height:100%;background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:13px;min-width:0;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}}
+      .tb-week-link:hover .tb-week{{border-color:#A8B5BE;transform:translateY(-1px)}} .tb-week-link:focus-visible{{outline:3px solid #F05A28;outline-offset:3px}} .tb-week-link.is-selected .tb-week{{border:2px solid #10263D;box-shadow:0 7px 18px rgba(16,38,61,.12);background:#FFF}}
+      .tb-week-link.is-event .tb-week{{border-color:#F2A98D;background:#FFF7F2}} .tb-week-link.is-event.is-selected .tb-week{{border-color:#10263D}} .tb-week-top{{display:flex;justify-content:space-between;gap:5px;align-items:center}} .tb-week-top span,.tb-week-top i{{font-size:9px;font-style:normal;font-weight:850;letter-spacing:.08em;color:#718091}}
       .tb-week-top i{{color:#F05A28;text-align:right}} .tb-week>strong{{display:block;font-size:22px;margin:8px 0 5px}} .tb-week-track{{height:5px;background:#E3DED5;border-radius:999px;overflow:hidden}} .tb-week-track span{{display:block;height:100%;background:#3E8E72;border-radius:999px}}
-      .tb-week p{{font-size:11px;font-weight:750;line-height:1.35;min-height:30px;margin:9px 0 5px}} .tb-week>small{{font-size:9px;line-height:1.35;color:#718091}}
+      .tb-week p{{font-size:11px;font-weight:750;line-height:1.35;min-height:30px;margin:9px 0 5px}} .tb-week>small{{display:block;font-size:9px;line-height:1.35;color:#718091}} .tb-week>b{{display:block;font-size:8px;letter-spacing:.08em;color:#3E8E72;margin-top:9px}}
       @container (max-width:850px){{.tb-timeline{{grid-template-columns:repeat(2,minmax(0,1fr))}}}} @container (max-width:520px){{.tb-timeline-shell{{padding:18px}}.tb-timeline{{grid-template-columns:1fr}}.tb-timeline-heading{{flex-direction:column}}.tb-week p{{min-height:auto}}}}
     </style>
     """
@@ -197,16 +231,99 @@ def build_daily_week_html(week) -> str:
         for day in week.days
     )
     return f"""
-    <section class="tb-daily-shell">
-      <div><small>DAILY SHAPE · WEEK {week.week_number}</small><h3>{_escape(week.emphasis)}</h3></div>
+    <section class="tb-daily-shell" id="training-week-detail">
+      <div class="tb-daily-heading"><div><small>SELECTED DAILY SHAPE · WEEK {week.week_number}</small><h3>{_escape(week.emphasis)}</h3></div><span>EXACT SESSION DETAIL STAYS IN NEXT RUN</span></div>
       <div class="tb-days">{cards}</div>
     </section>
     <style>
       .tb-daily-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:16px;padding:18px;color:#10263D;font-family:Inter,system-ui,sans-serif}}
-      .tb-daily-shell>div>small,.tb-day small{{font-size:9px;letter-spacing:.12em;font-weight:850;color:#718091}} .tb-daily-shell h3{{font-size:17px;margin:4px 0 13px}}
+      .tb-daily-heading{{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}} .tb-daily-shell>div>div>small,.tb-day small{{font-size:9px;letter-spacing:.12em;font-weight:850;color:#718091}} .tb-daily-shell h3{{font-size:17px;margin:4px 0 13px}} .tb-daily-heading>span{{font-size:9px;font-weight:850;letter-spacing:.09em;color:#3E8E72}}
       .tb-days{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}} .tb-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-radius:11px;padding:11px;min-width:0}}
       .tb-day.is-hard{{border-top:3px solid #F05A28}} .tb-day strong{{display:block;font-size:12px;line-height:1.25;margin:6px 0}} .tb-day p{{font-size:9px;line-height:1.35;color:#68798A;margin:0;overflow-wrap:anywhere}}
-      @container (max-width:800px){{.tb-days{{grid-template-columns:repeat(4,minmax(0,1fr))}}}} @container (max-width:480px){{.tb-days{{grid-template-columns:1fr 1fr}}}}
+      @container (max-width:800px){{.tb-days{{grid-template-columns:repeat(4,minmax(0,1fr))}}}} @container (max-width:480px){{.tb-days{{grid-template-columns:1fr 1fr}}.tb-daily-heading{{flex-direction:column}}}}
+    </style>
+    """
+
+
+def build_operational_week_html(week: OperationalWeek) -> str:
+    status_class = {
+        "Complete": "is-complete",
+        "Different": "is-review",
+        "Missed": "is-missed",
+        "Extra": "is-review",
+        "Today": "is-today",
+    }
+    cards = []
+    for day in week.days:
+        actual = ""
+        if day.activities:
+            actual = " · ".join(activity.family_label for activity in day.activities)
+        mileage = (
+            f"{day.completed_miles:.1f} / {day.planned_miles:.1f} mi"
+            if day.completed_miles > 0
+            and day.planned_miles is not None
+            and day.planned_miles > 0
+            else f"{day.completed_miles:.1f} mi done"
+            if day.completed_miles > 0
+            else (
+                f"{day.planned_miles:.1f} mi planned"
+                if day.planned_miles is not None and day.planned_miles > 0
+                else ""
+            )
+        )
+        cards.append(
+            f"""
+            <article class="ob-day {status_class.get(day.status, '')}">
+              <div class="ob-day-top"><small>{_escape(day.day[:3].upper())}</small><span>{_escape(day.status.upper())}</span></div>
+              <strong>{_escape(day.planned_type)}</strong>
+              <p>{_escape(actual or day.planned_detail)}</p>
+              <i>{_escape(mileage)}</i>
+            </article>
+            """
+        )
+    suggestions = "".join(
+        f"<li><strong>{_escape(item.title)}</strong><span>{_escape(item.detail)}</span></li>"
+        for item in week.suggestions
+    )
+    long_value = (
+        "Complete" if week.long_run_completed
+        else ("Remaining" if week.long_run_planned else "Not planned")
+    )
+    return f"""
+    <main class="ob-shell">
+      <section class="ob-head">
+        <div><small>OPERATIONAL BLOCK COACHING · WEEK {week.week_number} OF {week.total_weeks}</small><h2>{_escape(week.status)}</h2><p>{_escape(week.headline)} · {_escape(week.phase)} · {_escape(week.emphasis)}</p></div>
+        <span>{_escape(week.state.upper())}</span>
+      </section>
+      <section class="ob-metrics">
+        <article><small>RELIABLE DISTANCE</small><strong>{week.completed_miles:.1f}<i> / {week.planned_miles:.1f} mi</i></strong><p>{week.remaining_miles:.1f} planned miles remain.</p></article>
+        <article><small>RUNNING DAYS</small><strong>{week.completed_run_days}<i> / {week.planned_run_days}</i></strong><p>Days with real activity evidence.</p></article>
+        <article><small>QUALITY COMMITMENTS</small><strong>{week.completed_quality_sessions}<i> / {week.planned_quality_sessions}</i></strong><p>Matched to the saved purpose.</p></article>
+        <article><small>LONG RUN</small><strong>{_escape(long_value)}</strong><p>Purpose evidence, not title alone.</p></article>
+      </section>
+      <section class="ob-days">{''.join(cards)}</section>
+      <section class="ob-coaching">
+        <div><small>WHAT THE EVIDENCE SUGGESTS</small><ul>{suggestions}</ul></div>
+        <aside><small>UP NEXT</small><strong>{_escape(week.next_run.timing)} · {_escape(week.next_run.session_type)}</strong><p>{_escape(week.next_run.detail)}</p></aside>
+      </section>
+      <div class="ob-lock">Saved weekdays and mileage ceiling remain unchanged. Suggestions require your review.</div>
+    </main>
+    <style>
+      .ob-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:10px;margin:10px 0 18px}}
+      .ob-shell *{{box-sizing:border-box}} .ob-head,.ob-metrics,.ob-days,.ob-coaching{{background:#fff;border:1px solid #DED8CE;border-radius:17px;box-shadow:0 8px 24px rgba(16,38,61,.045)}}
+      .ob-head{{padding:20px 24px;display:flex;justify-content:space-between;gap:18px;align-items:flex-start;border-top:3px solid #3E8E72}}
+      .ob-head small,.ob-metrics small,.ob-coaching small,.ob-day small{{font-size:9px;letter-spacing:.14em;font-weight:850;color:#718091}} .ob-head h2{{font-size:27px;margin:4px 0 2px;letter-spacing:-.03em}}
+      .ob-head p{{font-size:12px;color:#68798A;margin:0}} .ob-head>span{{font-size:9px;font-weight:900;letter-spacing:.12em;color:#3E8E72;background:#E8F5EE;border-radius:999px;padding:7px 10px}}
+      .ob-metrics{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}} .ob-metrics article{{padding:15px 17px;border-right:1px solid #E7E0D5;min-width:0}} .ob-metrics article:last-child{{border-right:0}}
+      .ob-metrics strong{{display:block;font-size:22px;margin:6px 0 2px;letter-spacing:-.025em}} .ob-metrics strong i{{font-size:12px;font-style:normal;color:#6A7988}} .ob-metrics p{{font-size:10px;color:#718091;margin:0}}
+      .ob-days{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:9px;gap:7px}} .ob-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-radius:11px;padding:10px;min-width:0;min-height:112px}}
+      .ob-day.is-complete{{background:#EDF7F1;border-color:#BFDCCA}} .ob-day.is-review{{background:#FFF7F2;border-color:#F2B69D}} .ob-day.is-missed{{border-color:#D5A196}} .ob-day.is-today{{box-shadow:inset 0 0 0 2px #10263D}}
+      .ob-day-top{{display:flex;justify-content:space-between;gap:4px}} .ob-day-top span{{font-size:8px;font-weight:850;color:#3E8E72}} .ob-day.is-review .ob-day-top span,.ob-day.is-missed .ob-day-top span{{color:#D95426}}
+      .ob-day strong{{display:block;font-size:11px;line-height:1.25;margin:7px 0 4px}} .ob-day p{{font-size:9px;color:#68798A;line-height:1.3;margin:0;overflow-wrap:anywhere}} .ob-day i{{display:block;font-size:8px;font-style:normal;font-weight:750;color:#718091;margin-top:7px}}
+      .ob-coaching{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr);overflow:hidden}} .ob-coaching>div,.ob-coaching>aside{{padding:16px 19px}} .ob-coaching aside{{background:#102E49;color:#fff}} .ob-coaching ul{{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}} .ob-coaching li{{display:grid;gap:2px}} .ob-coaching li strong{{font-size:11px}} .ob-coaching li span{{font-size:10px;color:#68798A;line-height:1.35}}
+      .ob-coaching aside small{{color:#9FC4B4}} .ob-coaching aside strong{{display:block;font-size:15px;margin:7px 0}} .ob-coaching aside p{{font-size:10px;line-height:1.4;color:#D8E2E9;margin:0}} .ob-lock{{font-size:10px;color:#6D7B88;padding:0 5px}}
+      @container (max-width:850px){{.ob-metrics{{grid-template-columns:1fr 1fr}}.ob-metrics article:nth-child(2){{border-right:0}}.ob-days{{grid-template-columns:repeat(4,minmax(0,1fr))}}}}
+      @container (max-width:560px){{.ob-head{{flex-direction:column}}.ob-metrics{{grid-template-columns:1fr}}.ob-metrics article{{border-right:0;border-bottom:1px solid #E7E0D5}}.ob-days{{grid-template-columns:1fr 1fr}}.ob-coaching{{grid-template-columns:1fr}}}}
     </style>
     """
 
@@ -280,13 +397,42 @@ def _customisation_controls(athlete_id, history, initial):
     )
 
 
-def _daily_preview(design):
-    labels = {
-        f"Week {week.week_number} · {_date_text(week.start_date)} · {week.phase}": week
-        for week in design.weeks
-    }
-    selected = st.selectbox("Inspect a week's daily shape", list(labels), key=f"tb_week_preview_{design.athlete_id}")
-    st.html(build_daily_week_html(labels[selected]))
+def _selected_week_number(design, requested) -> int:
+    try:
+        selected = int(requested)
+    except (TypeError, ValueError):
+        selected = design.weeks[0].week_number
+    valid = {week.week_number for week in design.weeks}
+    return selected if selected in valid else design.weeks[0].week_number
+
+
+def _apply_training_week_request() -> None:
+    """Restore the linked route and athlete before rendering its selector."""
+    request = read_training_block_week_request(st.query_params)
+    if request is None:
+        return
+    athletes = athlete_selection.get_athletes()
+    row = next(
+        (item for item in athletes if int(item[0]) == request.athlete_id),
+        None,
+    )
+    if row is not None:
+        st.session_state[athlete_selection.SESSION_ID_KEY] = request.athlete_id
+        st.session_state[athlete_selection.SESSION_NAME_KEY] = (
+            athlete_selection.athlete_name(row)
+        )
+        st.session_state[f"tb_selected_week_{request.athlete_id}"] = (
+            request.week_number
+        )
+    clear_training_block_week_params(st.query_params)
+
+
+def _daily_preview(design, selected_week_number):
+    selected = next(
+        week for week in design.weeks
+        if week.week_number == selected_week_number
+    )
+    st.html(build_daily_week_html(selected))
 
 
 def _save_design(athlete_id, hierarchy, history, preferences, design, active):
@@ -332,6 +478,7 @@ def _existing_blocks(athlete_id, current_id):
 
 
 def show_training_blocks_page():
+    _apply_training_week_request()
     selector, heading = st.columns([1, 2.7])
     with selector:
         athlete_id = render_athlete_id_selector(label_visibility="collapsed")
@@ -352,6 +499,32 @@ def show_training_blocks_page():
         st.warning("There is not enough running history to create a history-led block yet.")
         return
     initial, active, saved = _initial_preferences(athlete_id, history, hierarchy)
+    saved_matches_primary = (
+        saved is not None and saved.primary_goal_id == hierarchy.primary.id
+    )
+    if saved_matches_primary:
+        operational = _cached_operational_week(
+            athlete_id,
+            datetime.date.today(),
+            OPERATIONAL_BLOCK_CACHE_SCHEMA,
+        )
+        if operational is not None:
+            st.html(build_operational_week_html(operational))
+        else:
+            st.warning(
+                "A custom block is saved, but its operational week could not be built. "
+                "Update the active Training Block below to refresh its saved plan."
+            )
+    else:
+        action = (
+            "Update active Training Block"
+            if active is not None and hierarchy.primary.training_block_id == active.id
+            else "Save as active Training Block"
+        )
+        st.info(
+            "Operational Block Coaching is not active for this athlete yet. "
+            f"Review the proposal, then select ‘{action}’ below. The Ready to start panel will appear here after saving."
+        )
     preferences = _customisation_controls(athlete_id, history, initial)
     try:
         design = design_training_block(
@@ -361,8 +534,13 @@ def show_training_blocks_page():
         st.error(str(exc))
         return
     st.html(build_training_block_overview_html(history, hierarchy, design))
-    st.html(build_week_timeline_html(design))
-    _daily_preview(design)
+    requested_week = st.session_state.get(f"tb_selected_week_{athlete_id}")
+    selected_week_number = _selected_week_number(design, requested_week)
+    st.html(build_week_timeline_html(
+        design,
+        selected_week_number=selected_week_number,
+    ))
+    _daily_preview(design, selected_week_number)
     if saved is not None and saved.primary_goal_id == hierarchy.primary.id:
         st.caption("This active block already has a saved custom design. Saving again updates it in place.")
     elif active is not None and hierarchy.primary.training_block_id != active.id:

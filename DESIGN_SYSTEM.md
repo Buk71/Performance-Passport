@@ -176,3 +176,28 @@ Native app buttons use purpose rather than page identity:
   states and progress marks; it is not the default button background.
 - Keyboard focus keeps an orange ring, while hover never carries information
   unavailable to touch users.
+
+## Operational Block Coaching — v0.30
+
+The current week leads with execution rather than another plan preview:
+
+1. Week state and phase.
+2. Reliable distance, running-day, quality and long-run commitments.
+3. Seven planned days with explicit Complete, Different, Missed, Extra, Today
+   or Planned status.
+4. Evidence-led suggestions beside the next safe useful run.
+5. A permanent statement that the saved plan has not been silently changed.
+
+Green marks genuine matched completion. Orange marks a difference requiring
+review, not failure. Ink outlines Today and anchors the next-run decision.
+Operational cards remain readable at intermediate sidebar widths and collapse
+to two then one/two-column groups without hiding evidence.
+
+Generated week cards are complete keyboard-accessible links, not hover-only
+controls. The selected week uses an ink border and opens its seven-day shape
+immediately below the timeline. Unsaved proposals show an explicit activation
+notice where the operational panel will appear after saving.
+
+Week selection must preserve page and athlete context. A selected week may
+rerender the Streamlit app, but it must return to Training Blocks with the same
+canonical athlete rather than falling back to Home.
