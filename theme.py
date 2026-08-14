@@ -140,12 +140,16 @@ def inject_global_theme():
         }}
 
         [data-testid="stSidebar"] {{
-            background: var(--pp-sidebar);
-            border-right: 1px solid rgba(23, 32, 42, 0.06);
+            background:
+                radial-gradient(circle at 18% 8%, rgba(240,90,40,.055), transparent 24%),
+                radial-gradient(ellipse at 80% 88%, rgba(62,142,114,.055), transparent 30%),
+                var(--pp-sidebar);
+            border-right: 1px solid rgba(16, 38, 61, 0.08);
+            box-shadow: 8px 0 30px rgba(16, 38, 61, 0.025);
         }}
 
         [data-testid="stSidebarContent"] {{
-            padding: 1.25rem 0.9rem 1.25rem;
+            padding: 1rem 0.82rem 1.1rem;
         }}
 
         [data-testid="stSidebar"] .stRadio > label {{
@@ -157,45 +161,88 @@ def inject_global_theme():
         }}
 
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {{
-            gap: 0.22rem;
+            gap: 0.12rem;
         }}
 
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] {{
+            position: relative;
             width: 100%;
-            min-height: 2.65rem;
-            padding: 0.62rem 0.75rem;
-            border-radius: 11px;
+            min-height: 2.32rem;
+            padding: 0.48rem 0.62rem;
+            background: transparent;
+            border: 1px solid transparent;
+            border-left: 3px solid transparent;
+            border-radius: 10px;
             transition:
                 background-color 150ms ease,
+                border-color 150ms ease,
+                box-shadow 150ms ease,
                 transform 150ms ease;
         }}
 
+        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p {{
+            display: flex;
+            align-items: center;
+            gap: 0.62rem;
+            color: #536576 !important;
+            font-size: 0.83rem;
+            font-weight: 610;
+            line-height: 1.15;
+        }}
+
+        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p::before {{
+            content: "";
+            width: 7px;
+            height: 7px;
+            flex: 0 0 7px;
+            background: #AAB5BE;
+            border: 2px solid var(--pp-sidebar);
+            border-radius: 999px;
+            box-shadow: 0 0 0 1px #AAB5BE;
+        }}
+
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"]:hover {{
-            background: rgba(255, 255, 255, 0.62);
-            transform: translateX(2px);
+            background: rgba(255, 255, 255, 0.66);
+            border-color: rgba(16, 38, 61, 0.07);
+            transform: translateX(1px);
         }}
 
         [data-testid="stSidebar"]
         .stRadio
-        label[data-baseweb="radio"]:has(input:checked) {{
-            background: var(--pp-accent);
-            box-shadow: 0 6px 17px rgba(241, 90, 36, 0.20);
+        label:has(input[type="radio"]:checked) {{
+            background: rgba(255, 255, 255, 0.92) !important;
+            border-color: rgba(16, 38, 61, 0.08) !important;
+            border-left-color: var(--pp-accent) !important;
+            box-shadow: 0 5px 14px rgba(16, 38, 61, 0.07) !important;
         }}
 
         [data-testid="stSidebar"]
         .stRadio
-        label[data-baseweb="radio"]:has(input:checked)
+        label:has(input[type="radio"]:checked)
         p {{
-            color: white !important;
-            font-weight: 670;
+            color: #10263D !important;
+            font-weight: 760;
         }}
 
         [data-testid="stSidebar"]
         .stRadio
-        div[role="radiogroup"]
-        > label
+        label:has(input[type="radio"]:checked)
+        p::before {{
+            background: var(--pp-accent);
+            box-shadow: 0 0 0 2px rgba(240, 90, 40, 0.20);
+        }}
+
+        [data-testid="stSidebar"]
+        .stRadio
+        label[data-baseweb="radio"]
         > div:first-child {{
-            display: none;
+            display: none !important;
+        }}
+
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(4),
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(8),
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(12) {{
+            margin-top: 1.42rem;
         }}
 
         [data-baseweb="select"] > div,
@@ -297,32 +344,66 @@ def inject_global_theme():
         }}
 
         .pp-brand {{
+            position: relative;
+            overflow: hidden;
             display: flex;
             align-items: center;
-            gap: 0.7rem;
-            margin: 0.15rem 0 1.25rem;
-            padding: 0 0.25rem;
+            gap: 0.62rem;
+            margin: 0.08rem 0 1.05rem;
+            padding: 0.62rem 0.64rem;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(16, 38, 61, 0.08);
+            border-radius: 17px;
+            box-shadow: 0 8px 22px rgba(16, 38, 61, 0.055);
         }}
 
-        .pp-brand-mark {{
+        .pp-brand::after {{
+            content: "";
+            position: absolute;
+            right: -26px;
+            bottom: -36px;
+            width: 96px;
+            height: 72px;
+            border: 1px solid rgba(240, 90, 40, 0.10);
+            border-radius: 50%;
+            transform: rotate(-18deg);
+            pointer-events: none;
+        }}
+
+        .pp-sidebar-logo-wrap {{
             display: grid;
             place-items: center;
-            width: 2.65rem;
-            height: 2.65rem;
-            flex: 0 0 2.65rem;
-            color: white !important;
-            font-size: 0.88rem;
-            font-weight: 780;
-            background: var(--pp-accent);
-            border-radius: 50%;
-            box-shadow: 0 6px 16px rgba(241, 90, 36, 0.25);
+            width: 4.25rem;
+            height: 3.2rem;
+            flex: 0 0 4.25rem;
+        }}
+
+        .pp-sidebar-logo {{
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }}
+
+        .pp-sidebar-logo-fallback {{
+            color: var(--pp-orange);
+            font-size: 1.35rem;
+            font-weight: 900;
+            letter-spacing: -0.08em;
+        }}
+
+        .pp-brand-copy {{
+            position: relative;
+            z-index: 1;
+            min-width: 0;
         }}
 
         .pp-brand-title {{
-            color: var(--pp-text) !important;
-            font-size: 0.98rem;
-            font-weight: 730;
-            line-height: 1.12;
+            color: #10263D !important;
+            font-size: 0.92rem;
+            font-weight: 790;
+            line-height: 1.08;
+            letter-spacing: -0.025em;
         }}
 
         .pp-brand-subtitle {{
@@ -333,21 +414,22 @@ def inject_global_theme():
         }}
 
         .pp-sidebar-section {{
-            margin: 0.25rem 0 0.45rem;
-            padding: 0 0.55rem;
-            color: var(--pp-text-muted);
-            font-size: 0.66rem;
-            font-weight: 730;
-            letter-spacing: 0.09em;
+            margin: 0.1rem 0 0.34rem;
+            padding: 0 0.52rem;
+            color: #87939E;
+            font-size: 0.59rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
             text-transform: uppercase;
         }}
 
         .pp-sidebar-footer {{
-            margin-top: 1rem;
-            padding: 0.85rem;
-            background: rgba(255, 255, 255, 0.58);
-            border: 1px solid rgba(23, 32, 42, 0.06);
-            border-radius: 13px;
+            position: relative;
+            margin-top: 0.9rem;
+            padding: 0.72rem 0.78rem;
+            background: rgba(16, 38, 61, 0.035);
+            border: 1px solid rgba(16, 38, 61, 0.07);
+            border-radius: 12px;
         }}
 
         .pp-sidebar-footer-label {{

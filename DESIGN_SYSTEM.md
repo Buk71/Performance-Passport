@@ -201,3 +201,14 @@ notice where the operational panel will appear after saving.
 Week selection must preserve page and athlete context. A selected week may
 rerender the Streamlit app, but it must return to Training Blocks with the same
 canonical athlete rather than falling back to Home.
+
+## Pathmark Navigation — v0.31
+
+The persistent sidebar uses the approved Pathmark artwork directly; it must not
+be redrawn as an approximate inline icon. Navigation is one ordered route whose
+journey stages are separated by clear, quiet spacing.
+
+Quiet waypoint dots make the route scannable. The active destination uses ink
+text on warm paper with an orange leading edge, while hover and keyboard focus
+remain distinct. Visual groups do not create independent selection states and
+the interface never exposes a `None` destination.

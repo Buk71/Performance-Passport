@@ -861,3 +861,32 @@ owns the execution view; Home and Adaptive Coach consume the same contract.
 A plan only becomes coaching when it responds to reality. Keeping observation,
 recommendation and plan mutation separate makes that response useful without
 making the athlete lose control of the schedule they approved.
+
+---
+
+# Decision 026
+
+**Date**
+14 August 2026
+
+## One Navigation State Uses the Approved Pathmark
+
+### Status
+
+Accepted
+
+### Decision
+
+- The persistent sidebar uses the approved Pathmark PNG rather than an inline
+  approximation of the mark.
+- All product and management destinations share one canonical selection state.
+- Route-group spacing is presentational only; route names and page ownership
+  remain stable and no overlaid or independently selectable headings are used.
+- Deep links and cross-page actions set the same canonical route. One-release
+  migration consumes the retired management-selection state.
+
+### Reason
+
+The sidebar is the product's most persistent expression. Using the real identity
+and one unambiguous current route makes the growing product feel coherent without
+changing any page's evidence or coaching contract.

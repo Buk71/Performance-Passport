@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.30.3 — Operational Block Coaching**
+Current release: **v0.31.1 — Pathmark Navigation Hotfix**
 
 Architecture status: **Frozen**
 
@@ -266,6 +266,27 @@ The Activities placeholder is now an evidence-backed review destination.
   database, while continuing to enforce athlete separation and goal/block links.
 - Pure matching, real Richard long-run recognition, Home/Next Run fallback and
   responsive UI regression coverage.
+
+---
+
+## Completed Sprint — Pathmark Navigation
+
+### Product question
+
+**Can every destination feel like one coherent Performance Passport product?**
+
+### Delivered
+
+- The approved Pathmark asset replaces the temporary inline sidebar mark.
+- Running, analysis, planning and management destinations share one canonical
+  route state, eliminating simultaneous selections and the visible `None` item.
+- Clear route-group spacing provides information hierarchy without creating
+  separate navigation controls or fragile overlaid labels.
+- Quiet waypoint dots and a warm-paper, ink and orange-edge active treatment
+  improve scanning while preserving keyboard focus and compact layouts.
+- Existing activity and Training Block deep links still restore the requested
+  route and athlete; legacy management state is migrated once.
+- Regression tests protect the real asset, route order and visual contract.
 
 ---
 

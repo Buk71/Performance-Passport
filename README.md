@@ -22,9 +22,16 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.30.3 — Operational Block Coaching**
+**v0.31.1 — Pathmark Navigation Hotfix**
 
 The production app now brings together:
+
+- the approved Pathmark artwork in the persistent sidebar, replacing the
+  temporary inline mark;
+- one coherent navigation state across running, analysis, planning and
+  management, removing the visible `None` choice and simultaneous selections;
+- compact route markers, clear route-group spacing and a warm-paper selected
+  treatment with an orange route edge;
 
 - Athlete Passport and Active Goal
 - Latest-run interpretation and comparable-session ranking

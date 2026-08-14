@@ -303,6 +303,11 @@ Passport Detail and Race Predictor and adds the Goal Hierarchy layer:
   navigation request and validated against the generated plan. The request
   carries `pp_page`, `pp_athlete` and `pp_training_week`, restores the canonical
   route/athlete once and is then consumed. It does not change the saved block.
+- `ui/sidebar.py` owns one canonical route state across running and management
+  destinations. The retired `management_navigation` state is consumed once so
+  existing browser sessions migrate without showing two selected destinations.
+- The sidebar renders the approved `assets/brand/pp_logo.png` artwork through a
+  cached data URI. It does not maintain a second hand-drawn logo implementation.
 
 Next Sprint Direction
 
