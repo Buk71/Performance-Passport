@@ -241,7 +241,7 @@ def inject_global_theme():
 
         [data-testid="stSidebar"] .stRadio label:nth-of-type(4),
         [data-testid="stSidebar"] .stRadio label:nth-of-type(8),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(12) {{
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(13) {{
             margin-top: 1.42rem;
         }}
 

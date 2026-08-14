@@ -20,7 +20,7 @@ The primary design goals are:
 
 Current Database Version
 
-Schema v11
+Schema v12
 
 ## Tables
 
@@ -111,6 +111,19 @@ key. Each event retains the original commitment, proposed alternative,
 supporting evidence and optional athlete reason. The latest event determines
 whether a read-time overlay is active; this table never rewrites the saved
 Training Block design.
+
+### athlete_nutrition_profiles
+
+Stores one independent dietary profile per athlete, including dietary style,
+servings, allergy/dislike filters, cooking-time preference, budget approach,
+batch-cooking preference and optional nutrition-detail display.
+
+### nutrition_week_selections
+
+Stores the athlete's explicit recipe choice for each date and meal slot in a
+saved Training Block week. Ingredient quantities remain in the curated code
+catalogue; the database stores stable recipe IDs and serving counts so a
+shopping list can be reproduced without altering the running plan.
 
 ---
 
@@ -253,6 +266,12 @@ Each schema evolution should follow this order.
 - Append-only `block_review_actions`
 - Athlete- and block-scoped review history
 - Original and proposed commitment evidence preserved as JSON
+
+## Schema v12
+
+- Independent `athlete_nutrition_profiles`
+- Saved, athlete-scoped `nutrition_week_selections`
+- Stable recipe IDs and serving counts for reproducible shopping lists
 
 ---
 

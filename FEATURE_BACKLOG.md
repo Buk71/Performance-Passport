@@ -81,7 +81,7 @@ Planned additions:
 
 Priority: Very High
 
-## Training Fuel & Nutrition Foundation ⭐⭐⭐⭐⭐
+## Training Fuel & Nutrition Foundation ⭐⭐⭐⭐⭐ — Delivered v0.33.0
 
 Translate the approved Training Block into a separate supportive layer:
 
@@ -93,11 +93,14 @@ Translate the approved Training Block into a separate supportive layer:
 - pantry exclusions, serving-size changes and leftover-aware lunches;
 - independent Richard and Jo plans with an optional combined household list.
 
-Before implementation, capture dietary style, allergies/intolerances, dislikes,
-meal pattern, cooking complexity, household servings, budget, leftovers,
-performance/body-weight objectives, sports fuel and preferred level of
-calorie/macro precision. Nutrition composition must never alter the approved
-running plan and must be framed as supportive guidance rather than treatment.
+Delivered: athlete dietary style, allergies/intolerances, dislikes, cooking
+time, servings, budget, batch cooking, optional calorie/macro detail, daily
+choices, saved selections and independent/combined shopping lists.
+
+Future extensions: detailed preparation instructions, explicit leftover links,
+body-weight objectives where appropriate and athlete-configured sports-fuel
+preferences. Nutrition composition must never alter the approved running plan
+and remains supportive guidance rather than treatment.
 
 ## Best Ever Easy Run ⭐⭐⭐⭐⭐
 

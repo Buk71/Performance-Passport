@@ -1,5 +1,5 @@
 APP_NAME = "Performance Passport"
 APP_SUBTITLE = "Personal Running Intelligence"
 
-VERSION = "0.32.1"
-VERSION_NAME = "Training Blocks Readability Hotfix"
+VERSION = "0.33.1"
+VERSION_NAME = "Dietary Choice Balance Hotfix"

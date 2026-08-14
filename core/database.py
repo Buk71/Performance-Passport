@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 
 def get_connection():
@@ -1360,6 +1360,77 @@ def migrate_to_schema_v11(cursor):
     set_schema_version(cursor, 11)
 
 
+def create_nutrition_tables(cursor):
+    """Store athlete food preferences and explicit weekly meal choices."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_nutrition_profiles (
+            athlete_id INTEGER PRIMARY KEY,
+            dietary_style TEXT NOT NULL DEFAULT 'Omnivore' CHECK (
+                dietary_style IN (
+                    'Omnivore', 'Pescatarian', 'Vegetarian', 'Vegan'
+                )
+            ),
+            servings INTEGER NOT NULL DEFAULT 1 CHECK (
+                servings BETWEEN 1 AND 12
+            ),
+            allergies_json TEXT NOT NULL DEFAULT '[]',
+            dislikes_json TEXT NOT NULL DEFAULT '[]',
+            max_cook_minutes INTEGER NOT NULL DEFAULT 45,
+            budget_style TEXT NOT NULL DEFAULT 'Standard' CHECK (
+                budget_style IN (
+                    'Value conscious', 'Standard', 'Flexible'
+                )
+            ),
+            use_leftovers INTEGER NOT NULL DEFAULT 1,
+            show_nutrition_detail INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS nutrition_week_selections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            training_block_id INTEGER NOT NULL,
+            week_start TEXT NOT NULL,
+            meal_date TEXT NOT NULL,
+            meal_slot TEXT NOT NULL CHECK (
+                meal_slot IN (
+                    'Breakfast', 'Lunch', 'Dinner', 'Recovery snack'
+                )
+            ),
+            recipe_id TEXT NOT NULL,
+            servings INTEGER NOT NULL CHECK (servings BETWEEN 1 AND 12),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(training_block_id) REFERENCES training_blocks(id)
+                ON DELETE CASCADE,
+            UNIQUE(athlete_id, meal_date, meal_slot)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_nutrition_week_lookup
+        ON nutrition_week_selections (athlete_id, week_start, meal_date)
+        """
+    )
+
+
+def migrate_to_schema_v12(cursor):
+    """Add Weekly Fuel Planner profiles and saved meal selections."""
+    create_training_blocks_table(cursor)
+    create_nutrition_tables(cursor)
+    set_schema_version(cursor, 12)
+
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -1409,11 +1480,16 @@ def initialise_database():
         migrate_to_schema_v11(cursor)
         schema_version = 11
 
+    if schema_version < 12:
+        migrate_to_schema_v12(cursor)
+        schema_version = 12
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
     create_training_block_designs_table(cursor)
     create_block_review_actions_table(cursor)
+    create_nutrition_tables(cursor)
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)

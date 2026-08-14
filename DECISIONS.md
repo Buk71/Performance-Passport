@@ -933,3 +933,44 @@ Changing the saved JSON would make it impossible to distinguish what the
 athlete originally approved from what coaching later recommended. An
 append-only decision history plus a read-time overlay preserves ownership,
 supports reversal and gives every consumer one transparent effective plan.
+
+---
+
+# Decision 028
+
+**Date**
+14 August 2026
+
+## Fuel Planning Is Downstream, Curated and Athlete-Controlled
+
+### Status
+
+Accepted
+
+### Decision
+
+- Fuel Planner reads the next available week from the active saved Training
+  Block, after accepted Block Review overlays have been applied.
+- Nutrition may respond to session demand but has no write path into goals,
+  Training Blocks, activities or Next Run.
+- Recipes and ingredient quantities are curated deterministic data rather than
+  generated prose. This keeps dietary filtering and shopping totals auditable.
+- Omnivore, pescatarian, vegetarian and vegan profiles are independent per
+  athlete. Allergies, dislikes, cooking time, servings, budget and batch-cooking
+  preferences are explicit inputs.
+- Shopping lists are built only from deliberately saved meal selections.
+  Household aggregation is optional and includes only athletes saved for the
+  same week.
+- Calories and macronutrients are optional per-serving estimates. The product
+  does not diagnose, treat or automatically prescribe supplements.
+
+Schema v12 stores `athlete_nutrition_profiles` and
+`nutrition_week_selections`. `core/fuel_planner.py` owns deterministic logic
+and persistence; `ui/fuel_planner.py` owns presentation and athlete controls.
+
+### Reason
+
+The running plan is the athlete's approved commitment. Treating nutrition as a
+downstream support layer preserves that ownership, while curated recipes make
+the resulting shopping list useful, reproducible and safe to test across
+different dietary styles.

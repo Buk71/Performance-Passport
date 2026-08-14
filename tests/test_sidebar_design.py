@@ -37,6 +37,7 @@ def test_navigation_has_one_coherent_route_and_no_visible_none_option():
         "Race Predictor",
         "Hall of Fame",
     ]
+    assert "Fuel Planner" in PRIMARY_NAVIGATION
 
 
 def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection():
@@ -44,7 +45,7 @@ def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection
 
     assert "label:nth-of-type(4)" in theme
     assert "label:nth-of-type(8)" in theme
-    assert "label:nth-of-type(12)" in theme
+    assert "label:nth-of-type(13)" in theme
     assert 'content: "Analyse"' not in theme
     assert "p::before" in theme
     assert 'label:has(input[type="radio"]:checked)' in theme

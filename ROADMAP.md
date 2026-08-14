@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.32.1 — Training Blocks Readability Hotfix**
+Current release: **v0.33.1 — Dietary Choice Balance Hotfix**
 
 Architecture status: **Frozen**
 
@@ -332,15 +332,74 @@ recommend a change without taking control away from the athlete?**
 
 ---
 
+## Completed Sprint — Weekly Fuel Planner
+
+### Product question
+
+**How should each athlete fuel the training they have deliberately approved?**
+
+### Delivered
+
+- A standalone Fuel Planner reads the next available week from the active,
+  saved Training Block and accepted Block Review overlays.
+- Rest/recovery, Easy, Quality and Long run/race demand is derived from the
+  saved session purpose without writing back to training.
+- Every athlete has an independent profile covering dietary style, servings,
+  allergies/intolerances, dislikes, cooking time, budget and batch cooking.
+- Omnivore, pescatarian, vegetarian and vegan are first-class filters. Vegan
+  athletes retain at least four complete curated recipes in every meal slot
+  before personal exclusions are applied.
+- Two date-rotated choices are offered for breakfast, lunch, dinner and recovery
+  snack on each day, with optional per-serving calorie, carbohydrate and protein
+  estimates.
+- Saved choices generate one categorised ingredient roll-up with combined
+  quantities, optional pantry staples and a downloadable CSV.
+- Household mode combines every athlete who deliberately saved choices for the
+  same week; independent lists remain the default.
+- Schema v12 stores profiles and meal selections without changing imported
+  activities or the athlete-approved Training Block.
+- Real-data validation confirms Jo's saved upcoming week and honestly gates
+  Richard until his generated Training Block is saved; real Richard history
+  still validates the downstream composition independently.
+
+### Preserved boundaries
+
+- No meal can change mileage, weekdays, session purpose or Next Run.
+- Allergens are a filtering aid, not a substitute for checking product labels
+  and cross-contamination warnings.
+- Supplements are not automatically prescribed.
+- Nutrition estimates are planning support, not diagnosis or treatment.
+
+---
+
+## Completed Hotfix — Dietary Choice Balance
+
+- Omnivore no longer means unrestricted rotation through a catalogue whose
+  larger plant-based set could dominate the visible choices.
+- Every Omnivore lunch and dinner now leads with a rotating meat or fish recipe
+  and pairs it with a complete vegetarian or vegan alternative.
+- Pescatarian lunch and dinner use the same deliberate pattern with fish first
+  and a plant-based alternative second.
+- Breakfast and recovery snacks remain naturally vegetarian/vegan rather than
+  adding token meat to satisfy a label.
+- Six additional salmon, cod, turkey and lean-beef recipes prevent repetitive
+  chicken-and-tuna defaults.
+- Personal diet, allergy, dislike, cooking-time, budget and batch-cooking
+  filters still take priority; a safe compatible fallback replaces either side
+  when necessary.
+
+---
+
 ## Following Priorities
 
-1. Training Fuel & Nutrition Foundation: daily guidance, meals and a weekly
-   ingredient roll-up derived from the approved Training Block.
-2. Additional deliberate review types for missed weeks and sustained volume
+1. Sidebar open/close contrast hotfix for browser/operating-system dark mode.
+2. Fuel Planner preparation instructions and deliberate meal swaps while
+   retaining the saved-selection and shopping-list audit contract.
+3. Additional deliberate review types for missed weeks and sustained volume
    disruption, reusing the v0.32 audit and overlay contract.
-3. Saved course/weather profiles and route-specific Race Predictor evidence.
-4. Login-led athlete identity and Coach Mode athlete switching.
-5. Direct Strava/Garmin integration through the canonical activity model.
+4. Saved course/weather profiles and route-specific Race Predictor evidence.
+5. Login-led athlete identity and Coach Mode athlete switching.
+6. Direct Strava/Garmin integration through the canonical activity model.
 
 ---
 

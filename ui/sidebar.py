@@ -19,6 +19,7 @@ PRIMARY_NAVIGATION = [
     "Hall of Fame",
     "Goals",
     "Training Blocks",
+    "Fuel Planner",
     "Passport",
     "Learning",
 ]

@@ -238,3 +238,29 @@ counts and action labels remain visually secondary but must be readable without
 zooming. The same floor applies to daily-shape, Operational Week and Block
 Review supporting text. Existing container breakpoints preserve the hierarchy
 on narrower screens.
+
+## Weekly Fuel Planner — v0.33
+
+Fuel Planner visually follows the approved block rather than competing with it.
+The next-week summary uses a progress-green top rule and a permanent written
+lock explaining that meals cannot change training. Four equal demand cards
+show Rest/Recovery, Easy, Quality and Long run/Race composition before any food
+choices appear.
+
+Each day leads with the saved session purpose and before/during/after guidance,
+then uses native accessible select controls for breakfast, lunch, dinner and
+recovery snack. Dietary style, allergens, preparation time and optional
+nutrition estimates remain visible in text; colour never communicates food
+suitability by itself. Supporting copy keeps the same 12–14px readability floor
+introduced for Training Blocks.
+
+The shopping list is an outcome of deliberately saved choices, not a generic
+recipe catalogue. It uses familiar grocery categories, native checkboxes and a
+download action. Individual athlete lists are the default; household combining
+must be explicitly selected.
+
+Omnivore and pescatarian main-meal choices must show deliberate range rather
+than allowing the larger plant-based catalogue to dominate through simple
+rotation. The first lunch/dinner option represents the selected mixed-diet
+style; the second remains a complete plant-based alternative. Breakfast and
+recovery snacks stay naturally mixed without token meat additions.

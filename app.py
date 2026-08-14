@@ -19,6 +19,7 @@ from ui.todays_session import show_todays_session_page
 from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
 from ui.training_blocks import show_training_blocks_page
+from ui.fuel_planner import show_fuel_planner_page
 from ui.settings import show_settings_page
 
 
@@ -60,6 +61,9 @@ elif page == "Goals":
 
 elif page == "Training Blocks":
     show_training_blocks_page()
+
+elif page == "Fuel Planner":
+    show_fuel_planner_page()
 
 elif page == "Hall of Fame":
     show_hall_of_fame_page()

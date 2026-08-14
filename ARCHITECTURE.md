@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Architecture baseline: v0.32.0  
+Architecture baseline: v0.33.0  
 Status: Frozen until explicitly changed
 
 ## Purpose
@@ -186,6 +186,21 @@ Explain architectural decisions.
 Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
+
+Version 0.33.0 adds a downstream Weekly Fuel Planner within the frozen
+architecture:
+
+- `core/fuel_planner.py` owns deterministic training-demand mapping, curated
+  recipes, dietary filtering, profile/selection persistence and shopping-list
+  aggregation.
+- `ui/fuel_planner.py` owns the athlete profile, daily meal choices and shopping
+  presentation.
+- Fuel Planner reads the active saved Training Block and accepted Block Review
+  overlays. It has no write path into goals, blocks, sessions or activities.
+- Recipe ingredients and per-serving estimates remain curated data so shopping
+  quantities are repeatable and testable.
+- `app.py` remains the only route compositor and the existing `core/` and `ui/`
+  boundaries remain unchanged.
 
 Version 0.32.0 preserves the approved Home, Activity Review, Progress,
 Passport Detail, Race Predictor, Training Blocks and Pathmark navigation and

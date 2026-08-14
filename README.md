@@ -22,9 +22,26 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.32.1 — Training Blocks Readability Hotfix**
+**v0.33.1 — Dietary Choice Balance Hotfix**
 
 The production app now brings together:
+
+- balanced Omnivore lunch and dinner choices: one rotating meat/fish option
+  alongside one plant-based alternative rather than unrestricted catalogue
+  rotation being dominated by the larger vegan and vegetarian set;
+- equivalent Pescatarian balance with a fish-led option and a plant-based
+  alternative, plus six additional fish, turkey and lean-beef recipes;
+
+- a next-week Fuel Planner driven only by the athlete's active saved Training
+  Block, including accepted Block Review overlays;
+- independent omnivore, pescatarian, vegetarian and vegan athlete profiles;
+- two rotating choices for breakfast, lunch, dinner and recovery snack on
+  every day of the approved week;
+- training-demand guidance for rest/recovery, easy, quality and long-run/race
+  days without changing the running plan;
+- saved meal selections and a categorised, quantity-aware shopping list;
+- optional combined household shopping for athletes who have saved the same
+  week, plus downloadable CSV output;
 
 - a larger, more legible Training Blocks type scale that uses the available
   card space on desktop without changing the responsive structure;
@@ -135,13 +152,10 @@ The production app now brings together:
 
 ## Next Sprint
 
-**Training Fuel & Nutrition Foundation** will translate the approved daily
-training demand into adjustable meals, training fuelling and a weekly
-ingredient shopping list without changing the running plan.
-
-The next coaching question is:
-
-> How should each athlete fuel the training they have deliberately approved?
+The next small interface hotfix will restore clear sidebar open/close contrast
+when the browser or operating system applies a dark colour scheme. Further
+nutrition work can then add preparation instructions and deliberate meal swaps
+without weakening the v0.33 shopping-list contract.
 
 See `ROADMAP.md` for the complete scope and exclusions.
 
