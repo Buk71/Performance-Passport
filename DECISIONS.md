@@ -1122,3 +1122,64 @@ differ from Runalyze's corrected elevation. Replacing those established values
 silently changes condition-adjusted coaching outputs even though the athlete's
 workout has not changed. Preserving both sources keeps current interpretations
 stable without discarding richer FIT evidence.
+
+---
+
+# Decision 033
+
+**Date**
+15 August 2026
+
+## Welcome Uses Editorial Brand-Athlete Imagery
+
+### Status
+
+Accepted
+
+### Decision
+
+- The transparent Performance Passport kit runner appears in the opening
+  welcome stage alongside the product's Athlete Passport preview.
+- The image is treated as editorial brand imagery, not as the currently
+  selected athlete's identity photograph.
+- A dedicated visual lane keeps the runner entirely clear of the product
+  preview's information blocks while preserving the warm-paper Design System
+  v1 treatment.
+- The desktop crop makes the kit prominent; smaller screens soften the same
+  image into a low-opacity watermark behind the preview.
+- The internal Coach Home and all live athlete evidence remain unchanged.
+
+### Reason
+
+A premium product needs moments of aspiration as well as dense intelligence.
+Using the opening product preview gives the welcome experience Garmin-like
+editorial confidence without weakening live dashboard readability or implying
+that one brand image is the selected athlete.
+
+---
+
+# Decision 034
+
+**Date**
+15 August 2026
+
+## Intermediate Home Intelligence Uses Natural Content Height
+
+### Status
+
+Accepted
+
+### Decision
+
+- Latest Run and Coaches' View no longer stretch their internal content to
+  match the taller Athlete Passport at intermediate desktop widths.
+- Benefit, edge and environmental evidence remain directly beneath the content
+  they explain instead of being pinned to the bottom of an artificial height.
+- Race Outlook remains a full-width row at this responsive state.
+
+### Reason
+
+Matching outer card heights created large empty regions inside two information
+panels and weakened their visual relationship. Natural-height evidence panels
+preserve the responsive composition while making the hierarchy compact and
+intentional.

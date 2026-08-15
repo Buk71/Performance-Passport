@@ -244,22 +244,22 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
                         grid-row:1;
                     }}
                     .production-home-intelligence .v8-intelligence {{
-                        display:flex;
-                        flex-direction:column;
-                        height:100%;
+                        display:block;
+                        height:auto;
                     }}
                     .production-home-intelligence .v8-intelligence-grid {{
-                        flex:1 1 auto;
+                        align-items:start;
                         grid-template-columns:minmax(245px,.82fr) minmax(0,1.18fr);
                     }}
                     .production-home-intelligence .v8-latest,
                     .production-home-intelligence .v8-coaches {{
-                        display:flex;
-                        flex-direction:column;
+                        display:block;
                     }}
-                    .production-home-intelligence .v8-benefit,
+                    .production-home-intelligence .v8-benefit {{
+                        margin-top:8px;
+                    }}
                     .production-home-intelligence .v8-coach-footer {{
-                        margin-top:auto;
+                        margin-top:7px;
                     }}
                     .production-home-intelligence .v8-coach-grid {{
                         grid-template-columns:repeat(3,minmax(0,1fr));

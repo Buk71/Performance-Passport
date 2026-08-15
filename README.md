@@ -22,9 +22,18 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.37.2 — Garmin Environmental Evidence Hotfix**
+**v0.38.0 — Premium Welcome Athlete**
 
 The production app now brings together:
+
+- a premium welcome-stage composition using the Performance Passport kit
+  runner as editorial brand-athlete imagery;
+- a desktop treatment that gives the runner a dedicated visual lane beside
+  the Athlete Passport preview, never over the product evidence;
+- a restrained watermark treatment on small screens so the entry choice and
+  product story remain readable;
+- a compact intermediate-width Coach Home that keeps Latest Run benefits and
+  Coaches' View evidence directly beneath the content they explain;
 
 - preservation and automatic repair of Runalyze's weather-corrected
   temperature and elevation when Garmin FIT evidence enriches the same run;

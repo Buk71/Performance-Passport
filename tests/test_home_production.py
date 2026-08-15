@@ -62,6 +62,11 @@ def test_production_home_has_sidebar_aware_intermediate_composition():
     assert "@media (min-width:1201px)" in html
     assert "@container (max-width:1200px)" in html
     assert "grid-template-columns:minmax(245px,.82fr)" in html
+    assert "align-items:start;" in html
+    assert ".production-home-intelligence .v8-benefit" in html
+    assert "margin-top:8px;" in html
+    assert ".production-home-intelligence .v8-coach-footer" in html
+    assert "margin-top:7px;" in html
     assert "grid-column:1 / -1" in html
     assert "grid-row:2" in html
     assert "display:contents" not in html

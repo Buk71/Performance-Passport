@@ -2,13 +2,17 @@
 
 ## Current Status
 
-Current release: **v0.37.1 — Garmin Activity Matching Hotfix**
+Current release: **v0.38.0 — Premium Welcome Athlete**
 
 Architecture status: **Frozen**
 
 Approved production baseline:
 
 - Coach Home v11 responsive composition
+- Premium responsive welcome composition with the Performance Passport kit
+  runner beside the existing Athlete Passport product preview
+- Intermediate-width Home intelligence panels use their natural content height
+  rather than manufacturing large gaps to match the Athlete Passport card
 - Jo and Richard athlete imagery
 - Shared split-aware session classification
 - Treadmill pace-reliability exclusion

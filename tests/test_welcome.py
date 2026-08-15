@@ -5,6 +5,7 @@ from ui.welcome import (
     build_welcome_page_html,
     product_entry_granted,
     welcome_logo_data_uri,
+    welcome_runner_data_uri,
 )
 
 
@@ -15,7 +16,13 @@ def test_welcome_uses_the_real_pathmark_and_reveals_no_athlete_data():
     markup = build_welcome_page_html()
 
     assert welcome_logo_data_uri().startswith("data:image/png;base64,")
+    assert welcome_runner_data_uri().startswith("data:image/png;base64,")
     assert "Performance Passport Pathmark" in markup
+    assert 'class="pp-welcome-stage-top"' in markup
+    assert 'class="pp-welcome-runner-frame"' in markup
+    assert 'class="pp-welcome-runner"' in markup
+    assert "grid-template-columns:minmax(470px,1fr)" in markup
+    assert (ROOT / "assets" / "brand" / "home_kit_runner.png").exists()
     assert "Every run has<br><em>something to give.</em>" in markup
     assert "Richard" not in markup
     assert "Joanne" not in markup
