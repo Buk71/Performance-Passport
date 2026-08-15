@@ -22,9 +22,39 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.36.0 — Athlete Welcome Entry**
+**v0.37.2 — Garmin Environmental Evidence Hotfix**
 
 The production app now brings together:
+
+- preservation and automatic repair of Runalyze's weather-corrected
+  temperature and elevation when Garmin FIT evidence enriches the same run;
+- Garmin's device temperature and raw barometric ascent remain available in
+  the attached FIT evidence without silently changing coaching equivalents;
+
+- exact Garmin Connect activity-ID matching from exported filenames to the
+  `externalId` already preserved by Runalyze;
+- a conservative whole-hour timezone fallback when an exported FIT and its
+  Runalyze summary represent the same distance and duration;
+- automatic reconciliation of a v0.37.0 FIT row that was added separately:
+  re-uploading the file enriches the original Runalyze activity, transfers any
+  linked derived evidence and removes the extra activity;
+
+- a real Garmin import route for individual FIT files, multi-file selections
+  and Garmin export ZIPs containing nested activity archives;
+- running-only import by default, with an explicit choice before other Garmin
+  sports can enter an athlete's history;
+- preservation of every original FIT binary outside Git, plus canonical
+  session summaries, lap evidence, device provenance and record-field coverage
+  in the established activity contract;
+- athlete-scoped duplicate detection for repeat FIT uploads and conservative
+  same-run matching that enriches an existing Runalyze activity instead of
+  creating a second copy;
+- a transparent preview and completion audit covering discovered files, valid
+  runs, other sports, review issues, new activities, enriched activities and
+  duplicates;
+- a clean future transport boundary: an approved Garmin Activity API feed can
+  later supply the same FIT ingestion contract without changing coaching
+  calculations or the database architecture;
 
 - premium welcome-page choices generated from the real athlete records;
 - direct handover into the existing canonical athlete selection so the chosen

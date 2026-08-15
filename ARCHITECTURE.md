@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Architecture baseline: v0.36.0  
+Architecture baseline: v0.37.0  
 Status: Frozen until explicitly changed
 
 ## Purpose
@@ -112,6 +112,7 @@ core/
 Application logic and database operations.
 Current file:
 core/database.py
+core/garmin_import.py
 Responsibilities:
 Create database tables
 Manage SQLite connections
@@ -120,7 +121,8 @@ Insert activities
 Detect duplicate activities
 Import Runalyze CSV data
 Store raw JSON
-Support future FIT imports
+Discover, decode and persist Garmin FIT activity evidence
+Preserve original FIT binaries and enrich matching Runalyze activities
 ui/
 Streamlit user interface pages.
 Current files:
@@ -131,7 +133,7 @@ ui/sidebar.py
 Responsibilities:
 Display the dashboard
 Manage athletes
-Import Runalyze CSV files
+Import Runalyze CSV files and Garmin FIT/export ZIPs
 Render navigation
 Keep Streamlit presentation separate from core database logic
 database/
@@ -148,7 +150,7 @@ uploads/
 Temporary or persistent uploaded files.
 Responsibilities:
 Store uploaded Runalyze CSV files
-Store future uploaded FIT files
+Store original Garmin FIT binaries outside version control
 assets/
 Static project assets.
 Responsibilities:

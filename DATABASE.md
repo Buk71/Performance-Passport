@@ -54,12 +54,14 @@ Current fields
 
 Stores imported activities.
 
-Activities currently originate from Runalyze.
+Activities currently originate from:
+
+- Runalyze CSV
+- Garmin FIT files and Garmin export ZIPs
 
 Future sources include:
 
-- FIT files
-- Garmin
+- Garmin Activity API
 - Strava
 - COROS
 - Polar
@@ -73,6 +75,11 @@ Current key fields
 - activity_hash
 - activity_datetime
 - raw_json
+
+Garmin imports also retain the immutable original FIT binary under
+`uploads/garmin/<athlete_id>/`. The repository ignores these private source
+files. `raw_json` stores normalised session, lap, device and record-coverage
+evidence while the binary remains available for future record-level analysis.
 
 ---
 

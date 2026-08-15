@@ -9,6 +9,12 @@ from core.database import (
     get_connection,
     refresh_athlete_sport_mappings,
 )
+from core.garmin_import import (
+    discover_fit_payloads,
+    import_garmin_activities,
+    parse_fit_payloads,
+)
+from ui.athlete_selection import render_athlete_id_selector
 
 
 def athlete_full_name(first_name, last_name):
@@ -214,6 +220,127 @@ def import_runalyze_dataframe(df, athlete_id, athlete_name):
     return imported, duplicates, errors
 
 
+@st.cache_data(show_spinner=False, ttl=600)
+def _cached_garmin_uploads(uploads):
+    discovery = discover_fit_payloads(uploads)
+    parsed = parse_fit_payloads(discovery.payloads)
+    return discovery, parsed
+
+
+def _show_garmin_import(athlete_id, athlete_name):
+    st.markdown("### Garmin activity files")
+    st.write(
+        "Upload individual Garmin `.fit` activities, several FIT files at "
+        "once, or a Garmin export ZIP. Nested activity ZIPs are discovered "
+        "automatically."
+    )
+    st.caption(
+        "The original FIT file is retained as the source of truth. Existing "
+        "Runalyze versions of the same activity are enriched rather than "
+        "added for a second time."
+    )
+
+    uploaded_files = st.file_uploader(
+        "Upload Garmin FIT files or export ZIPs",
+        type=["fit", "zip"],
+        accept_multiple_files=True,
+        key="garmin_fit_uploads",
+    )
+    if not uploaded_files:
+        st.info(
+            "In Garmin Connect on the web, Export Original downloads a FIT "
+            "activity. A full Garmin data export can be uploaded as ZIP "
+            "files, in manageable batches if the archive is very large."
+        )
+        return
+
+    uploads = tuple(
+        (uploaded.name, uploaded.getvalue())
+        for uploaded in uploaded_files
+    )
+    with st.spinner("Reading Garmin activity evidence…"):
+        discovery, parsed = _cached_garmin_uploads(uploads)
+
+    running = [activity for activity in parsed.activities if activity.is_running]
+    other = [activity for activity in parsed.activities if not activity.is_running]
+    dates = sorted(activity.activity_date for activity in parsed.activities)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("FIT files found", f"{len(discovery.payloads):,}")
+    col2.metric("Running activities", f"{len(running):,}")
+    col3.metric("Other sports", f"{len(other):,}")
+    col4.metric(
+        "Files needing review",
+        f"{len(discovery.issues) + len(parsed.issues):,}",
+    )
+
+    if dates:
+        st.success(
+            f"Garmin evidence ready for {athlete_name}: "
+            f"{dates[0]} to {dates[-1]}."
+        )
+    if discovery.repeated_files:
+        st.info(
+            f"{discovery.repeated_files:,} repeated file(s) inside the "
+            "selected uploads were ignored before import."
+        )
+
+    issues = (*discovery.issues, *parsed.issues)
+    if issues:
+        with st.expander(f"Files needing review ({len(issues):,})"):
+            for issue in issues:
+                st.write(f"• {issue}")
+
+    if not parsed.activities:
+        st.error("No valid Garmin activity FIT files were available to import.")
+        return
+
+    running_only = st.checkbox(
+        "Import running activities only",
+        value=True,
+        help=(
+            "Recommended for Performance Passport. Other Garmin sports remain "
+            "outside this import unless you deliberately include them."
+        ),
+    )
+    ready = running if running_only else list(parsed.activities)
+    st.metric("Activities ready to import", f"{len(ready):,}")
+    st.info(f"These activities will be assigned only to **{athlete_name}**.")
+
+    confirmation = st.checkbox(
+        f"I confirm these Garmin activities belong to {athlete_name}.",
+        key="garmin_import_confirmation",
+    )
+    if st.button(
+        "Import Garmin Activities",
+        type="primary",
+        disabled=not confirmation or not ready,
+        use_container_width=True,
+    ):
+        with st.spinner(f"Importing Garmin evidence into {athlete_name}…"):
+            result = import_garmin_activities(
+                parsed.activities,
+                athlete_id=athlete_id,
+                athlete_name=athlete_name,
+                running_only=running_only,
+            )
+        st.cache_data.clear()
+        st.success(f"Garmin import complete for {athlete_name}.")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("New", result.imported)
+        c2.metric("Enriched", result.enriched)
+        c3.metric("Duplicates", result.duplicates)
+        c4.metric("Other sports skipped", result.skipped_non_running)
+        c5.metric(
+            f"{athlete_name} total",
+            get_athlete_activity_count(athlete_id),
+        )
+        if result.errors:
+            with st.expander(f"Import errors ({len(result.errors):,})"):
+                for error in result.errors:
+                    st.write(f"• {error}")
+
+
 def show_import_page():
     st.title("📥 Import")
 
@@ -223,25 +350,15 @@ def show_import_page():
         st.warning("Add an athlete before importing.")
         return
 
-    options = {
-        athlete_full_name(first_name, last_name): athlete_id
-        for athlete_id, first_name, last_name in athletes
+    athlete_id = render_athlete_id_selector(label="Import destination")
+    if athlete_id is None:
+        st.warning("Add an athlete before importing.")
+        return
+    athlete_names = {
+        int(row[0]): athlete_full_name(row[1], row[2])
+        for row in athletes
     }
-
-    names = list(options.keys())
-    selected = st.session_state.get("selected_athlete_name", names[0])
-
-    if selected not in names:
-        selected = names[0]
-
-    athlete_name = st.selectbox(
-        "Import destination",
-        names,
-        index=names.index(selected),
-    )
-    st.session_state.selected_athlete_name = athlete_name
-
-    athlete_id = options[athlete_name]
+    athlete_name = athlete_names[athlete_id]
 
     st.success(f"Importing into: **{athlete_name}**")
 
@@ -257,11 +374,12 @@ def show_import_page():
 
     import_type = st.radio(
         "Import type",
-        ["Runalyze CSV", "FIT file"],
+        ["Runalyze CSV", "Garmin FIT / ZIP"],
+        horizontal=True,
     )
 
-    if import_type != "Runalyze CSV":
-        st.info("FIT import will be added later.")
+    if import_type == "Garmin FIT / ZIP":
+        _show_garmin_import(athlete_id, athlete_name)
         return
 
     uploaded_file = st.file_uploader(

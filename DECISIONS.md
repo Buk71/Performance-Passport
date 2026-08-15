@@ -1048,3 +1048,77 @@ Immediate athlete selection improves the current shared local experience and
 removes an unnecessary Home-page correction. Reusing the canonical numeric ID
 keeps every page aligned, while the explicit security boundary prevents a
 visual selector from becoming accidental authentication architecture.
+
+---
+
+# Decision 031
+
+**Date**
+15 August 2026
+
+## Garmin FIT Files Establish the Canonical Activity-Ingestion Boundary
+
+### Status
+
+Accepted
+
+### Decision
+
+- Performance Passport accepts individual Garmin activity FIT files, multiple
+  FIT files and nested ZIPs from a Garmin account export.
+- The immutable FIT binary is retained locally outside version control. The
+  existing `activities` table stores the canonical session summary while
+  `raw_json` retains normalised lap, device, event, workout and record-coverage
+  evidence.
+- Imports are always assigned to an explicitly selected athlete. Running-only
+  is the safe default; other sports require a deliberate choice.
+- Exact FIT repeats are skipped. Garmin Connect's exported filename activity
+  ID is matched first to Runalyze's preserved `externalId`; a conservative
+  match on athlete, start time, distance and duration is the fallback.
+  Whole-hour source-timezone differences are accepted only where distance and
+  duration are near exact. A match enriches the Runalyze activity rather than
+  creating a parallel copy; original Runalyze title and split evidence remain
+  preserved. A previously created parallel FIT row is reconciled on re-import.
+- FIT transport and coaching interpretation remain separate. A future approved
+  Garmin Activity API integration will feed this ingestion boundary rather
+  than introduce a second activity model.
+- No login or unofficial Garmin credential handling is introduced by this
+  release.
+
+### Reason
+
+FIT is Garmin's richest portable activity source and gives a third athlete a
+credible route into the product now. Preserving the binary protects future
+record-level analysis, while canonical summaries let every existing Passport,
+Progress and coaching engine benefit immediately without a schema migration or
+architecture fork.
+
+---
+
+# Decision 032
+
+**Date**
+15 August 2026
+
+## Runalyze Environment Remains Canonical During FIT Enrichment
+
+### Status
+
+Accepted
+
+### Decision
+
+- When FIT enriches an existing Runalyze activity, Runalyze's corrected ascent,
+  descent and weather temperature remain the canonical environmental summary.
+- FIT device temperature and barometric elevation remain intact inside the
+  attached `garmin_fit` evidence for inspection and future analysis.
+- Re-importing an exact FIT duplicate repairs these canonical fields from the
+  preserved Runalyze source object if an earlier importer overwrote them.
+
+### Reason
+
+Device temperature can be affected by body heat and raw barometric ascent can
+differ from Runalyze's corrected elevation. Replacing those established values
+silently changes condition-adjusted coaching outputs even though the athlete's
+workout has not changed. Preserving both sources keeps current interpretations
+stable without discarding richer FIT evidence.

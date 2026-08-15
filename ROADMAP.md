@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.36.0 — Athlete Welcome Entry**
+Current release: **v0.37.1 — Garmin Activity Matching Hotfix**
 
 Architecture status: **Frozen**
 
@@ -83,7 +83,10 @@ calculations, but must not invent them.
 
 - Multi-athlete SQLite database
 - Runalyze import, duplicate detection and raw source preservation
-- FIT foundation
+- Garmin FIT and nested export-ZIP import with original-file preservation
+- Exact FIT duplicate detection and conservative Runalyze enrichment
+- FIT session, lap, device and record-coverage evidence in the canonical
+  activity contract
 - Athlete management and `athlete_id` linking
 - Richard and Jo validated independently against real historical data
 
@@ -508,15 +511,71 @@ secure identity, athlete permissions and a durable database.
 
 ---
 
+## Current Sprint — Garmin FIT Import
+
+### Product question
+
+**Can a new athlete bring genuine Garmin history into the existing Passport
+without losing detailed source evidence or duplicating a Runalyze activity?**
+
+### Delivered
+
+- Individual FIT, multi-file and recursively nested Garmin export-ZIP
+  discovery.
+- FIT validation plus session, lap, device, event, workout and record-coverage
+  extraction.
+- Original FIT binaries retained outside Git as the immutable source of truth.
+- Running-only import by default, explicit athlete confirmation and a complete
+  preview/import audit.
+- Exact repeat-file protection and conservative same-time/distance/duration
+  matching that enriches an existing Runalyze row.
+- No schema or architecture change; future Garmin Activity API delivery can
+  reuse the same ingestion contract.
+
+### Real-data completion gate
+
+- Run the automated suite in Richard's project environment.
+- Import one genuine Garmin FIT into a deliberate test athlete, inspect its
+  Activity Review and repeat the same import to verify duplicate handling.
+- Import Paul's Garmin history only after that small real-file check succeeds.
+
+---
+
+## Completed Hotfix — Garmin Activity Matching
+
+- Garmin Connect's activity ID is read from its export filename and matched
+  first against the Runalyze `externalId` retained in raw source data.
+- Whole-hour timezone differences can no longer defeat an otherwise exact
+  distance-and-duration match.
+- Re-uploading a file mistakenly added by v0.37.0 enriches the original
+  Runalyze row and safely removes the extra Garmin row, retaining linked
+  derived evidence.
+- Richard's 5 August 2026 Blizard session (`23865797605`) validates the real
+  identity contract: the Runalyze title and row remain canonical while FIT
+  detail is attached to them.
+
+## Completed Hotfix — Garmin Environmental Evidence
+
+- Enriching a Runalyze activity retains its weather-corrected temperature and
+  elevation instead of replacing them with device temperature and raw
+  barometric ascent from FIT.
+- The FIT values remain preserved as detailed source evidence.
+- Re-uploading an exact FIT duplicate repairs environmental fields previously
+  overwritten by v0.37.1 without adding or deleting an activity.
+
+---
+
 ## Following Priorities
 
-1. Fuel Planner preparation instructions and deliberate meal swaps while
+1. Validate the Garmin importer with Paul as a third real athlete, including
+   a repeat import and a hands-off journey from welcome to next action.
+2. Fuel Planner preparation instructions and deliberate meal swaps while
    retaining the saved-selection and shopping-list audit contract.
-2. Additional deliberate review types for missed weeks and sustained volume
+3. Additional deliberate review types for missed weeks and sustained volume
    disruption, reusing the v0.32 audit and overlay contract.
-3. Saved course/weather profiles and route-specific Race Predictor evidence.
-4. Direct Strava/Garmin integration through the canonical activity model.
-5. Hosted PostgreSQL, login-led athlete identity and authorised Coach Mode once
+4. Saved course/weather profiles and route-specific Race Predictor evidence.
+5. Approved Garmin Activity API transport through this canonical FIT contract.
+6. Hosted PostgreSQL, login-led athlete identity and authorised Coach Mode once
    the product's functional scope is ready for a commercial pilot.
 
 ---
