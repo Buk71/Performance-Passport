@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.34.0 — Performance Passport Welcome**
+Current release: **v0.36.0 — Athlete Welcome Entry**
 
 Architecture status: **Frozen**
 
@@ -421,6 +421,90 @@ before asking someone to navigate the product?**
 - No private athlete information on the opening page.
 - No hosting, database or authentication migration.
 - No changes to coaching calculations or the production Home dashboard.
+
+---
+
+## Completed Sprint — Premium Product Story
+
+### Product question
+
+**Can the welcome page communicate the breadth of Performance Passport without
+becoming a crowded feature catalogue or claiming unfinished integrations?**
+
+### Delivered
+
+- An editorial “performance intelligence layer” proposition beneath the
+  established opening hero.
+- Eight premium capability stories covering the living Passport, athlete-
+  relative run quality, environmental context, Best Runs, Race Intelligence,
+  Training Blocks, deliberate adaptation and Fuel Planner.
+- One connected-week loop showing how run evidence feeds learning, planning,
+  athlete-approved adaptation and recovery support.
+- A trust panel that makes real history, transparent confidence and athlete
+  agency visible parts of the product proposition.
+- A clearly labelled roadmap for Garmin activity delivery, workouts sent back
+  to the watch and secure athlete/coach access.
+- A second accessible entry action after the deeper product story.
+- Responsive two-column and single-column compositions for the new content.
+
+### Preserved exclusions
+
+- Roadmap capabilities are explicitly separated from current functionality.
+- No athlete data, names or real results are exposed.
+- No changes to routing, database schema, coaching calculations or Home.
+- No Strava integration claim is made under the current restrictive API terms.
+
+---
+
+## Completed Hotfix — Welcome Alignment
+
+- The Athlete Passport preview is now level rather than using an editorial
+  one-degree rotation.
+- The fixed Streamlit header is hidden only on the welcome surface, removing
+  the top border that could overlap the Pathmark brand in Safari.
+- The real Pathmark asset has a larger presentation area and remains fully
+  visible rather than being clipped by its wrapper.
+- Entry routing, deep links, product content and every coaching calculation are
+  unchanged.
+
+---
+
+## Completed Hotfix — Welcome Card Spacing
+
+- The three supporting cards now sit behind a deliberate 18px gutter rather
+  than touching the main Athlete Passport preview.
+- The same spacing is preserved at desktop, intermediate and mobile widths.
+- Card sizing, hero alignment, routing and product content are unchanged.
+
+---
+
+## Completed Sprint — Athlete Welcome Entry
+
+### Product question
+
+**Can the welcome page open the correct athlete immediately while preserving
+one canonical selection contract across the product?**
+
+### Delivered
+
+- Real athlete records appear as premium “Choose your Passport” entry cards.
+- Each entry carries the athlete's numeric ID into the established session
+  selection before Home is mounted.
+- A stale athlete display name is cleared so every page derives it again from
+  the canonical ID.
+- The temporary entry query is consumed after selection; activity and Training
+  Block deep links retain their existing behaviour.
+- The closing welcome action returns to the athlete choice rather than opening
+  an ambiguous default athlete.
+- Two-column desktop and single-column mobile presentations are protected by
+  the existing welcome regression suite.
+- Richard and Joanne were verified against the real current database.
+
+### Preserved boundary
+
+This is a local-development routing convenience. It is not authentication and
+does not grant or restrict access. Hosted commercial access still requires
+secure identity, athlete permissions and a durable database.
 
 ---
 

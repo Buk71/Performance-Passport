@@ -33,6 +33,47 @@ def test_welcome_has_product_story_entry_and_responsive_contract():
     assert "@media(max-width:680px)" in markup
     assert "prefers-reduced-motion:reduce" in markup
     assert '[data-testid="stSidebar"]' in markup
+    assert '[data-testid="stHeader"]{display:none!important}' in markup
+    assert ".pp-welcome-logo{width:100px;height:70px" in markup
+    assert "width:96%;margin:18px 0 0 auto" in markup
+    assert "width:94%;margin:18px auto 0" in markup
+    assert "transform:rotate(1deg)" not in markup
+
+    athlete_markup = build_welcome_page_html(
+        ((1, "Richard", "Burke"), (3, "Joanne", "Burke"))
+    )
+    assert "CHOOSE YOUR PASSPORT" in athlete_markup
+    assert "Richard Burke" in athlete_markup
+    assert "Joanne Burke" in athlete_markup
+    assert 'href="?pp_enter=1&amp;pp_athlete=1"' in athlete_markup
+    assert 'href="?pp_enter=1&amp;pp_athlete=3"' in athlete_markup
+    assert 'href="#athlete-entry"' in athlete_markup
+    assert ".pp-athlete-choices{grid-template-columns:1fr}" in athlete_markup
+
+
+def test_welcome_presents_current_differentiators_and_labels_future_work():
+    markup = build_welcome_page_html()
+
+    current_capabilities = (
+        "THE LIVING PASSPORT",
+        "TRUE RUN QUALITY",
+        "CONDITIONS IN CONTEXT",
+        "BEST RUNS, REDEFINED",
+        "Capability → Ideal → Race Today",
+        "HISTORY-LED TRAINING BLOCKS",
+        "DELIBERATE ADAPTATION",
+        "TRAINING-AWARE FUEL PLANNER",
+        "Omnivore, pescatarian, vegetarian and vegan",
+    )
+    for capability in current_capabilities:
+        assert capability in markup
+
+    assert "ONE CONNECTED WEEK" in markup
+    assert "BUILT ON TRUST" in markup
+    assert "CONNECTED PRODUCT ROADMAP" in markup
+    assert "Garmin-connected activities" in markup
+    assert "not claims about the current development release" in markup
+    assert markup.count('href="?pp_enter=1"') == 2
 
 
 def test_entry_gate_is_session_scoped_and_preserves_deep_links():
@@ -54,6 +95,14 @@ def test_entry_gate_is_session_scoped_and_preserves_deep_links():
     assert product_entry_granted(deep_link_state, deep_link) is True
     assert deep_link["pp_page"] == "Activities"
     assert deep_link["pp_activity"] == "5043"
+
+    athlete_state = {}
+    athlete_query = {"pp_enter": "1", "pp_athlete": "3"}
+    assert product_entry_granted(athlete_state, athlete_query) is True
+    assert athlete_state["selected_athlete_id"] == 3
+    assert "selected_athlete_name" not in athlete_state
+    assert "pp_enter" not in athlete_query
+    assert "pp_athlete" not in athlete_query
 
 
 def test_app_places_welcome_gate_before_sidebar_routing():

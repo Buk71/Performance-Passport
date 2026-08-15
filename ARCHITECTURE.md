@@ -2,7 +2,7 @@
 
 ## Current Version
 
-Architecture baseline: v0.34.0  
+Architecture baseline: v0.36.0  
 Status: Frozen until explicitly changed
 
 ## Purpose
@@ -186,6 +186,41 @@ Explain architectural decisions.
 Test the feature before committing.
 Recommend a Git commit message only after testing passes.
 Current Release Baseline
+
+Version 0.36.0 lets the welcome surface select an existing athlete without
+creating a parallel selection system:
+
+- `ui/welcome.py` reads the established athlete list through
+  `ui/athlete_selection.py`.
+- Each welcome choice carries `pp_athlete` only for the entry request.
+- The entry gate validates the value as a positive integer, writes the existing
+  canonical `selected_athlete_id`, clears any stale display name and consumes
+  the temporary query parameters before Home renders.
+- Existing activity and Training Block deep links remain unchanged.
+- Welcome selection is development convenience, not authentication or athlete
+  authorisation. Hosted login must replace it as the security boundary.
+
+Version 0.35.2 adds one responsive spacing rule between the main welcome
+Passport and its supporting cards. No component, state or data contract
+changes.
+
+Version 0.35.1 is a welcome-only visual hotfix. It removes the Passport-card
+rotation, enlarges the real Pathmark and suppresses Streamlit's fixed header on
+the public entry so browser rendering cannot place its border across the logo.
+No routing, state, data or coaching contract changes.
+
+Version 0.35.0 expands the public-safe entry without adding product logic or a
+parallel content model:
+
+- `ui/welcome.py` remains the sole owner of welcome-page content and styling.
+- Current capabilities are presented as a premium editorial product story;
+  calculations and claims continue to come from the already-delivered product.
+- Garmin delivery, watch-ready training and athlete/coach access are isolated
+  in an explicitly labelled roadmap and are not exposed as working controls.
+- The entry gate, deep-link behaviour, sidebar router, database and coaching
+  engines are unchanged.
+- Responsive behaviour remains local to the welcome surface, with desktop,
+  intermediate and mobile compositions protected by regression tests.
 
 Version 0.34.0 adds a branded, public-safe entry without changing application
 routing or authentication:

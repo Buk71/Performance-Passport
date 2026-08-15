@@ -992,8 +992,9 @@ Accepted
 
 - Performance Passport has a public-safe branded welcome before the existing
   application navigation is mounted.
-- The welcome screen uses the real Pathmark and contains no athlete identity,
-  performance or training evidence.
+- The welcome screen uses the real Pathmark and contains no performance or
+  training evidence. A local development build may show stored athlete names
+  only under Decision 030; public hosting requires authenticated identity.
 - Entry is session-scoped presentation, not authentication. The product must
   not describe the current release as secure multi-user access.
 - Stable activity and Training Block deep links remain authoritative and bypass
@@ -1012,3 +1013,38 @@ A compelling first impression can be completed and tested without pretending a
 session-level welcome is security. Deferring login avoids bolting identity onto
 local SQLite and preserves the option to choose hosting, PostgreSQL and role
 authorisation together when the product is ready for a commercial pilot.
+
+---
+
+# Decision 030
+
+**Date**
+15 August 2026
+
+## Welcome Athlete Choice Uses the Canonical ID but Is Not Authentication
+
+### Status
+
+Accepted
+
+### Decision
+
+- The development welcome page may show athletes already stored in the local
+  database and let the user choose which Passport to open.
+- The welcome page must reuse `selected_athlete_id`; it must not introduce a
+  second athlete-selection state or infer identity from a display name.
+- The selected ID is carried in a temporary entry query, validated as a
+  positive integer, written to session state and then removed from the URL.
+- Existing product selectors remain authoritative and may change the athlete
+  after entry.
+- This choice provides no access control. It must not be described as login,
+  authentication or authorisation.
+- Hosted athlete and Coach Mode access must replace this convenience with a
+  server-side identity and permissions contract.
+
+### Reason
+
+Immediate athlete selection improves the current shared local experience and
+removes an unnecessary Home-page correction. Reusing the canonical numeric ID
+keeps every page aligned, while the explicit security boundary prevents a
+visual selector from becoming accidental authentication architecture.

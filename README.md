@@ -22,9 +22,35 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.34.0 — Performance Passport Welcome**
+**v0.36.0 — Athlete Welcome Entry**
 
 The production app now brings together:
+
+- premium welcome-page choices generated from the real athlete records;
+- direct handover into the existing canonical athlete selection so the chosen
+  Passport is already active when Home opens;
+- clear separation between this local-development convenience and the secure
+  identity/authorisation layer required before commercial hosting;
+
+- a consistent 18px visual gutter between the main Athlete Passport preview
+  and its three supporting capability cards at every responsive width;
+
+- a straightened Athlete Passport preview, larger Pathmark presentation and a
+  welcome-only suppression of Streamlit's fixed header so its border cannot
+  cross the brand at the top of the page;
+
+- an expanded premium welcome story that presents the product's distinctive
+  intelligence as outcomes rather than a dense navigation or feature list;
+- dedicated editorial treatments for the living Passport, true run quality,
+  conditions-aware interpretation, Best Runs, Race Intelligence, history-led
+  Training Blocks, deliberate adaptation and training-aware Fuel Planner;
+- a connected weekly loop showing how evidence becomes learning, planning,
+  adaptation and practical recovery support;
+- a trust statement that makes real history, visible confidence and athlete
+  control part of the commercial proposition;
+- a clearly labelled connected-product roadmap for Garmin activity delivery,
+  watch-ready sessions and secure athlete/coach access, without presenting any
+  of those future layers as already available;
 
 - a full-screen, responsive product welcome using the real Pathmark identity,
   motto and Design System v1 route/topographic language;
