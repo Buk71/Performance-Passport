@@ -7,10 +7,12 @@ import streamlit as st
 from config import APP_NAME, VERSION, VERSION_NAME
 from ui.activity_navigation import read_activity_review_request
 from ui.training_block_navigation import read_training_block_week_request
+from ui.coaching_navigation import read_coaching_team_request
 
 
 PRIMARY_NAVIGATION = [
     "Home",
+    "Coaching Team",
     "Next Run",
     "Journal",
     "Activities",
@@ -86,7 +88,9 @@ def show_sidebar():
         None,
     )
 
-    if read_activity_review_request(st.query_params) is not None:
+    if read_coaching_team_request(st.query_params) is not None:
+        requested_page = "Coaching Team"
+    elif read_activity_review_request(st.query_params) is not None:
         requested_page = "Activities"
     elif read_training_block_week_request(st.query_params) is not None:
         requested_page = "Training Blocks"

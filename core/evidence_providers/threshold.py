@@ -18,6 +18,7 @@ import datetime
 import math
 import json
 from dataclasses import dataclass
+from statistics import median
 
 from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import (
@@ -31,6 +32,7 @@ from core.splits import parse_splits, recognise_workout, splits_to_dicts
 from core.workouts import get_or_decode_workout
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
+from core.race_detection import score_race_evidence
 
 
 MAX_AGE_DAYS = 548
@@ -335,6 +337,11 @@ class ThresholdEvidenceProvider(EvidenceProvider):
 
     def build(self, context: EvidenceContext) -> EvidenceItem:
         candidates, reference_date = self._load_candidates(context.athlete_id)
+        easy_pace = self._easy_pace_anchor(candidates, reference_date)
+        phase_evidence = self._trusted_threshold_phases(
+            context.athlete_id,
+            easy_pace,
+        )
 
         if not candidates:
             return self._unavailable(
@@ -344,7 +351,12 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         scored = []
 
         for candidate in candidates:
-            item = self._score(candidate, reference_date)
+            item = self._score(
+                candidate,
+                reference_date,
+                easy_pace=easy_pace,
+                trusted_phase=phase_evidence.get(candidate.activity_id),
+            )
             if item is not None and item.score >= MIN_SCORE:
                 scored.append(item)
 
@@ -384,6 +396,12 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             for item in representative
         ]
         threshold_pace = _weighted_average(pace_values)
+        recent_five_k_floor = self._five_k_threshold_floor(
+            candidates,
+            reference_date,
+        )
+        if threshold_pace is not None and recent_five_k_floor is not None:
+            threshold_pace = max(threshold_pace, recent_five_k_floor)
 
         goal = context.goal or {}
         goal_distance_km = (
@@ -527,6 +545,11 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             metadata={
                 "threshold_pace_seconds_per_km": threshold_pace,
                 "threshold_pace_text": _format_pace(threshold_pace),
+                "recent_five_k_threshold_floor_seconds_per_km": (
+                    round(recent_five_k_floor, 1)
+                    if recent_five_k_floor is not None
+                    else None
+                ),
                 "trend": trend,
                 "trend_confidence": trend_confidence,
                 "change_seconds_per_km": change_s_per_km,
@@ -548,7 +571,50 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         self,
         candidate: ThresholdCandidate,
         reference_date: datetime.date,
+        *,
+        easy_pace: float | None = None,
+        trusted_phase: tuple[float, float, float] | None = None,
     ) -> ScoredThreshold | None:
+        try:
+            raw = json.loads(candidate.raw_json_text or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raw = {}
+        raw = raw if isinstance(raw, dict) else {}
+        genuine_title = str(
+            raw.get("title")
+            or (
+                ""
+                if candidate.title == "Threshold-like session"
+                else candidate.title
+            )
+        )
+        race_signals = score_race_evidence(
+            title=genuine_title,
+            distance_km=candidate.distance_km,
+            moving_time_s=candidate.moving_time_s,
+            elapsed_time_s=candidate.elapsed_time_s,
+            avg_hr=candidate.avg_hr,
+            max_hr=candidate.max_hr,
+            athlete_lt2_hr=candidate.lt2_hr,
+            athlete_max_hr=candidate.athlete_max_hr,
+            official_race_name=raw.get("race_name"),
+            official_distance_m=raw.get("race_officialDistance"),
+            official_time_s=raw.get("race_officialTime"),
+            officially_measured=bool(raw.get("race_officiallyMeasured")),
+        )
+        if race_signals.classification in {
+            "confirmed_race",
+            "race_quality_effort",
+        }:
+            split_check = recognise_workout(parse_splits(candidate.raw_splits))
+            genuinely_interrupted = bool(
+                split_check.recovery_splits
+                or split_check.unknown_recovery_count
+            )
+            explicitly_threshold = _contains(genuine_title, THRESHOLD_WORDS)
+            if not genuinely_interrupted and not explicitly_threshold:
+                return None
+
         run = RunProfile(
             athlete_id=candidate.athlete_id,
             title=candidate.title,
@@ -594,6 +660,22 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         split_relevance, recognition, parsed_splits = (
             _split_threshold_evidence(candidate)
         )
+        phase_pace = None
+        if trusted_phase is not None:
+            phase_pace, _phase_distance, phase_confidence = trusted_phase
+            split_relevance = max(split_relevance or 0.0, 0.95)
+
+        observed_work_pace = (
+            phase_pace
+            if phase_pace is not None
+            else recognition.average_rep_pace_s_per_km
+        )
+        if (
+            easy_pace is not None
+            and observed_work_pace is not None
+            and observed_work_pace > easy_pace * 0.90
+        ):
+            return None
 
         # A decoded structure must be genuinely threshold-relevant.
         # Short intervals, mixed sessions and ordinary route splits are not
@@ -601,8 +683,13 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         if split_relevance == 0.0 and title_signal == 0.0:
             return None
 
+        structure_confidence = (
+            max(recognition.confidence, phase_confidence)
+            if trusted_phase is not None
+            else recognition.confidence
+        )
         split_bonus = (
-            recognition.confidence * split_relevance * 28.0
+            structure_confidence * split_relevance * 28.0
             if split_relevance is not None
             else 0.0
         )
@@ -624,11 +711,11 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         if (
             split_relevance is not None
             and split_relevance >= 0.55
-            and recognition.average_rep_pace_s_per_km is not None
+            and observed_work_pace is not None
         ):
             equivalent_pace, split_adjustment = _weather_adjusted_rep_pace(
                 candidate,
-                recognition.average_rep_pace_s_per_km,
+                observed_work_pace,
             )
         else:
             equivalent_pace = performance.equivalent_pace_seconds_per_km
@@ -650,6 +737,123 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             age_days=age_days,
             moving_ratio=moving_ratio,
         )
+
+    def _easy_pace_anchor(
+        self,
+        candidates: list[ThresholdCandidate],
+        reference_date: datetime.date,
+    ) -> float | None:
+        paces = []
+        for candidate in candidates:
+            age_days = (reference_date - candidate.activity_date).days
+            if age_days < 0 or age_days > 365:
+                continue
+            if not candidate.lt1_hr or not candidate.avg_hr:
+                continue
+            if candidate.avg_hr > candidate.lt1_hr * 0.95:
+                continue
+            if candidate.distance_km < 4.0 or candidate.distance_km > 20.0:
+                continue
+            if (
+                candidate.elapsed_time_s
+                and candidate.moving_time_s / candidate.elapsed_time_s < 0.90
+            ):
+                continue
+            pace = candidate.moving_time_s / candidate.distance_km
+            if 200.0 <= pace <= 480.0:
+                paces.append(pace)
+        return float(median(paces)) if len(paces) >= 8 else None
+
+    def _trusted_threshold_phases(
+        self,
+        athlete_id: int,
+        easy_pace: float | None,
+    ) -> dict[int, tuple[float, float, float]]:
+        connection = get_connection()
+        try:
+            rows = connection.execute(
+                """
+                SELECT activity_id, phase_json, phase_confidence
+                FROM workout_library
+                WHERE athlete_id = ?
+                  AND recognition_confidence >= 0.65
+                  AND phase_confidence >= 0.70
+                """,
+                (athlete_id,),
+            ).fetchall()
+        except Exception:
+            connection.close()
+            return {}
+        connection.close()
+
+        accepted_types = {
+            "threshold", "continuous_threshold", "long_threshold",
+            "sustained_quality",
+        }
+        result = {}
+        for activity_id, raw_phases, phase_confidence in rows:
+            try:
+                phases = json.loads(raw_phases or "[]")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            matching = []
+            for phase in phases if isinstance(phases, list) else ():
+                try:
+                    pace = float(phase.get("pace_s_per_km") or 0.0)
+                    distance = float(phase.get("distance_km") or 0.0)
+                    confidence = float(phase.get("confidence") or 0.0)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if (
+                    str(phase.get("phase_type") or "").lower()
+                    not in accepted_types
+                    or pace <= 0
+                    or distance <= 0
+                    or confidence < 0.80
+                ):
+                    continue
+                matching.append((pace, distance, confidence))
+            distance = sum(item[1] for item in matching)
+            if distance < 2.5:
+                continue
+            pace = sum(item[0] * item[1] for item in matching) / distance
+            if easy_pace is not None and pace > easy_pace * 0.90:
+                continue
+            result[int(activity_id)] = (
+                pace,
+                distance,
+                max(float(phase_confidence or 0.0), min(p[2] for p in matching)),
+            )
+        return result
+
+    def _five_k_threshold_floor(
+        self,
+        candidates: list[ThresholdCandidate],
+        reference_date: datetime.date,
+    ) -> float | None:
+        observed_paces = []
+        for candidate in candidates:
+            age_days = (reference_date - candidate.activity_date).days
+            if age_days < 0 or age_days > 180:
+                continue
+            if not 4.80 <= candidate.distance_km <= 5.20:
+                continue
+            if (
+                candidate.elapsed_time_s
+                and candidate.moving_time_s / candidate.elapsed_time_s < 0.97
+            ):
+                continue
+            if _contains(candidate.title, EASY_WORDS):
+                continue
+            observed_paces.append(
+                candidate.moving_time_s / candidate.distance_km
+            )
+        if not observed_paces:
+            return None
+        # Threshold is sustainable for materially longer than a maximal 5K.
+        # This conservative separation prevents short fast reps being sold as
+        # threshold pace while preserving genuine athlete-specific evidence.
+        return min(observed_paces) * 1.04
 
     def _load_candidates(
         self,

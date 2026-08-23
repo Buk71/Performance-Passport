@@ -113,6 +113,11 @@ def build_athlete_card_html(athlete_id: int | None = None) -> str:
         passport.last_name,
     )
     photo_uri = image_to_data_uri(photo_path) if photo_path else ""
+    photo_key = (
+        re.sub(r"[^a-z0-9_-]+", "", photo_path.stem.lower())
+        if photo_path
+        else ""
+    )
     logo_uri = image_to_data_uri(LOGO_PATH)
 
     safe_name = html.escape(passport.full_name)
@@ -120,7 +125,8 @@ def build_athlete_card_html(athlete_id: int | None = None) -> str:
     safe_initials = html.escape(passport.initials)
 
     photo_html = (
-        f'<img class="pp-photo" src="{photo_uri}" alt="{safe_name}">'
+        f'<img class="pp-photo pp-photo-{photo_key}" '
+        f'src="{photo_uri}" alt="{safe_name}">'
         if photo_uri
         else f'<div class="pp-photo-placeholder">{safe_initials}</div>'
     )
@@ -281,6 +287,10 @@ def build_athlete_card_html(athlete_id: int | None = None) -> str:
             height: 100%;
             object-fit: cover;
             object-position: 52% 26%;
+        }}
+
+        .pp-photo-paul_farrell {{
+            object-position: 48% 40%;
         }}
 
         .pp-photo-placeholder {{
@@ -510,6 +520,10 @@ def build_athlete_card_html(athlete_id: int | None = None) -> str:
 
             .pp-photo {{
                 object-position: 55% 24%;
+            }}
+
+            .pp-photo-paul_farrell {{
+                object-position: 48% 36%;
             }}
 
             .pp-photo-wrap::before {{

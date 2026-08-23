@@ -30,8 +30,13 @@ def test_navigation_has_one_coherent_route_and_no_visible_none_option():
     assert ALL_NAVIGATION == [*PRIMARY_NAVIGATION, *MANAGEMENT_NAVIGATION]
     assert source.count("st.sidebar.radio(") == 1
     assert '["None", *MANAGEMENT_NAVIGATION]' not in source
-    assert PRIMARY_NAVIGATION[:3] == ["Home", "Next Run", "Journal"]
-    assert PRIMARY_NAVIGATION[3:7] == [
+    assert PRIMARY_NAVIGATION[:4] == [
+        "Home",
+        "Coaching Team",
+        "Next Run",
+        "Journal",
+    ]
+    assert PRIMARY_NAVIGATION[4:8] == [
         "Activities",
         "Progress",
         "Race Predictor",
@@ -43,9 +48,9 @@ def test_navigation_has_one_coherent_route_and_no_visible_none_option():
 def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection():
     theme = (ROOT / "theme.py").read_text(encoding="utf-8")
 
-    assert "label:nth-of-type(4)" in theme
-    assert "label:nth-of-type(8)" in theme
-    assert "label:nth-of-type(13)" in theme
+    assert "label:nth-of-type(5)" in theme
+    assert "label:nth-of-type(9)" in theme
+    assert "label:nth-of-type(14)" in theme
     assert 'content: "Analyse"' not in theme
     assert "p::before" in theme
     assert 'label:has(input[type="radio"]:checked)' in theme

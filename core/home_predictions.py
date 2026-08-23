@@ -21,6 +21,7 @@ from core.easy_run_coach import build_easy_run_coach
 from core.environment_forecast import build_environment_forecast
 from core.environment_profile import build_personal_environment_profile
 from core.evidence_engine import build_athlete_evidence_profile
+from core.evidence import EvidenceBundle
 from core.performance_dna import build_performance_dna
 
 
@@ -299,8 +300,16 @@ def load_run_profiles(athlete_id: int) -> list[RunProfile]:
 def build_goal_predictions(
     athlete_id: int,
     goal: dict | None,
+    *,
+    evidence: EvidenceBundle | None = None,
+    runs: list[RunProfile] | None = None,
 ) -> HomePredictions:
-    """Build a prediction for an explicit goal without mutating persistence."""
+    """Build a prediction for an explicit goal without mutating persistence.
+
+    Existing callers can omit the optional prepared inputs. Evidence-detail
+    surfaces may pass them to avoid running the same specialist providers a
+    second time while presenting their audit trail.
+    """
     brain = CoachBrain(athlete_id)
     goal_name = str(
         (goal or {}).get("goal_name")
@@ -309,14 +318,14 @@ def build_goal_predictions(
     )
     distance_km = _goal_distance_km(goal)
 
-    evidence = brain.build_evidence(goal)
+    evidence = evidence or brain.build_evidence(goal)
     prediction = brain.prediction_engine.predict_goal(
         athlete_id,
         goal,
         evidence,
     )
 
-    runs = load_run_profiles(athlete_id)
+    runs = runs if runs is not None else load_run_profiles(athlete_id)
     evidence_connection = get_connection()
     evidence_profile = build_athlete_evidence_profile(
         evidence_connection,

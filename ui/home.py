@@ -19,6 +19,7 @@ from ui import home_preview_v8 as approved_v8
 from ui import home_preview_v10 as approved_v10
 from ui import home_preview_v11 as approved_v11
 from ui.activity_navigation import activity_review_url
+from ui.coaching_navigation import coaching_team_url
 from ui import athlete_selection
 
 
@@ -76,6 +77,99 @@ def _activity_link_styles() -> str:
             outline-offset:2px;
         }
     </style>
+    """
+
+
+def _link_coaching_panel(markup: str, athlete_id: int, predictions) -> str:
+    """Make the Home coaching summary a gateway to its evidence audit."""
+    team_url = html.escape(coaching_team_url(athlete_id), quote=True)
+    title = '<div class="v8-panel-title">Coaches’ View</div>'
+    linked_title = (
+        f'<a class="v8-panel-title production-coaching-title-link" '
+        f'href="{team_url}" target="_self">'
+        'Coaches’ View <span>View team&nbsp;→</span></a>'
+    )
+    markup = markup.replace(title, linked_title, 1)
+
+    for coach in getattr(predictions, "coach_positions", ()):
+        pattern = re.compile(
+            rf'<article class="v8-coach v8-{re.escape(coach.position)}">(.*?)</article>',
+            re.DOTALL,
+        )
+        url = html.escape(
+            coaching_team_url(athlete_id, coach.key),
+            quote=True,
+        )
+        label = html.escape(
+            f"Open {coach.title} evidence for this athlete",
+            quote=True,
+        )
+        markup = pattern.sub(
+            lambda match: (
+                f'<a class="v8-coach v8-{coach.position} '
+                f'production-coaching-card-link" href="{url}" '
+                f'target="_self" aria-label="{label}">'
+                f'{match.group(1)}</a>'
+            ),
+            markup,
+            count=1,
+        )
+
+    return f"""
+    <style>
+        .production-coaching-title-link {{
+            display:flex; align-items:center; gap:9px; color:inherit;
+            text-decoration:none;
+        }}
+        .production-coaching-title-link span {{
+            color:#23936f; font-size:9px; letter-spacing:.08em;
+            text-transform:uppercase;
+        }}
+        .production-coaching-card-link {{
+            color:#10263d !important; text-decoration:none; cursor:pointer;
+            transition:transform .16s ease, box-shadow .16s ease;
+        }}
+        .production-coaching-card-link:link,
+        .production-coaching-card-link:visited,
+        .production-coaching-card-link:hover,
+        .production-coaching-card-link:active {{
+            color:#10263d !important;
+        }}
+        .production-coaching-card-link .v8-coach-head strong,
+        .production-coaching-card-link .v8-coach-time {{
+            color:#10263d !important;
+        }}
+        .production-coaching-card-link .v8-coach-stance,
+        .production-coaching-card-link .v8-coach-copy,
+        .production-coaching-card-link .v8-confidence {{
+            color:#51616d !important;
+        }}
+        .production-coaching-card-link .v8-coach-head strong {{
+            font-size:12.5px;
+        }}
+        .production-coaching-card-link .v8-coach-time {{
+            font-size:25px;
+        }}
+        .production-coaching-card-link .v8-coach-stance {{
+            font-size:11.5px;
+        }}
+        .production-coaching-card-link .v8-coach-copy {{
+            font-size:12px;
+            line-height:1.32;
+        }}
+        .production-coaching-card-link .v8-confidence {{
+            font-size:11px;
+        }}
+        .production-coaching-card-link:hover {{
+            transform:translateY(-2px);
+            box-shadow:0 7px 16px rgba(8,35,61,.10);
+        }}
+        .production-coaching-card-link:focus-visible,
+        .production-coaching-title-link:focus-visible {{
+            outline:3px solid rgba(240,90,40,.72); outline-offset:2px;
+        }}
+    </style>
+    {markup}
     """
 
 
@@ -172,6 +266,11 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
         activity_id=latest.activity_id,
         label=f"View the full Activity Review for {latest.title}",
     )
+    linked_intelligence = _link_coaching_panel(
+        linked_intelligence,
+        athlete_id,
+        predictions,
+    )
 
     return f"""
     <div class="production-home-hero-container">
@@ -267,11 +366,11 @@ def build_production_hero_html(athlete_id, summary, predictions, latest) -> str:
                     }}
                     .production-home-intelligence .v8-coach {{
                         overflow:hidden;
-                        padding:7px 6px;
+                        padding:9px 8px;
                     }}
                     .production-home-intelligence .v8-coach-copy {{
-                        font-size:10px;
-                        line-height:1.2;
+                        font-size:11.5px;
+                        line-height:1.28;
                     }}
                     .production-home-outlook {{
                         grid-column:1 / -1;

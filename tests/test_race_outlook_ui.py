@@ -1,3 +1,4 @@
+import ast
 from functools import lru_cache
 from pathlib import Path
 
@@ -95,3 +96,35 @@ def test_standard_exploration_distances_are_runner_friendly():
         "Marathon",
     ):
         assert f'"{distance}"' in outlook_source
+
+
+def test_condition_widgets_have_one_session_state_default_source():
+    source = (ROOT / "ui" / "race_outlook.py").read_text()
+
+    assert "CONDITION_DEFAULTS" in source
+    assert "_initialise_condition_state(athlete_id)" in source
+    assert source.index("    _initialise_condition_state(athlete_id)\n") < source.index(
+        'st.markdown("#### 2. Quick-start scenarios")'
+    )
+
+    condition_names = {
+        "temperature", "humidity", "ascent", "wind", "exposure", "surface"
+    }
+    discovered = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"slider", "number_input", "segmented_control"}:
+            continue
+        key = next((item.value for item in node.keywords if item.arg == "key"), None)
+        if not isinstance(key, ast.Call) or len(key.args) < 2:
+            continue
+        name = key.args[1]
+        if not isinstance(name, ast.Constant) or name.value not in condition_names:
+            continue
+        discovered.add(name.value)
+        assert not {item.arg for item in node.keywords} & {"value", "default"}
+
+    assert discovered == condition_names

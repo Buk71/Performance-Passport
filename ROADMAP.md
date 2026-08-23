@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Current release: **v0.38.0 — Premium Welcome Athlete**
+Current release: **v0.39.3 — Race State Warning Fix**
 
 Architecture status: **Frozen**
 
@@ -23,6 +23,10 @@ Approved production baseline:
 - Latest Run and Best Runs deep-link to their exact supporting Activity Review
 - Athlete and historical activity selection survive Home evidence navigation
 - Home's displayed selector and coaching content share one canonical athlete ID
+- Home's three prediction cards open a dedicated Coaching Team evidence audit
+- Race, Workout and Threshold remain the only direct consensus votes
+- Aerobic & Durability and Environment are visible supporting specialists and
+  cannot silently change the central race prediction
 - Progress separates aerobic fitness, training rhythm, race results, threshold
   and durability into honest evidence streams
 - Supported heat, humidity/dew point, climbing, wind and trail effects are
@@ -114,6 +118,61 @@ calculations, but must not invent them.
 - Desktop Passport/Race Outlook alignment
 - Compact-screen Active Goal treatment
 - Activity Review hierarchy with a 10px type floor and responsive evidence cards
+
+---
+
+## Completed Sprint — Auditable Coaching Team
+
+### Coaching question
+
+**Why does each coach hold its opinion, and which specialists actually affect
+the race consensus?**
+
+### Delivered
+
+- A dedicated premium Coaching Team page with the shared athlete selector.
+- Direct Home links from Coaches' View and each Race, Workout and Threshold
+  card, including focused coach routing.
+- Goal Coach capability, lead opinion, agreement status, strongest signal and
+  development signal in one opening decision panel.
+- Full evidence cards for Race, Workout and Threshold with their current goal
+  estimate, position, confidence, sample size, selected evidence, strengths
+  and limitations.
+- Exact Activity Review links for the real race, workout and threshold
+  activities selected by those evidence providers.
+- Aerobic & Durability and Environment as two evidence-backed supporting
+  coaches using existing Progress and personal environment models.
+
+### Preserved boundary
+
+Only Race, Workout and Threshold contribute direct goal-time opinions.
+Supporting coaches explain progress and conditions but are not counted as
+additional votes. No new prediction formula, database table or schema change
+is introduced.
+
+### Readability hotfix
+
+- Home prediction-card links now retain explicit ink text in every Safari link
+  state instead of inheriting the surrounding navy panel colour.
+- The Coaching Team hero headline explicitly remains white despite the global
+  Streamlit heading rule.
+- Coach roles, evidence summaries, facts, confidence labels and expanded audit
+  text use a larger reading scale with stronger contrast.
+
+### Paul alpha preparation
+
+- Paul Farrell has an athlete-specific Passport photograph using the same
+  filename-driven identity contract as Richard and Jo.
+- Dedicated desktop and mobile object positions keep Paul centred in the
+  finish-line image without changing any other athlete's crop.
+
+### Race Predictor state hotfix
+
+- Temperature, humidity, ascent, wind, exposure and surface now receive their
+  initial values from one athlete-scoped session-state initializer.
+- Quick-start presets update that canonical state before the widgets render;
+  the widgets no longer supply a competing `value` or `default` argument.
+- Forecast calculations and visible starting values are unchanged.
 
 ---
 
@@ -571,8 +630,9 @@ without losing detailed source evidence or duplicating a Runalyze activity?**
 
 ## Following Priorities
 
-1. Validate the Garmin importer with Paul as a third real athlete, including
-   a repeat import and a hands-off journey from welcome to next action.
+1. Validate the Runalyze importer and Coaching Team with Paul's roughly 1,200
+   runs as a third real athlete, including a repeat CSV import, then enrich one
+   matched activity with Garmin FIT evidence.
 2. Fuel Planner preparation instructions and deliberate meal swaps while
    retaining the saved-selection and shopping-list audit contract.
 3. Additional deliberate review types for missed weeks and sustained volume

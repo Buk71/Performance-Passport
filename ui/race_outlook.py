@@ -27,6 +27,15 @@ DISTANCE_OPTIONS = {
     "Marathon": 42195.0,
 }
 
+CONDITION_DEFAULTS = {
+    "temperature": 12,
+    "humidity": 70,
+    "ascent": 0,
+    "wind": 5,
+    "exposure": "Mixed",
+    "surface": "Road",
+}
+
 
 def _escape(value) -> str:
     return html.escape(str(value or ""))
@@ -161,6 +170,12 @@ def _number_key(athlete_id: int, name: str) -> str:
 def _apply_preset(athlete_id: int, preset: dict) -> None:
     for name, value in preset.items():
         st.session_state[_number_key(athlete_id, name)] = value
+
+
+def _initialise_condition_state(athlete_id: int) -> None:
+    """Set each widget default once, before presets or widgets are rendered."""
+    for name, value in CONDITION_DEFAULTS.items():
+        st.session_state.setdefault(_number_key(athlete_id, name), value)
 
 
 def _parse_target_time(value: str) -> tuple[float | None, bool]:
@@ -311,6 +326,8 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
         st.info(predictions.explanation)
         return
 
+    _initialise_condition_state(athlete_id)
+
     st.markdown("#### 2. Quick-start scenarios")
     st.caption(
         "Load a useful starting set of conditions. Every value remains visible "
@@ -342,7 +359,6 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
         "Temperature (°C)",
         min_value=-5,
         max_value=35,
-        value=12,
         step=1,
         key=_number_key(athlete_id, "temperature"),
     )
@@ -350,7 +366,6 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
         "Humidity (%)",
         min_value=20,
         max_value=100,
-        value=70,
         step=5,
         key=_number_key(athlete_id, "humidity"),
     )
@@ -358,7 +373,6 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
         "Total ascent (m)",
         min_value=0,
         max_value=2500,
-        value=0,
         step=10,
         key=_number_key(athlete_id, "ascent"),
     )
@@ -367,20 +381,17 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
         "Wind speed (km/h)",
         min_value=0,
         max_value=50,
-        value=5,
         step=1,
         key=_number_key(athlete_id, "wind"),
     )
     exposure = row_two[1].segmented_control(
         "Wind exposure",
         options=["Sheltered", "Mixed", "Exposed"],
-        default="Mixed",
         key=_number_key(athlete_id, "exposure"),
     ) or "Mixed"
     surface = row_two[2].segmented_control(
         "Surface",
         options=["Road", "Firm trail"],
-        default="Road",
         key=_number_key(athlete_id, "surface"),
     ) or "Road"
 

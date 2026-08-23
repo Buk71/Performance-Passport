@@ -675,6 +675,68 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes}:{remaining:02d}"
 
 
+def _select_goal_representative_race(
+    scored: list[CandidateScore],
+    goal_distance_km: float | None,
+    athlete_id: int,
+) -> CandidateScore:
+    """Reject a recent-race outlier when direct goal-distance evidence exists.
+
+    A marginal recency advantage must not make one much slower 5K outweigh a
+    cluster of similarly trusted faster races and a recent actual 10K. Existing
+    selections remain unchanged unless the leading projection is a meaningful
+    outlier and direct evidence is comparably well supported.
+    """
+    selected = scored[0]
+    if goal_distance_km is None or goal_distance_km <= 0:
+        return selected
+
+    comparable = [
+        item for item in scored
+        if item.total >= selected.total - 2.5
+        and item.age_days <= 120
+    ]
+    if len(comparable) < 3:
+        return selected
+
+    predictions: dict[int, float] = {}
+    for item in comparable:
+        equivalent, _ = _equivalent_race_time(
+            item.candidate,
+            athlete_id=athlete_id,
+        )
+        predicted = _riegel_prediction(
+            equivalent,
+            item.candidate.distance_km,
+            goal_distance_km,
+        )
+        if predicted is not None:
+            predictions[item.candidate.activity_id] = predicted
+
+    leading = predictions.get(selected.candidate.activity_id)
+    alternatives = [
+        prediction for activity_id, prediction in predictions.items()
+        if activity_id != selected.candidate.activity_id
+    ]
+    if leading is None or len(alternatives) < 2:
+        return selected
+    if leading <= statistics.median(alternatives) * 1.06:
+        return selected
+
+    direct = [
+        item for item in comparable
+        if abs(item.candidate.distance_km - goal_distance_km)
+        / goal_distance_km <= 0.035
+    ]
+    if not direct:
+        return selected
+
+    return max(
+        direct,
+        key=lambda item: (item.total, item.candidate.activity_date),
+    )
+
+
 class RaceEvidenceProvider(EvidenceProvider):
     key = "recent_race"
     title = "Race Coach"
@@ -743,18 +805,21 @@ class RaceEvidenceProvider(EvidenceProvider):
                 },
             )
 
-        selected = scored[0]
-        candidate = selected.candidate
-        equivalent_time, adjustment_details = _equivalent_race_time(
-            candidate,
-            athlete_id=context.athlete_id,
-        )
-
         goal = context.goal or {}
         goal_distance_km = (
             float(goal["distance_m"]) / 1000.0
             if goal.get("distance_m")
             else None
+        )
+        selected = _select_goal_representative_race(
+            scored,
+            goal_distance_km,
+            context.athlete_id,
+        )
+        candidate = selected.candidate
+        equivalent_time, adjustment_details = _equivalent_race_time(
+            candidate,
+            athlete_id=context.athlete_id,
         )
 
         predicted_seconds = None

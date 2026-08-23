@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from statistics import median
 from typing import Any
 
 from core.session import (
@@ -70,6 +71,87 @@ def _extract_raw_splits(raw_json_text: str | None) -> str | None:
     except (TypeError, json.JSONDecodeError):
         return None
     return raw.get("splits") or raw.get("splitsCustom")
+
+
+def _easy_run_with_strides(
+    facts: ActivityFacts,
+    raw_splits: str | None,
+) -> dict[str, Any] | None:
+    """Keep short finishing strides from reclassifying an otherwise easy run.
+
+    Watches commonly auto-lap the easy portion every kilometre and then record
+    manually lapped 100-200 m strides. A generic split recogniser can invert
+    those roles, calling the easy auto-laps "work" and the faster strides
+    "recovery". This recognises the full chronological shape instead.
+    """
+    title = (facts.title or "").lower()
+    explicit_quality = (
+        "threshold", "tempo", "interval", "reps", "fartlek", "ladder",
+        "track session", "vo2", "5k pace", "10k pace", "hill session",
+    )
+    if any(word in title for word in explicit_quality):
+        return None
+
+    if (
+        facts.avg_hr is not None
+        and facts.athlete_lt2_hr is not None
+        and facts.avg_hr >= facts.athlete_lt2_hr * 0.95
+    ):
+        return None
+
+    splits = parse_splits(raw_splits)
+    substantial = [
+        split for split in splits
+        if split.distance_km >= 0.45
+        and split.duration_s >= 100
+        and split.pace_s_per_km is not None
+    ]
+    if len(substantial) < 3:
+        return None
+
+    easy_pace = float(median(split.pace_s_per_km for split in substantial))
+    stride_candidates = [
+        split for split in splits
+        if 0.06 <= split.distance_km <= 0.22
+        and 12 <= split.duration_s <= 65
+        and split.pace_s_per_km is not None
+        and split.pace_s_per_km <= easy_pace * 0.88
+    ]
+    if len(stride_candidates) < 3:
+        return None
+
+    first_stride = min(split.index for split in stride_candidates)
+    easy_before = [split for split in substantial if split.index < first_stride]
+    easy_distance = sum(split.distance_km for split in easy_before)
+    easy_duration = sum(split.duration_s for split in easy_before)
+    stride_distance = sum(split.distance_km for split in stride_candidates)
+    total_distance = facts.distance_km or sum(split.distance_km for split in splits)
+
+    if (
+        len(easy_before) < 3
+        or easy_duration < 900
+        or total_distance <= 0
+        or easy_distance / total_distance < 0.55
+        or stride_distance / total_distance > 0.25
+    ):
+        return None
+
+    return {
+        "split_count": len(splits),
+        "easy_auto_lap_count": len(easy_before),
+        "easy_distance_km": round(easy_distance, 3),
+        "easy_pace_s_per_km": round(easy_pace, 1),
+        "stride_count": len(stride_candidates),
+        "stride_distance_km": round(stride_distance, 3),
+        "stride_average_distance_km": round(
+            stride_distance / len(stride_candidates), 3
+        ),
+        "reason": (
+            "Most of the activity was continuous easy running; short faster "
+            "strides were grouped near the finish and do not establish an "
+            "interval workout."
+        ),
+    }
 
 
 def _continuous_split_pattern(
@@ -416,9 +498,13 @@ def classify_session(facts: ActivityFacts) -> Session:
             raw = {}
 
     raw_splits = _extract_raw_splits(facts.raw_json_text)
-    continuous_pattern, split_details = _continuous_split_pattern(
-        raw_splits
-    )
+    stride_details = _easy_run_with_strides(facts, raw_splits)
+    if stride_details is not None:
+        continuous_pattern, split_details = True, stride_details
+    else:
+        continuous_pattern, split_details = _continuous_split_pattern(
+            raw_splits
+        )
 
     continuous_score, continuous_reasons = _score_continuous(
         title=facts.title,
@@ -434,6 +520,37 @@ def classify_session(facts: ActivityFacts) -> Session:
         raw_splits=raw_splits,
     )
     race_score, race_reasons, race_signals = _score_race(facts, raw)
+
+    if stride_details is not None:
+        continuous_score = max(continuous_score, 92.0)
+        workout_score = min(workout_score, 35.0)
+        continuous_reasons.append(
+            f"{stride_details['stride_count']} short finishing strides were "
+            "separated from the preceding easy auto-laps."
+        )
+        workout_reasons.append(
+            "Finishing strides cannot promote easy auto-laps into work reps."
+        )
+    elif (
+        race_signals.classification == "confirmed_race"
+        and race_signals.training_penalty == 0.0
+        and race_signals.total >= 75.0
+        and workout_score < continuous_score
+        and (
+            _contains_any(facts.title, RACE_WORDS)
+            or raw.get("race_officialDistance")
+            or raw.get("race_officialTime")
+            or (
+                facts.avg_hr is not None
+                and facts.athlete_lt2_hr is not None
+                and facts.avg_hr >= facts.athlete_lt2_hr
+            )
+        )
+    ):
+        race_score = max(race_score, continuous_score + 3.0)
+        race_reasons.append(
+            "A confirmed race takes priority over ordinary continuous auto-laps."
+        )
 
     scores = {
         "continuous_run": round(continuous_score, 1),
@@ -465,6 +582,9 @@ def classify_session(facts: ActivityFacts) -> Session:
         "runner_up": runner_up,
         "score_margin": round(margin, 1),
     }
+    if stride_details is not None:
+        metadata["activity_intent"] = "easy_with_strides"
+        metadata["stride_details"] = stride_details
 
     if winner == "race":
         routes.extend([CoachRoute.RACE, CoachRoute.GOAL])
@@ -492,7 +612,11 @@ def classify_session(facts: ActivityFacts) -> Session:
     else:
         routes.append(CoachRoute.EASY)
         session_type = SessionType.CONTINUOUS_RUN
-        purpose = SessionPurpose.GENERAL
+        purpose = (
+            SessionPurpose.EASY
+            if stride_details is not None
+            else SessionPurpose.GENERAL
+        )
 
     evidence.append(
         SessionEvidence(

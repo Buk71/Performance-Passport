@@ -25,7 +25,7 @@ def test_ideal_conditions_do_not_rewrite_richard_capability():
     assert outlook.ideal_seconds == predictions.central_seconds
     assert outlook.selected_seconds == predictions.central_seconds
     assert outlook.condition_cost_seconds == 0.0
-    assert outlook.selected_pace_s_per_km == 234.3
+    assert outlook.selected_pace_s_per_km == 233.4
 
 
 def test_combined_conditions_are_auditable_and_personalised():

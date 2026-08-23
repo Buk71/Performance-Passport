@@ -572,6 +572,22 @@ def _threshold_progress(
     reference_date: datetime.date,
     personal_profile,
 ) -> ThresholdProgress:
+    recent_easy_paces = [
+        item.profile.moving_time_seconds / item.profile.distance_km
+        for item in runs_by_id.values()
+        if item.date <= reference_date
+        and (reference_date - item.date).days <= 365
+        and item.pace_reliable
+        and item.profile.distance_km
+        and item.profile.moving_time_seconds
+        and is_easy_baseline_candidate(item.profile)
+    ]
+    easy_pace_anchor = (
+        statistics.median(recent_easy_paces)
+        if len(recent_easy_paces) >= 8
+        else None
+    )
+
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute(
@@ -613,6 +629,12 @@ def _threshold_progress(
             float(phase["pace_s_per_km"]) * float(phase["distance_km"])
             for phase in phases
         ) / total_distance
+        if easy_pace_anchor is not None and raw_pace > easy_pace_anchor * 0.90:
+            # A slightly quicker kilometre within an otherwise easy run can
+            # resemble an alternating float workout. It is not physiological
+            # threshold work if its pace still overlaps the athlete's normal
+            # easy-running history.
+            continue
         item = runs_by_id.get(int(activity_id))
         if item is None or not item.pace_reliable:
             continue

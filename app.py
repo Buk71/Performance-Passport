@@ -6,6 +6,7 @@ from theme import inject_global_theme
 from ui.athletes import show_athletes_page
 from ui.activities import show_activities_page
 from ui.home import show_home_page
+from ui.coaching_team import show_coaching_team_page
 from ui.progress import show_progress_page
 from ui.race_outlook import show_race_predictor_page
 from ui.passport import show_passport_page
@@ -42,6 +43,9 @@ page = show_sidebar()
 
 if page == "Home":
     show_home_page()
+
+elif page == "Coaching Team":
+    show_coaching_team_page()
 
 elif page == "Journal":
     show_journal_page()

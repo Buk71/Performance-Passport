@@ -1183,3 +1183,128 @@ Matching outer card heights created large empty regions inside two information
 panels and weakened their visual relationship. Natural-height evidence panels
 preserve the responsive composition while making the hierarchy compact and
 intentional.
+
+---
+
+# Decision 035
+
+**Date**
+16 August 2026
+
+## Coaching Team Separates Prediction Votes from Supporting Specialists
+
+### Status
+
+Accepted
+
+### Decision
+
+- Coaches' View on Home remains a concise summary and opens a dedicated,
+  athlete-specific Coaching Team evidence page.
+- Race, Workout and Threshold remain the only direct goal-time opinions in
+  Coach Consensus.
+- Aerobic & Durability and Environment join the visible team as supporting
+  specialists. They explain longitudinal progress and condition response but
+  cannot be counted as extra votes or silently change central capability.
+- Every coach exposes confidence, sample size, strengths and limitations.
+  Prediction coaches also expose their selected real activity when available.
+- The existing evidence providers, Progress and environment models remain the
+  calculation sources; no parallel formula or database model is created.
+
+### Reason
+
+The compact Home cards communicate the conclusion but not enough of the
+reasoning behind it. A separate audit surface preserves Home's hierarchy while
+making the product's strongest commercial distinction—personal, transparent
+coaching intelligence—visible and testable. Explicit coach roles prevent a
+larger team from manufacturing apparent agreement by double-counting related
+evidence.
+
+---
+
+# Decision 036
+
+**Date**
+16 August 2026
+
+## Linked Coach Surfaces Own Their Text Contrast
+
+### Status
+
+Accepted
+
+### Decision
+
+- Home coach cards set explicit ink colours for every link state and for their
+  inherited title, prediction and supporting-copy elements.
+- Dark Coaching Team surfaces set explicit light heading and body colours so
+  global Streamlit typography cannot override local contrast.
+- Evidence labels and explanatory copy use a larger minimum reading scale;
+  compact type remains limited to short uppercase navigation cues.
+
+### Reason
+
+Changing semantic cards from articles to links exposed Safari's inherited link
+colour behaviour: the data remained present but prediction names and times
+became white on warm paper. The same global heading rule overrode the dark hero
+headline. Contrast must be owned by the component whose background it controls,
+and evidence detail must remain comfortably readable rather than merely fit.
+
+---
+
+# Decision 037
+
+**Date**
+16 August 2026
+
+## Paul Uses the Existing Athlete-Specific Photo Contract
+
+### Status
+
+Accepted
+
+### Decision
+
+- Paul's supplied finish-line image is stored as
+  `assets/athletes/paul_farrell.jpg`.
+- The existing normalised first-name/last-name lookup selects it automatically
+  for Paul Farrell; no athlete ID or database-specific exception is added.
+- A Paul-specific presentation class sets desktop and mobile focal positions
+  while Richard and Jo retain their established crops.
+
+### Reason
+
+The Paul alpha should feel like a genuine third-athlete experience from first
+entry, while the implementation must remain portable to Richard's separately
+created Paul record. Name-based asset discovery already provides that stable
+identity boundary without changing the database or coaching architecture.
+
+---
+
+# Decision 038
+
+**Date**
+23 August 2026
+
+## Race Condition Widgets Have One Default State Owner
+
+### Status
+
+Accepted
+
+### Decision
+
+- The six adjustable Race Predictor conditions are initialised once in
+  athlete-scoped Streamlit session state.
+- Quick-start presets update those same keys before the fine-tune controls are
+  created.
+- Condition widgets use their keyed state and do not also provide `value` or
+  `default` arguments.
+
+### Reason
+
+Streamlit warns when a keyed widget is created with an explicit default while
+the same key already has a session-state value. Presets deliberately populate
+those keys, so the widget arguments were a second state owner. One canonical
+initializer preserves the same user experience and removes misleading terminal
+stack traces before the Paul alpha.

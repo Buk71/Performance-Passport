@@ -1160,6 +1160,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             session = classify_session(facts)
             session_counts[session.session_type.value] += 1
 
+            if session.metadata.get("activity_intent") == "easy_with_strides":
+                session_counts["easy_with_strides_excluded"] += 1
+                continue
+
             if _is_race_quality_session(facts):
                 session_counts["race_quality_excluded"] += 1
                 continue

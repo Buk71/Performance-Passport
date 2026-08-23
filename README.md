@@ -22,9 +22,30 @@ Create the ultimate coaching dashboard that answers questions such as:
 
 ## Current Release
 
-**v0.38.0 — Premium Welcome Athlete**
+**v0.39.3 — Race State Warning Fix**
 
 The production app now brings together:
+
+- one canonical session-state default source for all six Race Predictor
+  condition controls, removing Streamlit's duplicate widget-value warnings
+  after a Quick-start scenario is selected;
+
+- Paul Farrell's real Manchester finish-line photograph as his athlete-specific
+  Passport image, with dedicated desktop and mobile crops;
+
+- explicit Home coach-card link colours so Safari cannot render prediction
+  titles and times white against the cards' warm-paper background;
+- a high-contrast white Coaching Team hero headline plus larger practical type
+  across coach roles, summaries, evidence facts and expandable audits;
+
+- a dedicated Coaching Team destination reached directly from Coaches' View
+  or any Race, Workout and Threshold coach card on Home;
+- full athlete-specific evidence audits showing each prediction, confidence,
+  selected supporting activity, strengths and limitations;
+- Aerobic & Durability and Environment as genuine supporting specialists that
+  deepen the athlete story without being counted as extra prediction votes;
+- canonical athlete selection and exact Activity Review links preserved across
+  the Coaching Team journey;
 
 - a premium welcome-stage composition using the Performance Passport kit
   runner as editorial brand-athlete imagery;
@@ -228,10 +249,10 @@ The production app now brings together:
 
 ## Next Sprint
 
-Product functionality remains the priority before hosted login. The next
-vertical slice can add Fuel Planner preparation instructions and deliberate
-meal swaps without weakening the saved-selection and shopping-list contract,
-or extend deliberate Block Review to a second evidence-backed trigger.
+Product functionality remains the priority before hosted login. The next step
+is the assisted Paul alpha: import his full Runalyze CSV, verify repeat-import
+handling and inspect the new Coaching Team across a third independent athlete
+before adding one Garmin FIT as richer evidence.
 
 Commercial authentication is intentionally deferred until the product is ready
 for a durable hosted database and athlete/coach authorisation model.

@@ -279,9 +279,9 @@ def inject_global_theme():
             display: none !important;
         }}
 
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(4),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(8),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(13) {{
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(5),
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(9),
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(14) {{
             margin-top: 1.42rem;
         }}
 
