@@ -23,7 +23,7 @@ from ui.coaching_navigation import coaching_team_url
 from ui import athlete_selection
 
 
-HOME_SUMMARY_CACHE_SCHEMA = 2
+HOME_SUMMARY_CACHE_SCHEMA = 3
 
 
 @st.cache_data(show_spinner=False, ttl=120)

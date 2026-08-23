@@ -2206,6 +2206,8 @@ def render_evidence_card(item):
                 source_label = (
                     "PB Shape prediction"
                     if prediction_source == "pb_shape"
+                    else "Distance-specific workout prediction"
+                    if prediction_source == "distance_relevant_workout"
                     else "Historical similarity prediction"
                     if prediction_source == "historical_similarity"
                     else "Formula fallback prediction"
@@ -2234,6 +2236,13 @@ def render_evidence_card(item):
                     st.caption(
                         "Compared with the athlete's recognised workouts "
                         "7-28 days before their PB at this goal distance."
+                    )
+                elif prediction_source == "distance_relevant_workout":
+                    st.caption(
+                        "Ideal, flat conditions · based on recent, trusted "
+                        "threshold and long-interval work relevant to this "
+                        "endurance goal. Short historical races cannot "
+                        "override stronger current workout evidence."
                     )
                 elif prediction_source == "historical_similarity":
                     st.caption(
@@ -2309,6 +2318,51 @@ def render_evidence_card(item):
                         ):
                             st.caption("PB Shape note: " + limitation)
 
+                elif prediction_source == "distance_relevant_workout":
+                    with st.expander(
+                        "Distance-relevant workouts behind this prediction"
+                    ):
+                        for estimate in workout_prediction.get(
+                            "estimates",
+                            [],
+                        ):
+                            st.write(
+                                f"**{estimate.get('date', '—')} · "
+                                f"{estimate.get('title', '—')}**"
+                            )
+                            st.write(
+                                "Goal-distance estimate: "
+                                f"{format_clock(estimate.get('predicted_seconds'))} "
+                                "· relevant threshold / long-interval work "
+                                f"{estimate.get('relevant_work_distance_km', 0):.2f} km"
+                            )
+
+                        pb_anchor = workout_prediction.get(
+                            "pb_anchor_seconds"
+                        )
+                        if pb_anchor is not None:
+                            st.caption(
+                                "Lightly anchored to the athlete's actual "
+                                "same-distance PB: "
+                                f"{format_clock(pb_anchor)}."
+                            )
+
+                        historical_count = workout_prediction.get(
+                            "historical_outcome_count",
+                            0,
+                        )
+                        representative_count = workout_prediction.get(
+                            "representative_race_count",
+                            0,
+                        )
+                        if historical_count > representative_count:
+                            st.caption(
+                                f"{historical_count - representative_count} "
+                                "shorter or older linked race outcome(s) "
+                                "were not allowed to dominate this "
+                                "longer-distance prediction."
+                            )
+
                 elif prediction_source == "historical_similarity":
                     with st.expander(
                         "Historical outcomes behind this prediction"
@@ -2328,6 +2382,13 @@ def render_evidence_card(item):
                                 "goal-distance equivalent "
                                 f"{format_clock(outcome.get('equivalent_goal_time_s'))}"
                             )
+                            race_age = outcome.get("race_age_days")
+                            if race_age is not None:
+                                st.caption(
+                                    f"Race evidence: {race_age} days old · "
+                                    "selected-distance relevance "
+                                    f"{outcome.get('distance_relevance', 0):.0%}"
+                                )
                             reasons = outcome.get("reasons", [])
                             if reasons:
                                 st.caption(

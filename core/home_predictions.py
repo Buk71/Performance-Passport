@@ -15,6 +15,7 @@ from core.coach_consensus import build_coach_consensus
 from core.coaching import RunProfile
 from core.database import (
     get_connection,
+    get_effective_activity_heart_rate,
     get_effective_athlete_thresholds,
 )
 from core.easy_run_coach import build_easy_run_coach
@@ -254,7 +255,8 @@ def load_run_profiles(athlete_id: int) -> list[RunProfile]:
             sport_id,
             elevation_up_m,
             temperature_c,
-            humidity
+            humidity,
+            id
         FROM activities
         WHERE athlete_id = ?
         ORDER BY activity_datetime DESC, id DESC
@@ -283,7 +285,7 @@ def load_run_profiles(athlete_id: int) -> list[RunProfile]:
                 title=row[1],
                 distance_km=distance_km,
                 moving_time_seconds=row[3],
-                avg_hr=row[4],
+                avg_hr=get_effective_activity_heart_rate(athlete_id, row[10], row[4]),
                 run_max_hr=row[5],
                 sport_id=row[6],
                 elevation_m=row[7],

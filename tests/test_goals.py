@@ -5,6 +5,7 @@ from core.database import get_active_goal, save_goal
 from core.goals import (
     build_goal_hierarchy,
     build_goal_hierarchy_from_records,
+    remove_goal,
     set_primary_goal,
 )
 from core.training_blocks import get_active_training_block
@@ -210,3 +211,118 @@ def test_saving_a_new_primary_demotes_the_previous_one(
         ("Old Primary", "Secondary", "Active"),
         ("New Primary", "Primary", "Active"),
     ]
+
+
+def test_removing_primary_restores_block_linked_secondary_without_deleting_it(
+    monkeypatch,
+    tmp_path,
+):
+    path = tmp_path / "goals.db"
+    _temporary_goal_database(path)
+    connection = sqlite3.connect(path)
+    connection.executemany(
+        """
+        INSERT INTO goals (
+            id, athlete_id, training_block_id, goal_name, goal_type,
+            priority, status, target_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (1, 1, 2, "Sub 39:00", "10K", "Secondary", "Active", "2026-11-29"),
+            (2, 1, None, "Nearer tune-up", "5K", "Secondary", "Active", "2026-09-01"),
+            (3, 1, None, "Test half marathon", "Half", "Primary", "Active", "2026-10-11"),
+            (4, 3, 7, "Jo's goal", "10K", "Primary", "Active", "2026-11-29"),
+        ],
+    )
+    connection.commit()
+    connection.close()
+    monkeypatch.setattr("core.goals.get_connection", lambda: sqlite3.connect(path))
+
+    result = remove_goal(1, 3)
+
+    connection = sqlite3.connect(path)
+    rows = connection.execute(
+        "SELECT id, priority, status, training_block_id FROM goals ORDER BY id"
+    ).fetchall()
+    connection.close()
+    assert rows == [
+        (1, "Primary", "Active", 2),
+        (2, "Secondary", "Active", None),
+        (3, "Primary", "Archived", None),
+        (4, "Primary", "Active", 7),
+    ]
+    assert result.was_primary is True
+    assert result.replacement_goal_id == 1
+    assert result.replacement_goal_name == "Sub 39:00"
+
+
+def test_removing_secondary_archives_it_without_changing_primary(
+    monkeypatch,
+    tmp_path,
+):
+    path = tmp_path / "goals.db"
+    _temporary_goal_database(path)
+    connection = sqlite3.connect(path)
+    connection.executemany(
+        """
+        INSERT INTO goals (
+            id, athlete_id, training_block_id, goal_name, goal_type,
+            priority, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (1, 1, 2, "Main target", "10K", "Primary", "Active"),
+            (2, 1, 2, "Test goal", "Half", "Secondary", "Active"),
+        ],
+    )
+    connection.commit()
+    connection.close()
+    monkeypatch.setattr("core.goals.get_connection", lambda: sqlite3.connect(path))
+
+    result = remove_goal(1, 2)
+
+    connection = sqlite3.connect(path)
+    rows = connection.execute(
+        "SELECT id, priority, status, training_block_id FROM goals ORDER BY id"
+    ).fetchall()
+    connection.close()
+    assert rows == [
+        (1, "Primary", "Active", 2),
+        (2, "Secondary", "Archived", None),
+    ]
+    assert result.was_primary is False
+    assert result.was_linked_to_block is True
+    assert result.replacement_goal_id is None
+
+
+def test_removing_goal_cannot_change_another_athletes_goal(
+    monkeypatch,
+    tmp_path,
+):
+    path = tmp_path / "goals.db"
+    _temporary_goal_database(path)
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """
+        INSERT INTO goals (
+            id, athlete_id, goal_name, goal_type, priority, status
+        ) VALUES (7, 3, 'Jo target', '10K', 'Primary', 'Active')
+        """
+    )
+    connection.commit()
+    connection.close()
+    monkeypatch.setattr("core.goals.get_connection", lambda: sqlite3.connect(path))
+
+    try:
+        remove_goal(1, 7)
+    except ValueError as error:
+        assert "does not belong" in str(error)
+    else:
+        raise AssertionError("Another athlete's goal must never be removed")
+
+    connection = sqlite3.connect(path)
+    row = connection.execute(
+        "SELECT priority, status FROM goals WHERE id = 7"
+    ).fetchone()
+    connection.close()
+    assert row == ("Primary", "Active")

@@ -34,6 +34,6 @@ def test_jo_latest_run_is_independent():
     assert jo.title == "Easy"
     assert jo.category == "Easy"
     assert jo.rank == 204
-    assert jo.comparison_count == 595
+    assert jo.comparison_count == 599
     assert jo.headline == "Excellent flow"
     assert jo.title != richard.title

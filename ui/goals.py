@@ -13,6 +13,7 @@ from core.goals import (
     GoalHierarchy,
     GoalHierarchyItem,
     build_goal_hierarchy,
+    remove_goal,
     restore_goal_as_future,
     set_goal_role,
     set_goal_status,
@@ -212,6 +213,54 @@ def _action_buttons(goal: GoalHierarchyItem, athlete_id: int, active_block_id: i
         if columns[action_index].button("Mark Complete", key=f"goal_complete_{goal.id}", use_container_width=True):
             set_goal_status(athlete_id, goal.id, "Complete")
             _set_notice(f"{goal.name} moved to Past goals.")
+            st.rerun()
+        action_index += 1
+        if columns[action_index].button(
+            "Remove goal",
+            key=f"goal_remove_{goal.id}",
+            use_container_width=True,
+        ):
+            st.session_state["goal_remove_confirmation"] = goal.id
+            st.rerun()
+
+    if st.session_state.get("goal_remove_confirmation") == goal.id:
+        if goal.role == "Primary":
+            st.warning(
+                f"Remove {goal.name}? An existing Secondary goal will be "
+                "restored as Primary when available. Your current Training "
+                "Block will not be deleted or redesigned."
+            )
+        else:
+            st.warning(
+                f"Remove {goal.name}? It will disappear from active goals "
+                "but can be restored later from Past goals."
+            )
+        confirm, cancel = st.columns(2)
+        if confirm.button(
+            "Confirm removal",
+            key=f"goal_remove_confirm_{goal.id}",
+            type="primary",
+            use_container_width=True,
+        ):
+            result = remove_goal(athlete_id, goal.id)
+            st.session_state.pop("goal_remove_confirmation", None)
+            message = f"{result.goal_name} removed and safely archived."
+            if result.replacement_goal_name:
+                message += (
+                    f" {result.replacement_goal_name} is now the Primary goal."
+                )
+            elif result.was_primary:
+                message += " Choose another goal to lead your coaching."
+            if result.was_linked_to_block:
+                message += " Your current Training Block has not been changed."
+            _set_notice(message)
+            st.rerun()
+        if cancel.button(
+            "Keep goal",
+            key=f"goal_remove_cancel_{goal.id}",
+            use_container_width=True,
+        ):
+            st.session_state.pop("goal_remove_confirmation", None)
             st.rerun()
 
 

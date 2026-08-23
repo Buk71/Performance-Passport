@@ -52,7 +52,7 @@ def test_v9_keeps_jo_independent_and_does_not_invent_an_edge():
     assert "Still emerging" in hero_html
     assert "Still learning" in hero_html
     assert "45:41" in hero_html
-    assert "49:37" in hero_html
+    assert "50:44" in hero_html
     assert "46:39" in hero_html
     assert "Best runs" in lower_html
 

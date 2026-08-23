@@ -117,11 +117,23 @@ def _operational_days(
     for day in operational.days:
         family = (
             "completed"
-            if day.status == "Complete"
+            if day.status in {"Complete", "Different", "Extra"}
+            and day.activities
             else family_map.get(day.planned_family, "easy")
         )
         detail = day.planned_detail
-        if day.status in {"Complete", "Different", "Extra", "Missed"}:
+        if day.status in {"Complete", "Different", "Extra"} and day.activities:
+            activity_labels = list(dict.fromkeys(
+                activity.family_label for activity in day.activities
+            ))
+            detail = " + ".join(activity_labels)
+            if day.completed_miles > 0:
+                detail += f" · {day.completed_miles:.1f} mi"
+            if day.status == "Different":
+                detail += f" · planned {day.planned_type}"
+            elif day.status == "Extra":
+                detail += " · unplanned"
+        elif day.status == "Missed":
             detail = day.match_summary
         target = (
             f"{day.planned_miles:.1f} mi"

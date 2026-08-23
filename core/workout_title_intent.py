@@ -32,6 +32,7 @@ class IntentBlock:
     distance_km: float | None
     duration_s: float | None
     label: str
+    recovery_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -142,13 +143,6 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
             unit = recovery_match.group(2).lower()
             recovery_s = value * 60.0 if unit.startswith("min") else value
 
-    # Remove recovery phrase before block parsing.
-    body = re.sub(
-        r"\boff\s+\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes)?\b",
-        "",
-        body,
-    )
-
     # Split on punctuation and linking words while keeping sequence order.
     parts = [
         part.strip(" .-")
@@ -171,6 +165,21 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
     )
 
     for part in parts:
+        block_recovery = None
+        local_recovery = re.search(
+            r"\boff\s+(\d+(?:\.\d+)?)\s*"
+            r"(s|sec|secs|second|seconds|min|mins|minute|minutes)?\b",
+            part,
+        )
+        if local_recovery:
+            recovery_value = float(local_recovery.group(1))
+            recovery_unit = (local_recovery.group(2) or "").lower()
+            block_recovery = (
+                recovery_value * 60.0
+                if recovery_unit.startswith("min")
+                else recovery_value
+            )
+
         time_match = repeated_time.search(part)
         if time_match:
             reps = int(time_match.group("reps"))
@@ -183,6 +192,7 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
                     distance_km=None,
                     duration_s=duration_s,
                     label=_block_label(reps, None, duration_s),
+                    recovery_s=block_recovery,
                 )
             )
             continue
@@ -199,6 +209,7 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
                         distance_km=distance,
                         duration_s=None,
                         label=_block_label(reps, distance, None),
+                        recovery_s=block_recovery,
                     )
                 )
             continue
@@ -216,6 +227,7 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
                         distance_km=distance,
                         duration_s=None,
                         label=_block_label(1, distance, None),
+                        recovery_s=block_recovery,
                     )
                 )
 
@@ -250,9 +262,19 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
     )
 
 
-def _phase_type(distance_km: float | None, duration_s: float | None) -> tuple[str, str]:
+def _phase_type(
+    distance_km: float | None,
+    duration_s: float | None,
+    recovery_s: float | None = None,
+) -> tuple[str, str]:
     if distance_km is not None:
         if distance_km >= 1.20:
+            # Fast 1,200 m repetitions with substantial recoveries are long
+            # intervals, not the sustainable threshold pace an athlete could
+            # hold continuously. Longer mile blocks, or genuinely short
+            # recoveries, retain their established threshold interpretation.
+            if distance_km < 1.45 and recovery_s is not None and recovery_s > 60:
+                return "long_intervals", "Long intervals"
             return "threshold", "Long threshold repetitions"
         if distance_km >= 0.65:
             return "long_intervals", "Long intervals"
@@ -294,7 +316,10 @@ def _match_expected_distances(intent: WorkoutTitleIntent, raw_splits: str | None
         target = float(block.distance_km)
         found = None
 
-        for split_index in range(cursor, min(cursor + 4, len(splits))):
+        # Warm-up strides and drills can legitimately precede the first
+        # titled work block. Search the remaining sequence in order rather
+        # than silently missing a genuine workout after four such splits.
+        for split_index in range(cursor, len(splits)):
             split = splits[split_index]
             tolerance = max(target * 0.14, 0.08)
             if abs(split.distance_km - target) <= tolerance:
@@ -333,7 +358,16 @@ def build_title_intent_evidence(
     components = []
 
     for index, block in enumerate(intent.blocks):
-        phase_type, label = _phase_type(block.distance_km, block.duration_s)
+        block_recovery = (
+            block.recovery_s
+            if block.recovery_s is not None
+            else intent.recovery_s
+        )
+        phase_type, label = _phase_type(
+            block.distance_km,
+            block.duration_s,
+            block_recovery,
+        )
         matched_splits = matches.get(index, [])
 
         if matched_splits:
@@ -361,7 +395,7 @@ def build_title_intent_evidence(
             "pace_s_per_km": pace,
             "rep_count": rep_count,
             "average_rep_distance_km": avg_distance,
-            "recovery_duration_s": intent.recovery_s,
+            "recovery_duration_s": block_recovery,
             "split_indexes": split_indexes,
             "metadata": {
                 "title_intent": True,
@@ -379,7 +413,7 @@ def build_title_intent_evidence(
                     "average_rep_distance_km": avg_distance,
                     "total_work_distance_km": round(distance, 4),
                     "average_pace_s_per_km": pace,
-                    "recovery_duration_s": intent.recovery_s,
+                    "recovery_duration_s": block_recovery,
                     "source": "activity_title+runalyze_splits",
                     "confidence": min(intent.confidence, 0.97),
                 }

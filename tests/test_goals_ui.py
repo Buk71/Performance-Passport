@@ -51,9 +51,13 @@ def test_goal_management_actions_are_explicit_and_block_safe():
     assert '"Move to Future"' in source
     assert '"Use as Secondary"' in source
     assert '"Mark Complete"' in source
+    assert '"Remove goal"' in source
+    assert '"Confirm removal"' in source
+    assert '"Keep goal"' in source
     assert '"Restore as Future"' in source
     assert '"Include in current Training Block"' in source
     assert "Its design has not been changed" in source
+    assert "Block will not be deleted or redesigned" in source
     assert "history-led and customisable" in source
     assert '"Open Training Block Designer"' in source
     assert '"Create starting Training Block"' not in source

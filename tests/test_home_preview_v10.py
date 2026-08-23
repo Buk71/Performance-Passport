@@ -64,7 +64,7 @@ def test_v10_keeps_real_intelligence_values_and_athlete_isolation():
     assert "Trail Warrior" not in jo_html
     assert "Still emerging" in jo_html
     assert "45:41" in jo_html
-    assert "49:37" in jo_html
+    assert "50:44" in jo_html
     assert "46:39" in jo_html
 
 

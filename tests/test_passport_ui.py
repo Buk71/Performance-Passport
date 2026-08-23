@@ -47,7 +47,7 @@ def test_passport_surface_keeps_jo_independent_and_uncertainty_visible():
     assert "6:54/mi" in jo
     assert "Still emerging" in jo
     assert "Still learning" in jo
-    assert "24 TRUSTED WORKOUTS" in jo
+    assert "23 TRUSTED WORKOUTS" in jo
     assert "6:19/mi" not in jo
     assert richard != jo
 

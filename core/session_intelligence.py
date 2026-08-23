@@ -12,7 +12,7 @@ from core.session import (
     SessionPurpose,
     SessionType,
 )
-from core.database import get_athlete_sport_roles
+from core.database import get_activity_overrides, get_athlete_sport_roles
 from core.race_detection import score_race_evidence
 from core.splits import is_boundary_fragment, parse_splits, recognise_workout
 from core.workout_title_intent import parse_workout_title
@@ -56,6 +56,7 @@ class ActivityFacts:
     raw_json_text: str | None
     athlete_lt2_hr: float | None = None
     athlete_max_hr: float | None = None
+    athlete_lt1_hr: float | None = None
 
 
 def _contains_any(title: str, words: tuple[str, ...]) -> bool:
@@ -106,7 +107,8 @@ def _easy_run_with_strides(
         and split.duration_s >= 100
         and split.pace_s_per_km is not None
     ]
-    if len(substantial) < 3:
+    explicitly_easy = "easy" in title or "stride" in title or "recovery" in title
+    if len(substantial) < (2 if explicitly_easy else 3):
         return None
 
     easy_pace = float(median(split.pace_s_per_km for split in substantial))
@@ -128,8 +130,8 @@ def _easy_run_with_strides(
     total_distance = facts.distance_km or sum(split.distance_km for split in splits)
 
     if (
-        len(easy_before) < 3
-        or easy_duration < 900
+        len(easy_before) < (2 if explicitly_easy else 3)
+        or easy_duration < (600 if explicitly_easy else 900)
         or total_distance <= 0
         or easy_distance / total_distance < 0.55
         or stride_distance / total_distance > 0.25
@@ -151,6 +153,32 @@ def _easy_run_with_strides(
             "strides were grouped near the finish and do not establish an "
             "interval workout."
         ),
+    }
+
+
+def _standalone_strides(
+    facts: ActivityFacts,
+    raw_splits: str | None,
+) -> dict[str, Any] | None:
+    """A separately saved handful of strides is not a race-pace workout."""
+    if facts.distance_km is None or facts.distance_km > 1.6:
+        return None
+    if facts.moving_time_s is not None and facts.moving_time_s > 1_100:
+        return None
+    splits = parse_splits(raw_splits)
+    faster = [
+        item for item in splits
+        if 0.055 <= item.distance_km <= 0.22
+        and 10 <= item.duration_s <= 65
+        and item.pace_s_per_km is not None
+    ]
+    if len(faster) < 3 or sum(item.distance_km for item in faster) > 1.05:
+        return None
+    return {
+        "split_count": len(splits),
+        "stride_count": len(faster),
+        "stride_distance_km": round(sum(item.distance_km for item in faster), 3),
+        "reason": "Short separately recorded strides provide neuromuscular practice, not race-distance workout evidence.",
     }
 
 
@@ -498,7 +526,10 @@ def classify_session(facts: ActivityFacts) -> Session:
             raw = {}
 
     raw_splits = _extract_raw_splits(facts.raw_json_text)
+    standalone_details = _standalone_strides(facts, raw_splits)
     stride_details = _easy_run_with_strides(facts, raw_splits)
+    if standalone_details is not None:
+        stride_details = standalone_details
     if stride_details is not None:
         continuous_pattern, split_details = True, stride_details
     else:
@@ -558,6 +589,24 @@ def classify_session(facts: ActivityFacts) -> Session:
         "race": round(race_score, 1),
     }
 
+    manual_override = get_activity_overrides(facts.athlete_id).get(
+        facts.activity_id, {}
+    )
+    manual_intent = manual_override.get("session_intent")
+    manual_winners = {
+        "easy": "continuous_run",
+        "easy_with_strides": "continuous_run",
+        "long_run": "continuous_run",
+        "workout": "structured_workout",
+        "threshold": "structured_workout",
+        "race": "race",
+    }
+    if manual_intent in manual_winners:
+        scores[manual_winners[manual_intent]] = 100.0
+        for key in scores:
+            if key != manual_winners[manual_intent]:
+                scores[key] = min(scores[key], 60.0)
+
     ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     winner, winner_score = ordered[0]
     runner_up, runner_up_score = ordered[1]
@@ -583,8 +632,15 @@ def classify_session(facts: ActivityFacts) -> Session:
         "score_margin": round(margin, 1),
     }
     if stride_details is not None:
-        metadata["activity_intent"] = "easy_with_strides"
+        metadata["activity_intent"] = (
+            "standalone_strides" if standalone_details is not None
+            else "easy_with_strides"
+        )
         metadata["stride_details"] = stride_details
+    if manual_intent in manual_winners:
+        metadata["manual_override"] = manual_intent
+        if manual_intent in {"easy", "easy_with_strides", "long_run"}:
+            metadata["activity_intent"] = manual_intent
 
     if winner == "race":
         routes.extend([CoachRoute.RACE, CoachRoute.GOAL])

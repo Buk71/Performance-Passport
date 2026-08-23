@@ -26,7 +26,9 @@ from core.coaching import (
 from core.database import (
     get_athlete_sport_roles,
     get_connection,
+    get_effective_activity_heart_rate,
     get_effective_athlete_thresholds,
+    get_personal_best_overrides,
 )
 
 
@@ -347,7 +349,7 @@ def _activity_profiles(athlete_id: int, rows) -> list[RunProfile]:
                 sport_id=row[3],
                 distance_km=distance,
                 moving_time_seconds=moving,
-                avg_hr=_safe_float(row[7]),
+                avg_hr=_safe_float(get_effective_activity_heart_rate(athlete_id, row[0], row[7])),
                 run_max_hr=_safe_float(row[8]),
                 elevation_m=_safe_float(row[9]),
                 temperature_c=_safe_float(row[10]),
@@ -441,6 +443,7 @@ def build_athlete_passport(
     pbs = []
     age_grades_all = []
     age_grades_recent = []
+    official_bests = get_personal_best_overrides(athlete_id)
 
     for event_key, label, target_m in EVENTS:
         candidates = []
@@ -485,13 +488,35 @@ def build_athlete_passport(
                 if cutoff <= run_date <= reference_date:
                     age_grades_recent.append(grade)
 
+        official_best = official_bests.get(event_key)
+        official_seconds = (
+            float(official_best["official_time_s"]) if official_best else None
+        )
+        official_date = _as_date(official_best.get("event_date")) if official_best else None
+        if official_seconds is not None:
+            official_grade = age_grade_percent(
+                sex=sex,
+                age=_age_on_date(date_of_birth, official_date or reference_date),
+                event_key=event_key,
+                elapsed_seconds=official_seconds,
+            )
+            if official_grade is not None:
+                age_grades_all.append(official_grade)
+                if official_date is None or official_date >= cutoff:
+                    age_grades_recent.append(official_grade)
         pbs.append(
             PassportPersonalBest(
                 key=event_key,
                 label=label,
-                all_time_seconds=min(candidates) if candidates else None,
+                all_time_seconds=(
+                    official_seconds if official_seconds is not None
+                    else min(candidates) if candidates else None
+                ),
                 last_12_months_seconds=(
-                    min(recent_candidates) if recent_candidates else None
+                    official_seconds
+                    if official_seconds is not None
+                    and (official_date is None or official_date >= cutoff)
+                    else min(recent_candidates) if recent_candidates else None
                 ),
             )
         )

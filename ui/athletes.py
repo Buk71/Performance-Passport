@@ -1,7 +1,16 @@
 import datetime
 import streamlit as st
 
-from core.database import get_connection
+from core.database import (
+    clear_personal_best_override,
+    clear_threshold_override,
+    get_connection,
+    get_effective_athlete_thresholds,
+    get_personal_best_overrides,
+    save_personal_best_override,
+    save_threshold_override,
+)
+from core.threshold_estimation import estimate_athlete_thresholds
 
 
 def athlete_full_name(first_name, last_name):
@@ -25,6 +34,26 @@ def display_number(value):
     if value is None or value == 0:
         return "Not set"
     return value
+
+
+def _parse_official_time(value):
+    parts = str(value or "").strip().split(":")
+    if len(parts) not in (2, 3) or any(not part.isdigit() for part in parts):
+        raise ValueError("Use MM:SS or H:MM:SS for an official race result.")
+    numbers = [int(part) for part in parts]
+    if numbers[-1] >= 60 or (len(numbers) == 3 and numbers[-2] >= 60):
+        raise ValueError("Minutes and seconds must be below 60.")
+    seconds = numbers[-1] + numbers[-2] * 60 + (numbers[0] * 3600 if len(numbers) == 3 else 0)
+    if seconds <= 0:
+        raise ValueError("An official personal best must be greater than zero.")
+    return float(seconds)
+
+
+def _format_official_time(seconds):
+    total = int(round(float(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
 def add_athlete(first_name, last_name, date_of_birth, sex):
@@ -351,9 +380,141 @@ def show_athletes_page():
                     st.write(f"Max HR: {display_number(max_hr)}")
 
                 with profile_col3:
-                    st.write("**Thresholds**")
+                    st.write("**Profile values**")
                     st.write(f"LT1 HR: {display_number(lt1_hr)}")
                     st.write(f"LT2 HR: {display_number(lt2_hr)}")
+
+                st.divider()
+
+                estimate = estimate_athlete_thresholds(athlete_id)
+                effective = get_effective_athlete_thresholds(athlete_id)
+                st.write("**Threshold evidence**")
+                st.caption(
+                    "Automatic field estimates remain visible beside profile or "
+                    "tested values. The final column is what the coaches use."
+                )
+                threshold_head = st.columns([1.1, 1, 1, 1])
+                threshold_head[0].caption("BOUNDARY")
+                threshold_head[1].caption("TRAINING ESTIMATE")
+                threshold_head[2].caption("PROFILE / TEST")
+                threshold_head[3].caption("USED BY COACHES")
+
+                for label, estimated_point, profile_value, effective_key in (
+                    ("LT1", estimate.lt1, lt1_hr, "lt1_hr"),
+                    ("LT2", estimate.lt2, lt2_hr, "lt2_hr"),
+                ):
+                    threshold_row = st.columns([1.1, 1, 1, 1])
+                    threshold_row[0].markdown(f"**{label}**")
+                    estimated_text = (
+                        f"**{estimated_point.value_bpm} bpm**  \n"
+                        f"{estimated_point.low_bpm}–{estimated_point.high_bpm} · "
+                        f"{estimated_point.confidence}"
+                        if estimated_point.value_bpm is not None
+                        else "Not enough evidence"
+                    )
+                    threshold_row[1].markdown(estimated_text)
+                    verified_active = effective.get("source") not in {
+                        "Athlete profile values",
+                        "Estimated from training history",
+                        "Not set",
+                    }
+                    comparison_value = (
+                        effective.get(effective_key) if verified_active
+                        else profile_value
+                    )
+                    comparison_source = (
+                        effective.get("source") if verified_active
+                        else "Athlete profile" if profile_value else None
+                    )
+                    threshold_row[2].markdown(
+                        f"**{comparison_value} bpm**  \n{comparison_source}"
+                        if comparison_value else "Not entered or tested"
+                    )
+                    threshold_row[3].markdown(
+                        f"**{effective[effective_key]} bpm**  \n{effective['source']}"
+                        if effective.get(effective_key) else "Not available"
+                    )
+
+                if estimate.available:
+                    st.caption(
+                        f"Estimate uses {estimate.reliable_run_count:,} reliable "
+                        f"sustained runs · latest evidence "
+                        f"{estimate.latest_evidence_date or 'date unavailable'}. "
+                        "This is a field estimate, not a laboratory measurement."
+                    )
+                else:
+                    st.info(estimate.limitations[0])
+
+                with st.expander("Tested or coach-assessed threshold override"):
+                    st.caption(
+                        "Use laboratory, field-test or coach values when available. "
+                        "Clearing the override restores profile values, or the "
+                        "automatic estimate when profile values are blank."
+                    )
+                    with st.form(f"athlete_threshold_override_{athlete_id}"):
+                        threshold_cols = st.columns(3)
+                        tested_lt1 = threshold_cols[0].number_input(
+                            "Tested LT1 HR",
+                            min_value=0,
+                            max_value=250,
+                            value=int(effective.get("lt1_hr") or 0),
+                        )
+                        tested_lt2 = threshold_cols[1].number_input(
+                            "Tested LT2 HR",
+                            min_value=0,
+                            max_value=250,
+                            value=int(effective.get("lt2_hr") or 0),
+                        )
+                        tested_max = threshold_cols[2].number_input(
+                            "Tested Max HR",
+                            min_value=0,
+                            max_value=250,
+                            value=int(effective.get("athlete_max_hr") or 0),
+                        )
+                        tested_source = st.selectbox(
+                            "Evidence source",
+                            [
+                                "Laboratory test", "Field test",
+                                "Coach assessment", "Known personal value", "Other",
+                            ],
+                        )
+                        tested_date = st.date_input(
+                            "Test or assessment date",
+                            value=datetime.date.today(),
+                            key=f"threshold_test_date_{athlete_id}",
+                        )
+                        tested_notes = st.text_input(
+                            "Optional threshold note",
+                            key=f"threshold_notes_{athlete_id}",
+                        )
+                        save_col, clear_col = st.columns(2)
+                        save_test = save_col.form_submit_button(
+                            "Save and use tested values", type="primary"
+                        )
+                        clear_test = clear_col.form_submit_button(
+                            "Clear tested override"
+                        )
+                    if save_test:
+                        if tested_lt1 and tested_lt2 and tested_lt1 >= tested_lt2:
+                            st.error("LT1 must be lower than LT2.")
+                        elif tested_lt2 and tested_max and tested_lt2 >= tested_max:
+                            st.error("LT2 must be lower than Max HR.")
+                        else:
+                            save_threshold_override(
+                                athlete_id=athlete_id,
+                                lt1_hr=tested_lt1 or None,
+                                lt2_hr=tested_lt2 or None,
+                                max_hr=tested_max or None,
+                                source=tested_source,
+                                tested_at=str(tested_date),
+                                notes=tested_notes.strip() or None,
+                            )
+                            st.cache_data.clear()
+                            st.rerun()
+                    if clear_test:
+                        clear_threshold_override(athlete_id)
+                        st.cache_data.clear()
+                        st.rerun()
 
                 st.divider()
 
@@ -378,6 +539,42 @@ def show_athletes_page():
                             f"**{identity['external_name']}**"
                             f"{external_id}"
                         )
+
+                st.divider()
+                st.write("**Official race personal bests**")
+                st.caption(
+                    "Use the official chip result when a watch's measured "
+                    "distance or elapsed time differs. This takes priority on "
+                    "the Athlete Passport card without changing imported runs."
+                )
+                official_bests = get_personal_best_overrides(athlete_id)
+                for event_key, event_label in (
+                    ("5k", "5K"), ("10k", "10K"), ("half_marathon", "Half marathon")
+                ):
+                    current = official_bests.get(event_key)
+                    with st.form(f"official_pb_{athlete_id}_{event_key}"):
+                        value_col, save_col, clear_col = st.columns([3, 1, 1])
+                        result_text = value_col.text_input(
+                            f"{event_label} official time",
+                            value=_format_official_time(current["official_time_s"]) if current else "",
+                            placeholder="19:04" if event_key == "5k" else "1:29:45",
+                        )
+                        save_pb = save_col.form_submit_button("Save")
+                        clear_pb = clear_col.form_submit_button("Clear")
+                    if save_pb:
+                        try:
+                            save_personal_best_override(
+                                athlete_id, event_key, _parse_official_time(result_text)
+                            )
+                        except ValueError as error:
+                            st.error(str(error))
+                        else:
+                            st.cache_data.clear()
+                            st.rerun()
+                    if clear_pb:
+                        clear_personal_best_override(athlete_id, event_key)
+                        st.cache_data.clear()
+                        st.rerun()
 
                 st.divider()
 
@@ -452,7 +649,7 @@ def show_athletes_page():
                         )
 
                         new_lt1_hr = st.number_input(
-                            "LT1 HR",
+                            "Profile LT1 HR (optional)",
                             min_value=0,
                             max_value=250,
                             value=int(lt1_hr or 0),
@@ -461,7 +658,7 @@ def show_athletes_page():
                         )
 
                         new_lt2_hr = st.number_input(
-                            "LT2 HR",
+                            "Profile LT2 HR (optional)",
                             min_value=0,
                             max_value=250,
                             value=int(lt2_hr or 0),

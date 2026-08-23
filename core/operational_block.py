@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import datetime
+import json
 import re
 from typing import Any
 
@@ -32,6 +33,7 @@ from core.database import (
 )
 from core.session import SessionPurpose, SessionType
 from core.session_intelligence import ActivityFacts, classify_session
+from core.splits import parse_splits, recognise_workout
 from core.home_latest_run import load_activity_runs
 from core.performance_recognition import build_recognition_index, recognition_key
 from core.training_blocks import (
@@ -200,6 +202,69 @@ def _recognition_family(category_key: str) -> tuple[str, str] | None:
         "workout": ("quality", "Structured workout"),
         "race": ("race", "Race"),
     }.get(str(category_key or "").lower())
+
+
+def _recognised_workout_label(session, default: str) -> str:
+    """Use auditable performed structure when an imported run has no title."""
+    description = str(
+        session.metadata.get("split_classification", {}).get("recognition")
+        or ""
+    )
+    match = re.match(
+        r"(?P<reps>\d+)\s*[×x]\s*(?P<distance>\d+(?:\.\d+)?)\s*"
+        r"(?P<unit>km|m|mile(?:s)?)\b",
+        description,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return default
+    distance = float(match.group("distance"))
+    distance_text = (
+        str(int(distance)) if distance.is_integer()
+        else f"{distance:.2f}".rstrip("0").rstrip(".")
+    )
+    return f"{match.group('reps')} × {distance_text} {match.group('unit')} workout"
+
+
+def _has_trustworthy_recorded_intervals(session, raw_json_text: str | None) -> bool:
+    """Confirm real work/recovery alternation without recategorising history.
+
+    Whole-run heart rate and generic recognition can hide an unnamed interval
+    session. The active-week matcher may trust physical lap evidence when the
+    recoveries are materially shorter and slower than the substantial work.
+    Equal-distance trail/long-run auto-laps and clusters of tiny lap fragments
+    deliberately do not qualify.
+    """
+    if session.session_type != SessionType.STRUCTURED_WORKOUT:
+        return False
+    try:
+        payload = json.loads(raw_json_text or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+    recognition = recognise_workout(
+        parse_splits(payload.get("splits") or payload.get("splitsCustom"))
+    )
+    work = tuple(
+        split for split in recognition.work_splits
+        if split.distance_km >= 0.35 and split.duration_s >= 75
+    )
+    if len(work) < 4 or sum(split.distance_km for split in work) < 2.0:
+        return False
+    work_distance = sum(split.distance_km for split in work) / len(work)
+    work_pace = recognition.average_rep_pace_s_per_km
+    if not work_pace:
+        return False
+    recoveries = tuple(
+        split for split in recognition.recovery_splits
+        if 45 <= split.duration_s <= 300
+        and split.distance_km <= work_distance * 0.65
+        and split.pace_s_per_km is not None
+        and split.pace_s_per_km >= work_pace * 1.15
+    )
+    return (
+        len(recoveries) >= max(3, len(work) - 2)
+        and len(recognition.recovery_splits) <= len(work) + 1
+    )
 
 
 def _families_match(planned: str, actual: str) -> bool:
@@ -644,6 +709,10 @@ def _load_operational_activities(
             if recognition is not None else None
         )
         family, label = recognised_family or _actual_family(session)
+        if _has_trustworthy_recorded_intervals(session, row[14]):
+            family, label = _actual_family(session)
+        if family in {"quality", "threshold"}:
+            label = _recognised_workout_label(session, label)
         title_lower = str(row[2] or "").lower()
         if (
             family == "quality"
@@ -661,7 +730,7 @@ def _load_operational_activities(
             OperationalActivity(
                 activity_id=int(row[0]),
                 activity_date=str(row[1]),
-                title=str(row[2] or "Untitled run"),
+                title=str(row[2] or label or "Untitled run"),
                 family=family,
                 family_label=label,
                 distance_miles=(

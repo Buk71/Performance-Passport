@@ -14,7 +14,12 @@ from core.activity_review import (
     build_activity_review,
     list_review_activities,
 )
-from core.database import get_connection
+from core.database import (
+    clear_activity_override,
+    get_activity_overrides,
+    get_connection,
+    save_activity_override,
+)
 from ui.activity_navigation import (
     clear_activity_review_params,
     read_activity_review_request,
@@ -604,6 +609,61 @@ def show_activities_page() -> None:
     _html(build_activity_verdict_html(review))
     _html(build_activity_detail_html(review))
     _html(build_coaching_html(review))
+
+    override = get_activity_overrides(int(athlete_id)).get(int(activity_id), {})
+    with st.expander("Coach corrections · classification and heart-rate quality"):
+        st.caption(
+            "Corrections belong only to this athlete and never change the imported "
+            "Garmin or Runalyze activity. Clear them at any time."
+        )
+        intent_labels = {
+            "Automatic recognition": None,
+            "Easy run": "easy",
+            "Easy run with strides": "easy_with_strides",
+            "Long run": "long_run",
+            "Structured workout": "workout",
+            "Threshold workout": "threshold",
+            "Race": "race",
+        }
+        existing_label = next(
+            (label for label, value in intent_labels.items()
+             if value == override.get("session_intent")),
+            "Automatic recognition",
+        )
+        with st.form(f"coach_corrections_{athlete_id}_{activity_id}"):
+            classification = st.selectbox(
+                "How should the coaches treat this activity?",
+                list(intent_labels),
+                index=list(intent_labels).index(existing_label),
+            )
+            hr_reliable = st.checkbox(
+                "Recorded heart rate is trustworthy",
+                value=override.get("heart_rate_reliable") is not False,
+            )
+            corrected_hr = st.number_input(
+                "Corrected average heart rate, if known (0 leaves it unused)",
+                min_value=0,
+                max_value=250,
+                value=int(override.get("corrected_avg_hr") or 0),
+            )
+            notes = st.text_input("Optional coach note", value=override.get("notes") or "")
+            save_col, clear_col = st.columns(2)
+            save = save_col.form_submit_button("Save coach correction", type="primary")
+            clear = clear_col.form_submit_button("Restore automatic evidence")
+        if save:
+            save_activity_override(
+                int(athlete_id), int(activity_id),
+                session_intent=intent_labels[classification],
+                heart_rate_reliable=hr_reliable,
+                corrected_avg_hr=corrected_hr or None,
+                notes=notes.strip() or None,
+            )
+            st.cache_data.clear()
+            st.rerun()
+        if clear:
+            clear_activity_override(int(athlete_id), int(activity_id))
+            st.cache_data.clear()
+            st.rerun()
 
     detail_left, detail_right = st.columns(2, gap="small")
     with detail_left:

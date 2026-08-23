@@ -20,7 +20,11 @@ import math
 from statistics import mean, median
 
 from core.activity_reliability import has_reliable_distance_and_pace
-from core.database import get_athlete_sport_roles, get_connection
+from core.database import (
+    get_athlete_sport_roles,
+    get_connection,
+    get_effective_activity_heart_rate,
+)
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.pb_shape import build_pb_shape, pb_shape_to_dict
@@ -242,15 +246,29 @@ def _obvious_continuous_run(
         "steady run",
     )
 
-    if not any(word in title for word in continuous_words):
+    named_continuous = any(word in title for word in continuous_words)
+    titleless_easy_long = (
+        facts.distance_km is not None
+        and facts.distance_km >= 4.0
+        and facts.avg_hr is not None
+        and facts.athlete_lt1_hr is not None
+        and facts.avg_hr <= facts.athlete_lt1_hr * (
+            1.06 if facts.distance_km >= 12.0 else 0.98
+        )
+    )
+    if not named_continuous and not titleless_easy_long:
         return False
 
     data = workout.recognition_json
-    if data.get("recovery_splits"):
+    recovery_count = len(data.get("recovery_splits") or ())
+    if recovery_count and (
+        not titleless_easy_long
+        or recovery_count >= max(2, int(workout.rep_count * 0.50))
+    ):
         return False
-    if data.get("boundary_splits"):
+    if data.get("boundary_splits") and not titleless_easy_long:
         return False
-    if data.get("unknown_recovery_count"):
+    if data.get("unknown_recovery_count") and not titleless_easy_long:
         return False
 
     # With clear continuous-run intent and no recovery/boundary structure,
@@ -615,6 +633,21 @@ def _group_work_components(
         if not placed:
             families.append([split])
 
+    recorded_recoveries = workout.recognition_json.get("recovery_splits") or []
+    recorded_recovery_durations = [
+        float(item.get("duration_s") or 0.0)
+        for item in recorded_recoveries
+        if float(item.get("duration_s") or 0.0) > 0
+    ]
+    supported_interval_structure = (
+        workout.rep_count >= 3
+        and len(recorded_recoveries) >= max(2, int((workout.rep_count - 1) * 0.60))
+    )
+    fallback_confidence = (
+        min(max(float(workout.confidence or 0.0), 0.78), 0.93)
+        if supported_interval_structure else 0.55
+    )
+
     for family in families:
         total_distance = sum(
             float(split["distance_km"])
@@ -636,7 +669,7 @@ def _group_work_components(
         elif average_distance >= 0.65:
             component_type = "long_intervals"
             label = "Long intervals"
-        elif average_distance >= 0.25:
+        elif average_distance >= 0.16:
             component_type = "short_intervals"
             label = "Short intervals"
         else:
@@ -659,20 +692,38 @@ def _group_work_components(
                     total_time / total_distance,
                     1,
                 ),
-                "recovery_duration_s": None,
-                "source": "legacy_csv_fallback",
-                "confidence": 0.55,
+                "recovery_duration_s": (
+                    round(float(median(recorded_recovery_durations)), 1)
+                    if supported_interval_structure and recorded_recovery_durations
+                    else None
+                ),
+                "source": (
+                    "recorded_interval_recoveries" if supported_interval_structure
+                    else "legacy_csv_fallback"
+                ),
+                "confidence": fallback_confidence,
             }
         )
 
     return components, {
-        "source": "legacy_csv_fallback",
-        "confidence": 0.55,
-        "summary": "Legacy component grouping",
-        "reasons": [],
-        "limitations": [
-            "The phase engine could not reconstruct a complete workout."
-        ],
+        "source": (
+            "recorded_interval_recoveries" if supported_interval_structure
+            else "legacy_csv_fallback"
+        ),
+        "confidence": fallback_confidence,
+        "summary": (
+            "Repeated fast work with recorded slower recovery"
+            if supported_interval_structure else "Legacy component grouping"
+        ),
+        "reasons": (
+            [f"{workout.rep_count} repeated work reps were separated by "
+             f"{len(recorded_recoveries)} recorded slower recoveries."]
+            if supported_interval_structure else []
+        ),
+        "limitations": (
+            [] if supported_interval_structure else
+            ["The phase engine could not reconstruct a complete workout."]
+        ),
         "phases": [],
     }
 
@@ -988,7 +1039,281 @@ def _combine_workout_predictions(
     }
 
 
-WORKOUT_LIBRARY_DECODER_VERSION = 2
+def _distance_relevant_workout_prediction(
+    *,
+    candidate_workouts: list[dict],
+    goal_distance_km: float | None,
+    reference_date: datetime.date,
+    similarity_prediction: dict | None,
+    pb_shape_prediction: dict | None,
+) -> dict | None:
+    """Prevent short, controlled race histories dominating endurance goals.
+
+    Workout similarity can be personally useful at 5K and 10K. A collection
+    of old 5K park/trail runs is not comparable half-marathon evidence,
+    however, even when the workouts preceding those runs looked similar.
+    Longer goals therefore prefer recent, confidently decoded threshold and
+    long-interval work whenever direct longer-race history is absent.
+    """
+    if goal_distance_km is None or goal_distance_km < 8.0:
+        return None
+
+    historical_outcomes = (
+        similarity_prediction.get("outcomes", [])
+        if similarity_prediction
+        else []
+    )
+    representative_races = []
+    for outcome in historical_outcomes:
+        race_distance = float(outcome.get("race_distance_km") or 0.0)
+        race_date = _as_date(outcome.get("race_date"))
+        race_age = (
+            (reference_date - race_date).days
+            if race_date is not None
+            else None
+        )
+        if (
+            race_distance >= goal_distance_km * 0.60
+            and race_age is not None
+            and 0 <= race_age <= 365
+        ):
+            representative_races.append(outcome)
+
+    unique_workouts = {
+        int(item["session"].activity_id): item
+        for item in candidate_workouts
+    }
+    estimates = []
+    minimum_relevant_distance = min(
+        max(goal_distance_km * (0.22 if goal_distance_km >= 15.0 else 0.18), 3.0),
+        7.0,
+    )
+
+    for item in unique_workouts.values():
+        activity_date = item.get("activity_date")
+        if activity_date is None:
+            continue
+        age_days = (reference_date - activity_date).days
+        if age_days < 0 or age_days > 120:
+            continue
+
+        estimate = _predict_from_workout(item, goal_distance_km)
+        if estimate is None:
+            continue
+        relevant_components = [
+            component
+            for component in estimate.get("components", [])
+            if component.get("component_type") in {"threshold", "long_intervals"}
+            and float(component.get("confidence") or 0.0) >= 0.75
+        ]
+        if goal_distance_km < 15.0:
+            # A 10K-specific override is earned only by a recent genuinely
+            # repeated substantial session with recorded recoveries. This
+            # prevents slow auto-laps and old controlled runs outvoting the
+            # athlete's six real kilometre repetitions.
+            relevant_components = [
+                component for component in relevant_components
+                if component.get("component_type") == "long_intervals"
+                and int(component.get("rep_count") or 0) >= 4
+                and float(component.get("average_rep_distance_km") or 0.0) >= 0.75
+                and component.get("recovery_duration_s") is not None
+            ]
+            if age_days > 14:
+                continue
+        relevant_distance = sum(
+            float(component.get("total_work_distance_km") or 0.0)
+            for component in relevant_components
+        )
+        if relevant_distance < minimum_relevant_distance:
+            continue
+
+        component_weight = sum(
+            max(float(component.get("quality") or 0.0), 0.10)
+            * max(float(component.get("total_work_distance_km") or 0.0), 0.10)
+            for component in relevant_components
+        )
+        if component_weight <= 0:
+            continue
+        component_estimates = []
+        for component in relevant_components:
+            predicted_seconds = float(component["predicted_seconds"])
+            rep_distance = float(component.get("average_rep_distance_km") or 0.0)
+            total_distance = float(component.get("total_work_distance_km") or 0.0)
+            rep_count = int(component.get("rep_count") or 0)
+            recovery = component.get("recovery_duration_s")
+            pace = float(component.get("average_pace_s_per_km") or 0.0)
+            rep_duration = pace * rep_distance
+            recovery_ratio = (
+                float(recovery) / rep_duration
+                if recovery is not None and rep_duration > 0
+                else None
+            )
+
+            if (
+                goal_distance_km >= 15.0
+                and
+                component.get("component_type") == "long_intervals"
+                and rep_distance >= 1.0
+                and rep_count >= 4
+                and total_distance >= goal_distance_km * 0.28
+                and recovery_ratio is not None
+                and recovery_ratio <= 0.40
+            ):
+                # Six substantial 1,200 m reps off short controlled rests
+                # carry much stronger half-marathon evidence than the
+                # generic long-interval factor assumes. Keep them out of
+                # threshold pace, while calibrating their endurance value.
+                endurance_factor = 1.07 + max(recovery_ratio - 0.30, 0.0) * 0.12
+                predicted_seconds = pace * endurance_factor * goal_distance_km
+
+            component_estimates.append(
+                predicted_seconds
+                * max(float(component.get("quality") or 0.0), 0.10)
+                * max(total_distance, 0.10)
+            )
+
+        endurance_seconds = sum(component_estimates) / component_weight
+        known_event_pb = (
+            float(pb_shape_prediction.get("pb_time_s") or 0.0)
+            if pb_shape_prediction else 0.0
+        )
+        if (
+            goal_distance_km >= 15.0
+            and known_event_pb > 0
+            and endurance_seconds > known_event_pb * 1.13
+        ):
+            # Controlled auto-lap runs can resemble long threshold blocks.
+            # They are not fitness evidence when they imply a result far
+            # slower than the athlete's independently verified event PB.
+            continue
+
+        # Current fitness should materially outweigh older training rather
+        # than treating a workout from weeks ago as effectively identical.
+        recency_weight = max(0.45, math.pow(0.5, age_days / 45.0))
+        coverage_weight = min(relevant_distance / (goal_distance_km * 0.35), 1.0)
+        weight = (
+            max(float(estimate.get("quality") or 0.0), 0.30)
+            * max(float(item.get("trust_score") or 0.0) / 100.0, 0.40)
+            * recency_weight
+            * (0.60 + coverage_weight * 0.40)
+        )
+        estimates.append(
+            {
+                "activity_id": int(item["session"].activity_id),
+                "date": activity_date.isoformat(),
+                "title": item["session"].title,
+                "predicted_seconds": round(endurance_seconds, 1),
+                "relevant_work_distance_km": round(relevant_distance, 2),
+                "component_types": sorted(
+                    {component["component_type"] for component in relevant_components}
+                ),
+                "age_days": age_days,
+                "weight": round(weight, 4),
+            }
+        )
+
+    if not estimates:
+        return None
+
+    total_weight = sum(estimate["weight"] for estimate in estimates)
+    central = sum(
+        estimate["predicted_seconds"] * estimate["weight"]
+        for estimate in estimates
+    ) / total_weight
+
+    known_pb_seconds = (
+        float(pb_shape_prediction.get("pb_time_s") or 0.0)
+        if pb_shape_prediction
+        else 0.0
+    )
+    pb_anchor_used = (
+        known_pb_seconds > 0
+        and abs(central - known_pb_seconds) / known_pb_seconds <= 0.15
+    )
+    pb_anchor_weight = (
+        0.10 if len(estimates) >= 2 else 0.18
+    ) if pb_anchor_used else 0.0
+    if pb_anchor_used:
+        central = (
+            central * (1.0 - pb_anchor_weight)
+            + known_pb_seconds * pb_anchor_weight
+        )
+
+    average_work_distance = sum(
+        estimate["relevant_work_distance_km"] * estimate["weight"]
+        for estimate in estimates
+    ) / total_weight
+    specificity = min(
+        average_work_distance / max(goal_distance_km * 0.35, 1.0),
+        1.0,
+    )
+    confidence = min(
+        0.84,
+        0.52
+        + specificity * 0.16
+        + min(len(estimates), 3) * 0.035
+        + (0.035 if pb_anchor_used else 0.0),
+    )
+    uncertainty = max(central * (0.025 + (1.0 - confidence) * 0.035), 35.0)
+
+    return {
+        "central_seconds": round(central, 1),
+        "low_seconds": round(max(central - uncertainty, 1.0), 1),
+        "high_seconds": round(central + uncertainty, 1),
+        "confidence": round(confidence, 4),
+        "goal_distance_km": round(goal_distance_km, 4),
+        "estimate_count": len(estimates),
+        "estimates": sorted(
+            estimates,
+            key=lambda estimate: estimate["weight"],
+            reverse=True,
+        ),
+        "representative_race_count": len(representative_races),
+        "historical_outcome_count": len(historical_outcomes),
+        "pb_anchor_seconds": known_pb_seconds if pb_anchor_used else None,
+        "pb_anchor_weight": pb_anchor_weight,
+        "conditions": "Ideal, flat conditions",
+        "method": (
+            "Recent distance-relevant threshold and long-interval work; "
+            "shorter linked races cannot dominate an endurance goal."
+        ),
+        "model_version": 1,
+    }
+
+
+def _endurance_workout_rank(
+    item: dict,
+    goal_distance_km: float,
+    reference_date: datetime.date,
+) -> float:
+    """Rank recent, substantial endurance work above generic old sessions."""
+    relevant_distance = sum(
+        float(component.get("total_work_distance_km") or 0.0)
+        for component in item.get("phase_components", [])
+        if component.get("component_type") in {"threshold", "long_intervals"}
+        and component.get("average_pace_s_per_km") is not None
+        and float(component.get("confidence") or 0.0) >= 0.75
+    )
+    coverage = min(
+        relevant_distance / max(goal_distance_km * 0.35, 1.0),
+        1.0,
+    )
+    activity_date = item.get("activity_date")
+    age_days = (
+        max((reference_date - activity_date).days, 0)
+        if activity_date is not None
+        else 365
+    )
+    recency = max(0.0, 1.0 - age_days / 90.0)
+    return round(
+        float(item.get("trust_score") or 0.0) * 0.45
+        + coverage * 20.0
+        + recency * 35.0,
+        4,
+    )
+
+
+WORKOUT_LIBRARY_DECODER_VERSION = 3
 
 
 def _workout_signature(
@@ -1137,7 +1462,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 distance_km=float(row[5]) if row[5] is not None else None,
                 moving_time_s=float(row[6]) if row[6] is not None else None,
                 elapsed_time_s=float(row[7]) if row[7] is not None else None,
-                avg_hr=float(row[8]) if row[8] is not None else None,
+                avg_hr=get_effective_activity_heart_rate(
+                    row[1], row[0], float(row[8]) if row[8] is not None else None
+                ),
                 max_hr=float(row[9]) if row[9] is not None else None,
                 elevation_up_m=(
                     float(row[10]) if row[10] is not None else None
@@ -1155,28 +1482,40 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 athlete_max_hr=(
                     float(row[18]) if row[18] is not None else None
                 ),
+                athlete_lt1_hr=(
+                    float(row[16]) if row[16] is not None else None
+                ),
             )
 
             session = classify_session(facts)
             session_counts[session.session_type.value] += 1
+            forced_workout = session.metadata.get("manual_override") in {
+                "workout", "threshold"
+            }
 
-            if session.metadata.get("activity_intent") == "easy_with_strides":
+            if session.metadata.get("activity_intent") in {
+                "easy_with_strides", "standalone_strides", "easy", "long_run",
+            }:
                 session_counts["easy_with_strides_excluded"] += 1
                 continue
 
-            if _is_race_quality_session(facts):
+            if session.metadata.get("manual_override") == "race":
+                session_counts["manual_race_excluded"] += 1
+                continue
+
+            if not forced_workout and _is_race_quality_session(facts):
                 session_counts["race_quality_excluded"] += 1
                 continue
 
             event_title = (facts.title or "").lower()
-            if "parkrun" in event_title or "race" in event_title:
+            if not forced_workout and ("parkrun" in event_title or "race" in event_title):
                 session_counts["event_effort_excluded"] += 1
                 continue
 
             title_intent = parse_workout_title(facts.title)
             workout = get_or_decode_workout(row[0], row[15])
 
-            if _obvious_continuous_run(
+            if not forced_workout and _obvious_continuous_run(
                 facts,
                 workout,
                 title_intent,
@@ -1352,9 +1691,31 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             <= RECENT_WINDOW_DAYS
         ] or candidates
 
+        goal = context.goal or {}
+        goal_distance_km = (
+            float(goal["distance_m"]) / 1000.0
+            if goal.get("distance_m")
+            else None
+        )
+        endurance_road_goal = (
+            goal_distance_km is not None
+            and goal_distance_km >= 15.0
+            and "trail" not in " ".join(
+                str(goal.get(field) or "")
+                for field in ("goal_name", "goal_type", "race_name")
+            ).lower()
+        )
         strongest = sorted(
             recent_candidates,
-            key=lambda item: item["trust_score"],
+            key=(
+                lambda item: _endurance_workout_rank(
+                    item,
+                    goal_distance_km,
+                    reference_date,
+                )
+            )
+            if goal_distance_km is not None and goal_distance_km >= 15.0
+            else lambda item: item["trust_score"],
             reverse=True,
         )[:TOP_EVIDENCE_COUNT]
 
@@ -1365,6 +1726,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 athlete_id=context.athlete_id,
                 current_activity_id=best["session"].activity_id,
                 limit=10,
+                reference_date=reference_date,
+                goal_distance_km=goal_distance_km,
+                road_goal=endurance_road_goal,
             )
             historical_similarity_metadata = (
                 similarity_result_to_dict(historical_similarity)
@@ -1381,12 +1745,6 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 ],
             }
 
-        goal = context.goal or {}
-        goal_distance_km = (
-            float(goal["distance_m"]) / 1000.0
-            if goal.get("distance_m")
-            else None
-        )
         formula_prediction = _combine_workout_predictions(
             strongest,
             goal_distance_km,
@@ -1423,6 +1781,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             predict_from_similarity(
                 historical_similarity,
                 goal_distance_km=goal_distance_km,
+                reference_date=reference_date,
+                road_goal=endurance_road_goal,
             )
             if (
                 goal_distance_km is not None
@@ -1430,9 +1790,21 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             )
             else None
         )
+        distance_relevant_prediction = _distance_relevant_workout_prediction(
+            candidate_workouts=(
+                recent_candidates
+                if goal_distance_km is not None and 8.0 <= goal_distance_km < 15.0
+                else [*strongest, latest]
+            ),
+            goal_distance_km=goal_distance_km,
+            reference_date=reference_date,
+            similarity_prediction=similarity_prediction,
+            pb_shape_prediction=pb_shape_prediction,
+        )
 
         # PB Shape is the most personal and explainable workout prediction.
-        # Historical similarity and formula logic remain fallbacks.
+        # For longer goals, current distance-specific work outranks linked
+        # short races that do not actually represent the selected distance.
         if (
             pb_shape_prediction
             and pb_shape_prediction.get("central_seconds") is not None
@@ -1441,6 +1813,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         ):
             workout_prediction = pb_shape_prediction
             prediction_source = "pb_shape"
+        elif distance_relevant_prediction is not None:
+            workout_prediction = distance_relevant_prediction
+            prediction_source = "distance_relevant_workout"
         elif (
             similarity_prediction
             and similarity_prediction["distinct_race_count"] >= 2
@@ -1500,14 +1875,22 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             prediction_label = (
                 "PB Shape prediction"
                 if prediction_source == "pb_shape"
+                else "Distance-specific workout prediction"
+                if prediction_source == "distance_relevant_workout"
                 else "Historical workout prediction"
                 if prediction_source == "historical_similarity"
                 else "Formula fallback prediction"
             )
+            total_seconds = int(round(workout_prediction["central_seconds"]))
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            prediction_clock = (
+                f"{hours}:{minutes:02d}:{seconds:02d}"
+                if hours
+                else f"{minutes}:{seconds:02d}"
+            )
             summary_parts.append(
-                f"{prediction_label}: "
-                f"{int(workout_prediction['central_seconds'] // 60)}:"
-                f"{int(round(workout_prediction['central_seconds'] % 60)):02d} "
+                f"{prediction_label}: {prediction_clock} "
                 f"under ideal, flat conditions."
             )
 
@@ -1591,6 +1974,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             "than a recent genuine race and therefore carry lower weight.",
             "Historical similarity becomes the primary estimate only when "
             "at least two distinct linked race outcomes provide moderate evidence.",
+            "For endurance goals, recent trusted threshold and long-interval "
+            "work takes priority when linked race history is too short or "
+            "too old to represent the selected distance.",
             "Controlled race intent is not yet explicit, so the historical "
             "model gently favours stronger outcomes and remains lower-weighted "
             "than strong Race Coach evidence.",
@@ -1618,6 +2004,11 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 if (
                     workout_prediction
                     and prediction_source == "pb_shape"
+                )
+                else 0.55
+                if (
+                    workout_prediction
+                    and prediction_source == "distance_relevant_workout"
                 )
                 else 0.55
                 if (
@@ -1683,6 +2074,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "pb_shape_prediction": pb_shape_prediction,
                 "similarity_prediction": similarity_prediction,
                 "formula_prediction": formula_prediction,
+                "distance_relevant_prediction": distance_relevant_prediction,
                 "historical_similarity":
                     historical_similarity_metadata,
                 "prediction_confidence": prediction_confidence,

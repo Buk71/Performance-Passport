@@ -470,6 +470,34 @@ def recognise_workout(
             ),
         )
 
+    # A deliberately alternating fast/slow pattern is stronger evidence
+    # than lap distance alone. In particular, 200 m reps are not recovery
+    # connectors merely because the warm-up happens to be 400 m long.
+    alternating_work: list[Split] = []
+    alternating_recovery: list[Split] = []
+    for family in _distance_families(meaningful, tolerance_ratio=0.10):
+        if len(family) < 3 or median(item.distance_km for item in family) < 0.12:
+            continue
+        ordered_family = sorted(family, key=lambda item: item.index)
+        linked_recoveries = []
+        for previous, following in zip(ordered_family, ordered_family[1:]):
+            between = [
+                item for item in meaningful
+                if previous.index < item.index < following.index
+                and item.pace_s_per_km is not None
+                and item.distance_km < following.distance_km * 0.86
+                and item.pace_s_per_km >= following.pace_s_per_km * 1.20
+            ]
+            if between:
+                linked_recoveries.append(between[-1])
+        if len(linked_recoveries) < max(2, int((len(ordered_family) - 1) * 0.60)):
+            continue
+        if sum(item.distance_km for item in ordered_family) > sum(
+            item.distance_km for item in alternating_work
+        ):
+            alternating_work = ordered_family
+            alternating_recovery = linked_recoveries
+
     # Short connector laps can look deceptively fast because they occur
     # around lap/stop/start presses. When the session also contains several
     # substantial segments, treat these connectors as recovery candidates
@@ -481,7 +509,7 @@ def recognise_workout(
     ]
     connector_recoveries = []
 
-    if len(substantial) >= 2:
+    if len(substantial) >= 2 and not alternating_work:
         connector_recoveries = [
             split
             for split in meaningful
@@ -500,11 +528,13 @@ def recognise_workout(
     ]
     clustering = _kmeans_two(paces)
 
-    work: list[Split] = []
-    recovery: list[Split] = list(connector_recoveries)
+    work: list[Split] = list(alternating_work)
+    recovery: list[Split] = (
+        list(alternating_recovery) if alternating_work else list(connector_recoveries)
+    )
     pace_separation = 0.0
 
-    if clustering is not None:
+    if clustering is not None and not alternating_work:
         assignments, fast_centre, slow_centre = clustering
         pace_separation = (slow_centre - fast_centre) / slow_centre
 

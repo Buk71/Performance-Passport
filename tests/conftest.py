@@ -40,7 +40,8 @@ def isolated_real_athlete_database(tmp_path_factory):
     with original_connect(snapshot_path) as snapshot:
         late_richard_activities = """
             SELECT id FROM activities
-            WHERE athlete_id = 1 AND date(activity_date) > date('2026-08-09')
+            WHERE athlete_id IN (1, 3)
+              AND date(activity_date) > date('2026-08-09')
         """
         snapshot.execute(
             f"""

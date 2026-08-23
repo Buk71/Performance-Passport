@@ -21,6 +21,7 @@ from core.coaching import RunProfile, is_easy_baseline_candidate
 from core.database import (
     get_athlete_sport_roles,
     get_connection,
+    get_effective_activity_heart_rate,
     get_effective_athlete_thresholds,
 )
 from core.environment_profile import build_personal_environment_profile
@@ -258,7 +259,7 @@ def _load_runs(athlete_id: int) -> tuple[str, list[_ProgressRun]]:
             sport_id=row[3],
             distance_km=distance,
             moving_time_seconds=moving,
-            avg_hr=_safe_float(row[7]),
+            avg_hr=_safe_float(get_effective_activity_heart_rate(athlete_id, row[0], row[7])),
             run_max_hr=_safe_float(row[8]),
             elevation_m=_safe_float(row[9]),
             temperature_c=_safe_float(row[10]),

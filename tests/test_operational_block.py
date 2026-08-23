@@ -3,9 +3,12 @@ from functools import lru_cache
 
 from core.operational_block import (
     OperationalActivity,
+    _has_trustworthy_recorded_intervals,
     _load_operational_activities,
     compose_operational_week,
 )
+from tests.test_classification_integration import _real_activity_facts
+from core.session_intelligence import classify_session
 
 
 def _plan():
@@ -103,3 +106,22 @@ def test_real_recognition_identifies_richards_long_run():
 
     assert slr.family == "long"
     assert slr.distance_miles is not None
+
+
+def test_jo_real_unnamed_interval_workout_uses_recorded_reps_not_easy_average():
+    activities = _load_operational_activities(
+        3, datetime.date(2025, 9, 2), datetime.date(2025, 9, 2)
+    )
+    workout = next(activity for activity in activities if activity.activity_id == 5119)
+
+    assert workout.family == "quality"
+    assert workout.family_label == "5 × 1 km workout"
+    assert workout.title == "5 × 1 km workout"
+    assert workout.distance_miles == 4.41
+
+
+def test_long_run_auto_laps_cannot_pass_active_week_interval_verification():
+    facts = _real_activity_facts(3737)
+    session = classify_session(facts)
+
+    assert _has_trustworthy_recorded_intervals(session, facts.raw_json_text) is False

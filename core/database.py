@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 
 
 def get_connection():
@@ -883,16 +883,47 @@ def get_effective_athlete_thresholds(athlete_id):
     ) = row
 
     use_manual = bool(enabled)
+    from core.threshold_estimation import estimate_athlete_thresholds
+    estimate = estimate_athlete_thresholds(int(athlete_id))
+    estimated_lt1 = estimate.lt1.value_bpm
+    estimated_lt2 = estimate.lt2.value_bpm
+    estimated_max = estimate.max_hr_basis
+    effective_lt1 = (
+        manual_lt1 if use_manual and manual_lt1
+        else calculated_lt1 if calculated_lt1
+        else estimated_lt1
+    )
+    effective_lt2 = (
+        manual_lt2 if use_manual and manual_lt2
+        else calculated_lt2 if calculated_lt2
+        else estimated_lt2
+    )
+    effective_max = (
+        manual_max if use_manual and manual_max
+        else calculated_max if calculated_max
+        else estimated_max
+    )
+    if use_manual:
+        effective_source = manual_source or "Verified manual values"
+    elif calculated_lt1 or calculated_lt2:
+        effective_source = "Athlete profile values"
+    elif estimate.available:
+        effective_source = "Estimated from training history"
+    else:
+        effective_source = "Not set"
 
     return {
-        "lt1_hr": manual_lt1 if use_manual and manual_lt1 else calculated_lt1,
-        "lt2_hr": manual_lt2 if use_manual and manual_lt2 else calculated_lt2,
-        "athlete_max_hr": (
-            manual_max if use_manual and manual_max else calculated_max
-        ),
-        "source": manual_source if use_manual else "Calculated profile",
+        "lt1_hr": effective_lt1,
+        "lt2_hr": effective_lt2,
+        "athlete_max_hr": effective_max,
+        "source": effective_source,
         "tested_at": tested_at if use_manual else None,
         "notes": notes if use_manual else None,
+        "estimated_lt1_hr": estimated_lt1,
+        "estimated_lt2_hr": estimated_lt2,
+        "estimated_max_hr": estimated_max,
+        "estimate_confidence": estimate.lt1.confidence,
+        "estimate_sample_size": estimate.reliable_run_count,
     }
 
 
@@ -946,6 +977,31 @@ def get_athletes_with_effective_thresholds():
         ) = row
 
         use_manual = bool(override_enabled)
+        from core.threshold_estimation import estimate_athlete_thresholds
+        estimate = estimate_athlete_thresholds(int(athlete_id))
+        estimated_lt1 = estimate.lt1.value_bpm
+        estimated_lt2 = estimate.lt2.value_bpm
+        estimated_max = estimate.max_hr_basis
+        effective_lt1 = (
+            manual_lt1 if use_manual and manual_lt1
+            else calculated_lt1 if calculated_lt1 else estimated_lt1
+        )
+        effective_lt2 = (
+            manual_lt2 if use_manual and manual_lt2
+            else calculated_lt2 if calculated_lt2 else estimated_lt2
+        )
+        effective_max = (
+            manual_max if use_manual and manual_max
+            else calculated_max if calculated_max else estimated_max
+        )
+        if use_manual:
+            effective_source = override_source or "Verified manual values"
+        elif calculated_lt1 or calculated_lt2:
+            effective_source = "Athlete profile values"
+        elif estimate.available:
+            effective_source = "Estimated from training history"
+        else:
+            effective_source = "Not set"
 
         athletes.append(
             {
@@ -955,6 +1011,12 @@ def get_athletes_with_effective_thresholds():
                 "calculated_lt1_hr": calculated_lt1,
                 "calculated_lt2_hr": calculated_lt2,
                 "calculated_max_hr": calculated_max,
+                "estimated_lt1_hr": estimated_lt1,
+                "estimated_lt2_hr": estimated_lt2,
+                "estimated_max_hr": estimated_max,
+                "estimate_confidence": estimate.lt1.confidence,
+                "estimate_sample_size": estimate.reliable_run_count,
+                "estimate_latest_date": estimate.latest_evidence_date,
                 "manual_lt1_hr": manual_lt1,
                 "manual_lt2_hr": manual_lt2,
                 "manual_max_hr": manual_max,
@@ -962,18 +1024,10 @@ def get_athletes_with_effective_thresholds():
                 "tested_at": tested_at,
                 "override_notes": override_notes,
                 "override_enabled": use_manual,
-                "effective_lt1_hr": (
-                    manual_lt1 if use_manual and manual_lt1 else calculated_lt1
-                ),
-                "effective_lt2_hr": (
-                    manual_lt2 if use_manual and manual_lt2 else calculated_lt2
-                ),
-                "effective_max_hr": (
-                    manual_max if use_manual and manual_max else calculated_max
-                ),
-                "effective_source": (
-                    override_source if use_manual else "Calculated profile"
-                ),
+                "effective_lt1_hr": effective_lt1,
+                "effective_lt2_hr": effective_lt2,
+                "effective_max_hr": effective_max,
+                "effective_source": effective_source,
             }
         )
 
@@ -1431,6 +1485,168 @@ def migrate_to_schema_v12(cursor):
     set_schema_version(cursor, 12)
 
 
+def create_athlete_evidence_overrides_tables(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_activity_overrides (
+            activity_id INTEGER PRIMARY KEY,
+            athlete_id INTEGER NOT NULL,
+            session_intent TEXT,
+            heart_rate_reliable INTEGER,
+            corrected_avg_hr REAL,
+            notes TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_personal_best_overrides (
+            athlete_id INTEGER NOT NULL,
+            event_key TEXT NOT NULL,
+            official_time_s REAL NOT NULL,
+            event_date TEXT,
+            notes TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (athlete_id, event_key),
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
+def migrate_to_schema_v13(cursor):
+    create_athlete_evidence_overrides_tables(cursor)
+    set_schema_version(cursor, 13)
+
+
+@lru_cache(maxsize=128)
+def get_activity_overrides(athlete_id):
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT activity_id, session_intent, heart_rate_reliable,
+                      corrected_avg_hr, notes
+               FROM athlete_activity_overrides WHERE athlete_id = ?""",
+            (athlete_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = ()
+    finally:
+        conn.close()
+    return {
+        int(row[0]): {
+            "session_intent": row[1],
+            "heart_rate_reliable": None if row[2] is None else bool(row[2]),
+            "corrected_avg_hr": row[3],
+            "notes": row[4],
+        }
+        for row in rows
+    }
+
+
+def get_effective_activity_heart_rate(athlete_id, activity_id, recorded_avg_hr):
+    override = get_activity_overrides(int(athlete_id)).get(int(activity_id), {})
+    if override.get("heart_rate_reliable") is False:
+        corrected = override.get("corrected_avg_hr")
+        return float(corrected) if corrected is not None else None
+    corrected = override.get("corrected_avg_hr")
+    return float(corrected) if corrected is not None else recorded_avg_hr
+
+
+def save_activity_override(
+    athlete_id, activity_id, *, session_intent=None,
+    heart_rate_reliable=None, corrected_avg_hr=None, notes=None,
+):
+    conn = get_connection()
+    create_athlete_evidence_overrides_tables(conn.cursor())
+    owner = conn.execute(
+        "SELECT athlete_id FROM activities WHERE id = ?", (activity_id,)
+    ).fetchone()
+    if owner is None or int(owner[0]) != int(athlete_id):
+        conn.close()
+        raise ValueError("Activity does not belong to this athlete.")
+    conn.execute(
+        """INSERT INTO athlete_activity_overrides
+               (activity_id, athlete_id, session_intent, heart_rate_reliable,
+                corrected_avg_hr, notes)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(activity_id) DO UPDATE SET
+               session_intent=excluded.session_intent,
+               heart_rate_reliable=excluded.heart_rate_reliable,
+               corrected_avg_hr=excluded.corrected_avg_hr,
+               notes=excluded.notes, updated_at=CURRENT_TIMESTAMP""",
+        (activity_id, athlete_id, session_intent,
+         None if heart_rate_reliable is None else int(heart_rate_reliable),
+         corrected_avg_hr, notes),
+    )
+    conn.commit()
+    conn.close()
+    get_activity_overrides.cache_clear()
+
+
+def clear_activity_override(athlete_id, activity_id):
+    conn = get_connection()
+    create_athlete_evidence_overrides_tables(conn.cursor())
+    conn.execute(
+        "DELETE FROM athlete_activity_overrides WHERE athlete_id=? AND activity_id=?",
+        (athlete_id, activity_id),
+    )
+    conn.commit()
+    conn.close()
+    get_activity_overrides.cache_clear()
+
+
+def get_personal_best_overrides(athlete_id):
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT event_key, official_time_s, event_date, notes
+               FROM athlete_personal_best_overrides WHERE athlete_id=?""",
+            (athlete_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = ()
+    finally:
+        conn.close()
+    return {
+        row[0]: {"official_time_s": float(row[1]), "event_date": row[2], "notes": row[3]}
+        for row in rows
+    }
+
+
+def save_personal_best_override(athlete_id, event_key, official_time_s, *, event_date=None, notes=None):
+    if event_key not in {"5k", "10k", "half_marathon"} or float(official_time_s) <= 0:
+        raise ValueError("Provide a supported distance and a positive official time.")
+    conn = get_connection()
+    create_athlete_evidence_overrides_tables(conn.cursor())
+    conn.execute(
+        """INSERT INTO athlete_personal_best_overrides
+               (athlete_id, event_key, official_time_s, event_date, notes)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(athlete_id,event_key) DO UPDATE SET
+               official_time_s=excluded.official_time_s,
+               event_date=excluded.event_date, notes=excluded.notes,
+               updated_at=CURRENT_TIMESTAMP""",
+        (athlete_id, event_key, official_time_s, event_date, notes),
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_personal_best_override(athlete_id, event_key):
+    conn = get_connection()
+    create_athlete_evidence_overrides_tables(conn.cursor())
+    conn.execute(
+        "DELETE FROM athlete_personal_best_overrides WHERE athlete_id=? AND event_key=?",
+        (athlete_id, event_key),
+    )
+    conn.commit()
+    conn.close()
+
+
 def initialise_database():
     conn = get_connection()
     cursor = conn.cursor()
@@ -1484,6 +1700,10 @@ def initialise_database():
         migrate_to_schema_v12(cursor)
         schema_version = 12
 
+    if schema_version < 13:
+        migrate_to_schema_v13(cursor)
+        schema_version = 13
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
@@ -1493,6 +1713,7 @@ def initialise_database():
     create_decoded_workouts_table(cursor)
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)
+    create_athlete_evidence_overrides_tables(cursor)
 
     backfill_missing_athlete_ids(cursor)
 

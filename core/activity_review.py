@@ -25,6 +25,7 @@ from core.coaching import RunProfile
 from core.database import (
     get_athlete_sport_roles,
     get_connection,
+    get_effective_activity_heart_rate,
     get_effective_athlete_thresholds,
 )
 from core.performance_recognition import (
@@ -295,7 +296,7 @@ def _run_profiles(athlete_id: int, rows) -> list[RunProfile]:
             sport_id=row[6],
             distance_km=_distance_km(row[7]),
             moving_time_seconds=_safe_float(row[8]),
-            avg_hr=_safe_float(row[10]),
+            avg_hr=_safe_float(get_effective_activity_heart_rate(athlete_id, row[0], row[10])),
             run_max_hr=_safe_float(row[11]),
             elevation_m=_safe_float(row[12]),
             temperature_c=_safe_float(row[13]),
@@ -508,7 +509,7 @@ def build_activity_review(
         distance_km=distance_km,
         moving_time_s=moving_time_s,
         elapsed_time_s=elapsed_time_s,
-        avg_hr=_safe_float(selected[10]),
+        avg_hr=_safe_float(get_effective_activity_heart_rate(athlete_id, selected[0], selected[10])),
         max_hr=_safe_float(selected[11]),
         elevation_up_m=_safe_float(selected[12]),
         temperature_c=_safe_float(selected[13]),
@@ -518,6 +519,7 @@ def build_activity_review(
         raw_json_text=selected[17],
         athlete_lt2_hr=thresholds.get("lt2_hr"),
         athlete_max_hr=thresholds.get("athlete_max_hr"),
+        athlete_lt1_hr=thresholds.get("lt1_hr"),
     )
     session = classify_session(facts)
 

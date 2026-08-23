@@ -48,7 +48,7 @@ def test_jo_prediction_is_independent_and_honest():
     assert result.goal_name == "Sub 45"
     assert result.distance_label == "10K"
     assert result.evidence_source_count == 3
-    assert math.isclose(result.central_seconds, 2811.6, abs_tol=0.1)
+    assert math.isclose(result.central_seconds, 2825.5, abs_tol=0.1)
     assert result.target_gap_seconds > 100
     assert result.target_probability < 0.10
     assert result.strongest_system == "Aerobic"

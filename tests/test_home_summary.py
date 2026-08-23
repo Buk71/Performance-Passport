@@ -2,7 +2,7 @@ import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core.home_summary import build_home_summary
+from core.home_summary import _operational_days, build_home_summary
 from core.operational_block import OperationalActivity, compose_operational_week
 from core.training_blocks import block_progress, get_active_training_block
 
@@ -96,3 +96,110 @@ def test_active_operational_week_drives_home_schedule_and_next_run():
     assert summary.next_label == "Threshold"
     assert summary.next_source == "Saved Training Block + real activities"
     assert "On track" in summary.block_context
+
+
+def test_jo_week_shows_interval_workout_and_unplanned_run_as_completed():
+    plan = {
+        "weeks": [{
+            "week_number": 1,
+            "start_date": "2026-08-17",
+            "end_date": "2026-08-23",
+            "target_miles": 27.5,
+            "phase": "Build",
+            "emphasis": "Sub 45 rhythm",
+            "days": [
+                {"day": "Monday", "session_type": "Rest", "detail": "Rest", "is_hard": False},
+                {"day": "Tuesday", "session_type": "Threshold", "detail": "Steady threshold", "is_hard": True},
+                {"day": "Wednesday", "session_type": "Recovery", "detail": "Easy", "is_hard": False},
+                {"day": "Thursday", "session_type": "Easy", "detail": "Easy", "is_hard": False},
+                {"day": "Friday", "session_type": "Rest", "detail": "Rest", "is_hard": False},
+                {"day": "Saturday", "session_type": "Easy", "detail": "Easy", "is_hard": False},
+                {"day": "Sunday", "session_type": "Long run", "detail": "Long", "is_hard": False},
+            ],
+        }],
+    }
+    activities = (
+        OperationalActivity(
+            activity_id=10652,
+            activity_date="2026-08-18",
+            title="6 × 1 km workout",
+            family="quality",
+            family_label="6 × 1 km workout",
+            distance_miles=5.31,
+            moving_time_s=2844.0,
+            confidence=.88,
+            distance_reliable=True,
+        ),
+        OperationalActivity(
+            activity_id=10658,
+            activity_date="2026-08-21",
+            title="Easy run",
+            family="easy",
+            family_label="Easy / aerobic",
+            distance_miles=5.70,
+            moving_time_s=3579.0,
+            confidence=.9,
+            distance_reliable=True,
+        ),
+    )
+    week = compose_operational_week(
+        athlete_id=3,
+        training_block_id=7,
+        block_name="Sub 45 block",
+        plan=plan,
+        activities=activities,
+        today=datetime.date(2026, 8, 23),
+    )
+    days = {
+        day.day_name: day
+        for day in _operational_days(week, datetime.date(2026, 8, 23))
+    }
+
+    assert days["Tuesday"].session_family == "completed"
+    assert days["Tuesday"].detail == "6 × 1 km workout · 5.3 mi"
+    assert days["Friday"].session_family == "completed"
+    assert "5.7 mi" in days["Friday"].detail
+    assert "unplanned" in days["Friday"].detail
+
+
+def test_completed_different_purpose_is_still_shown_as_a_completed_run():
+    plan = {
+        "weeks": [{
+            "week_number": 1,
+            "start_date": "2026-08-10",
+            "end_date": "2026-08-16",
+            "target_miles": 30.0,
+            "phase": "Build",
+            "emphasis": "Threshold rhythm",
+            "days": [
+                {"day": "Monday", "session_type": "Rest", "detail": "Rest", "is_hard": False},
+                {"day": "Tuesday", "session_type": "Easy", "detail": "5 mi easy", "is_hard": False},
+            ],
+        }],
+    }
+    activity = OperationalActivity(
+        activity_id=42,
+        activity_date="2026-08-11",
+        title="Track reps",
+        family="quality",
+        family_label="6 × 1 km workout",
+        distance_miles=5.3,
+        moving_time_s=2844.0,
+        confidence=.9,
+        distance_reliable=True,
+    )
+    week = compose_operational_week(
+        athlete_id=3,
+        training_block_id=7,
+        block_name="Sub 45 block",
+        plan=plan,
+        activities=(activity,),
+        today=datetime.date(2026, 8, 11),
+    )
+
+    tuesday = _operational_days(week, datetime.date(2026, 8, 11))[1]
+
+    assert week.days[1].status == "Different"
+    assert tuesday.session_family == "completed"
+    assert "6 × 1 km workout" in tuesday.detail
+    assert "planned Easy" in tuesday.detail

@@ -55,6 +55,18 @@ class GoalHierarchy:
     warnings: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class GoalRemovalResult:
+    """Describe a reversible removal without changing saved block designs."""
+
+    goal_id: int
+    goal_name: str
+    was_primary: bool
+    replacement_goal_id: int | None
+    replacement_goal_name: str | None
+    was_linked_to_block: bool
+
+
 def _date(value: str | None) -> datetime.date | None:
     if not value:
         return None
@@ -412,6 +424,90 @@ def set_goal_status(athlete_id: int, goal_id: int, status: str) -> None:
         raise ValueError("Goal does not belong to this athlete.")
     connection.commit()
     connection.close()
+
+
+def remove_goal(athlete_id: int, goal_id: int) -> GoalRemovalResult:
+    """Archive an unwanted goal and restore the best existing Primary.
+
+    Removal is deliberately recoverable: race history remains available under
+    Past goals, and no active training block or approved block design is
+    deleted. When the removed goal was Primary, an existing Active Secondary
+    already connected to a block takes priority over an unrelated goal.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT goal_name, priority, status, training_block_id
+        FROM goals
+        WHERE id = ? AND athlete_id = ?
+        """,
+        (goal_id, athlete_id),
+    )
+    selected = cursor.fetchone()
+    if selected is None:
+        connection.close()
+        raise ValueError("Goal does not belong to this athlete.")
+    if selected[2] == "Archived":
+        connection.close()
+        raise ValueError("This goal has already been removed.")
+
+    goal_name = str(selected[0] or "Goal")
+    was_primary = selected[1] == "Primary" and selected[2] == "Active"
+    replacement = None
+
+    if was_primary:
+        cursor.execute(
+            """
+            SELECT id, goal_name
+            FROM goals
+            WHERE athlete_id = ?
+              AND id != ?
+              AND priority = 'Secondary'
+              AND status = 'Active'
+            ORDER BY
+                CASE WHEN training_block_id IS NOT NULL THEN 0 ELSE 1 END,
+                CASE WHEN target_date IS NULL THEN 1 ELSE 0 END,
+                target_date ASC,
+                id ASC
+            LIMIT 1
+            """,
+            (athlete_id, goal_id),
+        )
+        replacement = cursor.fetchone()
+
+    cursor.execute(
+        """
+        UPDATE goals
+        SET status = 'Archived',
+            training_block_id = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND athlete_id = ?
+        """,
+        (goal_id, athlete_id),
+    )
+    if replacement is not None:
+        cursor.execute(
+            """
+            UPDATE goals
+            SET priority = 'Primary',
+                status = 'Active',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND athlete_id = ?
+            """,
+            (replacement[0], athlete_id),
+        )
+
+    connection.commit()
+    connection.close()
+    return GoalRemovalResult(
+        goal_id=goal_id,
+        goal_name=goal_name,
+        was_primary=was_primary,
+        replacement_goal_id=int(replacement[0]) if replacement else None,
+        replacement_goal_name=str(replacement[1]) if replacement else None,
+        was_linked_to_block=selected[3] is not None,
+    )
 
 
 def restore_goal_as_future(athlete_id: int, goal_id: int) -> None:

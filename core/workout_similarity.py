@@ -19,6 +19,7 @@ athlete-calibrated prediction.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime
 import json
 import math
 from typing import Any
@@ -421,6 +422,9 @@ def find_similar_linked_workouts(
     current_activity_id: int,
     limit: int = 10,
     minimum_similarity: float = 0.45,
+    reference_date: datetime.date | None = None,
+    goal_distance_km: float | None = None,
+    road_goal: bool = False,
 ) -> SimilarityResult:
     """
     Compare one workout against linked historical workouts for the same athlete.
@@ -499,8 +503,44 @@ def find_similar_linked_workouts(
     conn.close()
 
     matches = []
+    endurance_goal = (
+        reference_date is not None
+        and goal_distance_km is not None
+        and goal_distance_km >= 15.0
+    )
 
     for row in rows:
+        relevance_weight = 1.0
+        if reference_date is not None and not endurance_goal:
+            try:
+                race_date = datetime.date.fromisoformat(str(row[6])[:10])
+            except (TypeError, ValueError):
+                continue
+            race_age_days = (reference_date - race_date).days
+            if race_age_days < 0 or race_age_days > 365:
+                continue
+            relevance_weight = max(math.pow(0.5, race_age_days / 150.0), 0.12)
+        if endurance_goal:
+            try:
+                race_date = datetime.date.fromisoformat(str(row[6])[:10])
+            except (TypeError, ValueError):
+                continue
+            race_age_days = (reference_date - race_date).days
+            race_distance = float(row[8] or 0.0)
+            if (
+                race_age_days < 0
+                or race_age_days > 180
+                or race_distance < goal_distance_km * 0.45
+                or (road_goal and "trail" in str(row[7] or "").lower())
+            ):
+                continue
+            recency_weight = max(
+                math.pow(0.5, race_age_days / 120.0),
+                0.15,
+            )
+            distance_weight = min(race_distance / goal_distance_km, 1.0)
+            relevance_weight = recency_weight * (0.45 + distance_weight * 0.55)
+
         candidate_features = _quality_features(
             _safe_phases(row[3]),
             row[4],
@@ -517,7 +557,11 @@ def find_similar_linked_workouts(
 
         # Linked-race confidence gently affects ranking without changing the
         # workout-to-workout similarity percentage shown to the athlete.
-        ranking_score = similarity * (0.85 + 0.15 * link_confidence)
+        ranking_score = (
+            similarity
+            * (0.85 + 0.15 * link_confidence)
+            * relevance_weight
+        )
 
         matches.append(
             (
@@ -646,6 +690,8 @@ def predict_from_similarity(
     result: SimilarityResult,
     *,
     goal_distance_km: float,
+    reference_date: datetime.date | None = None,
+    road_goal: bool = False,
 ) -> dict[str, Any] | None:
     """
     Produce an athlete-specific prediction from linked historical outcomes.
@@ -700,6 +746,30 @@ def predict_from_similarity(
             math.pow(max(match.similarity, 0.01), 3.0)
             * (0.70 + 0.30 * match.link_confidence)
         )
+        race_age_days = None
+        distance_relevance = 1.0
+        if reference_date is not None:
+            try:
+                race_date = datetime.date.fromisoformat(str(match.race_date)[:10])
+            except (TypeError, ValueError):
+                continue
+            race_age_days = (reference_date - race_date).days
+            if (
+                race_age_days < 0
+                or race_age_days > (180 if goal_distance_km >= 15.0 else 365)
+                or (
+                    goal_distance_km >= 15.0
+                    and match.race_distance_km < goal_distance_km * 0.45
+                )
+                or (road_goal and "trail" in match.race_title.lower())
+            ):
+                continue
+            distance_relevance = min(
+                match.race_distance_km / goal_distance_km,
+                1.0,
+            )
+            weight *= max(math.pow(0.5, race_age_days / 120.0), 0.15)
+            weight *= 0.45 + distance_relevance * 0.55
 
         outcomes.append(
             {
@@ -714,6 +784,8 @@ def predict_from_similarity(
                 "days_after": match.days_after,
                 "similarity": match.similarity,
                 "link_confidence": match.link_confidence,
+                "race_age_days": race_age_days,
+                "distance_relevance": round(distance_relevance, 4),
                 "weight": round(weight, 5),
                 "reasons": list(match.reasons),
                 "differences": list(match.differences),

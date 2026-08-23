@@ -27,7 +27,7 @@ def show_settings_page():
     st.title("Settings")
     st.write(
         "Manage physiological thresholds and choose whether Performance "
-        "Passport uses calculated profile values or verified manual values."
+        "Passport uses profile, estimated or verified test values."
     )
 
     athletes = get_athletes_with_effective_thresholds()
@@ -46,33 +46,50 @@ def show_settings_page():
     st.subheader("Physiological thresholds")
     st.caption(
         "Manual values can come from a laboratory test, coach assessment or "
-        "reliable field test. Calculated profile values are retained and can "
-        "be restored at any time."
+        "reliable field test. Automatic estimates remain visible and are used "
+        "only when no profile or verified value is available."
+    )
+
+    estimated = st.columns(3)
+    estimated[0].metric(
+        "Estimated LT1",
+        f"{athlete['estimated_lt1_hr']} bpm"
+        if athlete["estimated_lt1_hr"] else "Building evidence",
+    )
+    estimated[1].metric(
+        "Estimated LT2",
+        f"{athlete['estimated_lt2_hr']} bpm"
+        if athlete["estimated_lt2_hr"] else "Building evidence",
+    )
+    estimated[2].metric(
+        "Estimate confidence",
+        athlete["estimate_confidence"],
+        f"{athlete['estimate_sample_size']:,} reliable runs",
     )
 
     calculated = st.columns(3)
     calculated[0].metric(
-        "Profile LT1",
+        "Profile / entered LT1",
         f"{athlete['calculated_lt1_hr']} bpm"
         if athlete["calculated_lt1_hr"]
         else "Not set",
     )
     calculated[1].metric(
-        "Profile LT2",
+        "Profile / entered LT2",
         f"{athlete['calculated_lt2_hr']} bpm"
         if athlete["calculated_lt2_hr"]
         else "Not set",
     )
     calculated[2].metric(
-        "Profile Max HR",
+        "Profile / entered Max HR",
         f"{athlete['calculated_max_hr']} bpm"
         if athlete["calculated_max_hr"]
         else "Not set",
     )
 
     source_options = [
-        "Use calculated profile values",
-        "Use verified manual values",
+        "Use profile or automatic estimate",
+        "Use verified test values",
     ]
     current_manual = athlete["override_enabled"]
     selected_source = st.radio(
@@ -82,7 +99,7 @@ def show_settings_page():
         horizontal=True,
     )
 
-    if selected_source == "Use verified manual values":
+    if selected_source == "Use verified test values":
         with st.form(f"threshold_override_{athlete['id']}"):
             cols = st.columns(3)
             manual_lt1 = cols[0].number_input(
@@ -92,6 +109,7 @@ def show_settings_page():
                 value=int(
                     athlete["manual_lt1_hr"]
                     or athlete["calculated_lt1_hr"]
+                    or athlete["estimated_lt1_hr"]
                     or 0
                 ),
             )
@@ -102,6 +120,7 @@ def show_settings_page():
                 value=int(
                     athlete["manual_lt2_hr"]
                     or athlete["calculated_lt2_hr"]
+                    or athlete["estimated_lt2_hr"]
                     or 0
                 ),
             )
@@ -112,6 +131,7 @@ def show_settings_page():
                 value=int(
                     athlete["manual_max_hr"]
                     or athlete["calculated_max_hr"]
+                    or athlete["estimated_max_hr"]
                     or 0
                 ),
             )
@@ -176,9 +196,9 @@ def show_settings_page():
                 st.rerun()
     else:
         if current_manual:
-            if st.button("Restore calculated profile values"):
+            if st.button("Clear tested override"):
                 clear_threshold_override(athlete["id"])
-                st.success("Calculated profile values restored.")
+                st.success("Profile or automatic values restored.")
                 st.rerun()
 
     st.divider()

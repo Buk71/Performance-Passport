@@ -20,7 +20,7 @@ from core.splits import (
 )
 
 
-DECODER_VERSION = 3
+DECODER_VERSION = 4
 
 
 @dataclass(frozen=True)
