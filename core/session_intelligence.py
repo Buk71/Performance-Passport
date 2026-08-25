@@ -596,6 +596,7 @@ def classify_session(facts: ActivityFacts) -> Session:
     manual_winners = {
         "easy": "continuous_run",
         "easy_with_strides": "continuous_run",
+        "easy_with_pickups": "continuous_run",
         "long_run": "continuous_run",
         "workout": "structured_workout",
         "threshold": "structured_workout",
@@ -639,7 +640,9 @@ def classify_session(facts: ActivityFacts) -> Session:
         metadata["stride_details"] = stride_details
     if manual_intent in manual_winners:
         metadata["manual_override"] = manual_intent
-        if manual_intent in {"easy", "easy_with_strides", "long_run"}:
+        if manual_intent in {
+            "easy", "easy_with_strides", "easy_with_pickups", "long_run"
+        }:
             metadata["activity_intent"] = manual_intent
 
     if winner == "race":

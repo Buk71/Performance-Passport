@@ -620,6 +620,7 @@ def show_activities_page() -> None:
             "Automatic recognition": None,
             "Easy run": "easy",
             "Easy run with strides": "easy_with_strides",
+            "Easy run with pickups": "easy_with_pickups",
             "Long run": "long_run",
             "Structured workout": "workout",
             "Threshold workout": "threshold",

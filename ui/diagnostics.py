@@ -9,12 +9,15 @@ activity for each session type.
 from __future__ import annotations
 
 import datetime
+import html
 
 import pandas as pd
 import streamlit as st
 
 from core.database import get_connection
+from core.recognition_audit import RecognitionAuditReport, build_recognition_audit
 from core.session_intelligence import ActivityFacts, classify_session
+from ui.activity_navigation import activity_review_url
 
 
 SESSION_LABELS = {
@@ -240,11 +243,134 @@ def _get_orphan_count():
     return count
 
 
+@st.cache_data(show_spinner=False)
+def _load_recognition_audit(athlete_id, data_version=None):
+    """Keep the review layer read-only and independent of coach predictions."""
+    del data_version
+    return build_recognition_audit(int(athlete_id))
+
+
+def build_recognition_audit_html(report: RecognitionAuditReport) -> str:
+    """Render the audit overview without suggesting unapproved live changes."""
+    athlete_name = html.escape(report.athlete_name)
+    return f"""
+    <section class="pp-ra-shell">
+      <div class="pp-ra-heading">
+        <div>
+          <span class="pp-ra-eyebrow">HISTORICAL RECOGNITION AUDIT</span>
+          <h2>{athlete_name} · every run, independently checked</h2>
+          <p>Physical lap evidence is compared against the current classification.
+             Nothing here changes your history, predictions or coaching decisions.</p>
+        </div>
+        <span class="pp-ra-badge">READ-ONLY PREVIEW</span>
+      </div>
+      <div class="pp-ra-metrics">
+        <article><span>RUNNING ACTIVITIES</span><strong>{report.total_running_activities:,}</strong></article>
+        <article><span>LIKELY MISSED WORKOUTS</span><strong>{report.likely_missed_workout_count:,}</strong></article>
+        <article><span>LIKELY FALSE WORKOUTS</span><strong>{report.likely_false_workout_count:,}</strong></article>
+        <article><span>STRIDES / PICKUPS PROTECTED</span><strong>{report.protected_strides_count + report.protected_pickups_count:,}</strong></article>
+        <article><span>ACTIVITIES TO REVIEW</span><strong>{report.reviewed_count:,}</strong></article>
+      </div>
+    </section>
+    <style>
+      .pp-ra-shell {{margin:18px 0 24px;padding:23px 25px;border:1px solid #e8e3da;
+        border-top:3px solid #238a52;border-radius:19px;background:#fffdf9;}}
+      .pp-ra-heading {{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}}
+      .pp-ra-eyebrow {{color:#238a52;font-size:12px;font-weight:850;letter-spacing:.12em;}}
+      .pp-ra-heading h2 {{margin:7px 0 6px;color:#10263d!important;font-size:26px;
+        line-height:1.14;letter-spacing:-.025em;}}
+      .pp-ra-heading p {{margin:0;color:#586b7b;font-size:14px;line-height:1.5;}}
+      .pp-ra-badge {{padding:8px 11px;border-radius:999px;background:#e7f3ed;color:#238a52;
+        white-space:nowrap;font-size:10px;font-weight:850;letter-spacing:.08em;}}
+      .pp-ra-metrics {{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:20px;}}
+      .pp-ra-metrics article {{padding:13px;border:1px solid #ece7de;border-radius:12px;background:#f7f4ee;}}
+      .pp-ra-metrics article span {{display:block;color:#65798b;font-size:10px;
+        line-height:1.35;font-weight:800;letter-spacing:.07em;}}
+      .pp-ra-metrics article strong {{display:block;margin-top:7px;color:#10263d;
+        font-size:27px;line-height:1;font-weight:850;}}
+      @media(max-width:760px) {{.pp-ra-heading{{display:block}}.pp-ra-badge{{display:inline-block;margin-top:12px}}
+        .pp-ra-metrics{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
+    </style>
+    """
+
+
+def _show_recognition_audit(report: RecognitionAuditReport) -> None:
+    st.markdown(build_recognition_audit_html(report), unsafe_allow_html=True)
+
+    if report.review_queue:
+        st.subheader("Runs the recognition engine should review")
+        st.caption(
+            "These are proposed evidence checks, not changes. High-priority "
+            "items have a convincing lap-pattern conflict."
+        )
+        queue_rows = [
+            {
+                "Date": entry.activity_date,
+                "Activity": entry.title,
+                "Current view": entry.current_label,
+                "Audit view": entry.proposed_label,
+                "Confidence": f"{entry.current_confidence:.0%}",
+                "Priority": entry.review_priority.title(),
+                "Why": entry.recommendation,
+            }
+            for entry in report.review_queue[:100]
+        ]
+        st.dataframe(
+            pd.DataFrame(queue_rows),
+            hide_index=True,
+            width="stretch",
+            height=min(470, 90 + len(queue_rows) * 35),
+        )
+
+        review_options = {
+            f"{entry.activity_date} · {entry.title} · {entry.issue_key}": entry
+            for entry in report.review_queue[:100]
+        }
+        selected_key = st.selectbox(
+            "Choose a flagged activity to inspect",
+            list(review_options),
+            key=f"recognition_audit_review_{report.athlete_id}",
+        )
+        selected = review_options[selected_key]
+        structure = selected.interval_evidence
+        st.write(
+            f"**Evidence:** {' '.join(selected.evidence)} "
+            f"Recorded work: {structure.work_count} repetition(s), "
+            f"{structure.credible_recovery_count} credible recovery segment(s)."
+        )
+        url = activity_review_url(report.athlete_id, selected.activity_id)
+        st.markdown(
+            f"[Open this activity and its existing coach corrections]({url})"
+        )
+    else:
+        st.success("No unresolved classification conflicts were found for this athlete.")
+
+    with st.expander("Suggested real-session reference set", expanded=False):
+        st.caption(
+            "A balanced selection of real activities for checking future recognition "
+            "rules. The same selection method works for every athlete."
+        )
+        cases = [
+            {
+                "Date": entry.activity_date,
+                "Activity": entry.title,
+                "Expected direction": entry.proposed_label,
+                "Audit status": entry.audit_status.replace("_", " ").title(),
+                "Why selected": entry.issue_key or entry.proposed_session_type,
+            }
+            for entry in report.reference_cases
+        ]
+        if cases:
+            st.dataframe(pd.DataFrame(cases), hide_index=True, width="stretch")
+        else:
+            st.info("No running activities are available for a reference set yet.")
+
+
 def show_diagnostics_page():
-    st.title("🧠 Session Diagnostics")
+    st.title("Session Recognition & Evidence Audit")
     st.caption(
-        "Developer view: inspect how Session Intelligence classifies "
-        "each athlete's activity history."
+        "Inspect how every athlete's real activities are recognised, identify "
+        "conflicting evidence, and review the original laps safely."
     )
 
     athletes = _get_athletes()
@@ -279,6 +405,10 @@ def show_diagnostics_page():
     )
 
     data_version = _get_data_version()
+
+    with st.spinner("Auditing this athlete's real running history..."):
+        audit = _load_recognition_audit(athlete["id"], data_version)
+    _show_recognition_audit(audit)
 
     with st.spinner("Classifying activity history..."):
         rows = _load_classified_sessions(
@@ -540,4 +670,5 @@ def show_diagnostics_page():
 
     if st.button("Refresh diagnostics"):
         _load_classified_sessions.clear()
+        _load_recognition_audit.clear()
         st.rerun()
