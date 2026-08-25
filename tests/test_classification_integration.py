@@ -101,9 +101,12 @@ def test_jo_unnamed_six_by_one_k_retains_real_work_and_recovery_evidence():
     )
 
     assert session.session_type == SessionType.STRUCTURED_WORKOUT
-    assert session.confidence < RELIABLE_SESSION_CONFIDENCE
+    assert session.confidence >= RELIABLE_SESSION_CONFIDENCE
     assert session.metadata["split_classification"]["recovery_count"] == 5
-    assert session.metadata["classification_scores"]["structured_workout"] == 66.0
+    assert session.metadata["classification_scores"]["structured_workout"] >= 90.0
+    assert session.metadata["verified_session_evidence"][
+        "credible_recovery_count"
+    ] == 5
     assert any(
         "5 recorded recovery segment" in reason
         for reason in session.metadata["classification_reasons"]["structured_workout"]
@@ -113,7 +116,9 @@ def test_jo_unnamed_six_by_one_k_retains_real_work_and_recovery_evidence():
 def test_richard_historical_trail_auto_laps_do_not_rewrite_long_run_history():
     session = classify_session(_real_activity_facts(3737))
 
-    assert session.confidence < RELIABLE_SESSION_CONFIDENCE
+    assert session.session_type == SessionType.CONTINUOUS_RUN
+    assert session.confidence >= RELIABLE_SESSION_CONFIDENCE
+    assert session.metadata["verified_session_evidence"]["repeated_auto_laps"]
 
 
 def test_full_strava_title_is_structured_even_without_splits():

@@ -33,7 +33,8 @@ def test_jo_latest_run_is_independent():
     assert jo.activity_date == "2026-08-09"
     assert jo.title == "Easy"
     assert jo.category == "Easy"
-    assert jo.rank == 204
-    assert jo.comparison_count == 599
+    # Verified workouts no longer contaminate the comparable easy-run pool.
+    assert jo.rank == 202
+    assert jo.comparison_count == 587
     assert jo.headline == "Excellent flow"
     assert jo.title != richard.title

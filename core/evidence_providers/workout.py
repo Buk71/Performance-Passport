@@ -1494,9 +1494,13 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             }
 
             if session.metadata.get("activity_intent") in {
-                "easy_with_strides", "standalone_strides", "easy", "long_run",
+                "easy_with_strides", "easy_with_pickups", "standalone_strides",
+                "easy", "long_run",
             }:
-                session_counts["easy_with_strides_excluded"] += 1
+                if session.metadata.get("activity_intent") == "easy_with_pickups":
+                    session_counts["easy_with_pickups_excluded"] += 1
+                else:
+                    session_counts["easy_with_strides_excluded"] += 1
                 continue
 
             if session.metadata.get("manual_override") == "race":

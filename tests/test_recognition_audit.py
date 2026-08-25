@@ -30,14 +30,14 @@ JO_LATEST_INTERVALS = (
 )
 
 
-def test_jo_real_five_by_one_k_is_flagged_without_changing_live_confidence():
+def test_jo_real_five_by_one_k_is_verified_by_live_classifier_and_audit():
     result = audit_activity(3, 5119)
 
-    assert result.audit_status == "needs_review"
-    assert result.issue_key == "missed_workout"
-    assert result.review_priority == "high"
+    assert result.audit_status == "verified"
+    assert result.issue_key is None
+    assert result.review_priority == "none"
     assert result.proposed_session_type == "interval_workout"
-    assert result.current_confidence < 0.70
+    assert result.current_confidence >= 0.70
     assert result.interval_evidence.work_count == 5
     assert result.interval_evidence.credible_recovery_count == 4
     assert result.interval_evidence.trustworthy_intervals is True
@@ -59,7 +59,7 @@ def test_jo_latest_six_by_one_k_is_identified_from_general_lap_rules():
 
     result = audit_activity_facts(facts, override={})
 
-    assert result.issue_key == "missed_workout"
+    assert result.audit_status == "verified"
     assert result.interval_evidence.work_count == 6
     assert result.interval_evidence.credible_recovery_count == 5
     assert result.interval_evidence.work_distance_km == 6.0
@@ -85,12 +85,12 @@ def test_paul_real_ten_k_remains_race_evidence_not_threshold():
     assert "threshold" in result.recommendation.lower()
 
 
-def test_richard_real_trail_auto_laps_are_flagged_as_false_workout():
+def test_richard_real_trail_auto_laps_are_protected_as_a_long_run():
     result = audit_activity(1, 3737)
 
-    assert result.current_session_type == "interval_workout"
+    assert result.current_session_type == "long_run"
     assert result.proposed_session_type == "long_run"
-    assert result.issue_key == "false_workout_auto_laps"
+    assert result.issue_key == "protected_long_run"
     assert result.interval_evidence.repeated_auto_laps is True
     assert result.interval_evidence.credible_recovery_count == 0
 
@@ -120,9 +120,9 @@ def test_reference_set_is_athlete_specific_and_balances_real_examples():
 
     assert report.athlete_name == "Richard Burke"
     assert report.total_running_activities == 3
-    assert report.likely_false_workout_count == 1
-    assert report.reviewed_count == 1
-    assert report.review_queue[0].activity_id == 3737
+    assert report.likely_false_workout_count == 0
+    assert report.reviewed_count == 0
+    assert report.review_queue == ()
     assert {entry.activity_id for entry in report.reference_cases} == {
         3177, 3737, 9366
     }
@@ -193,7 +193,7 @@ def test_richard_confirmed_stopped_watch_intervals_are_not_demoted_to_easy():
     result = audit_activity(1, 3742)
 
     assert result.proposed_session_type == "interval_workout"
-    assert result.issue_key == "missed_workout"
+    assert result.audit_status == "verified"
     assert result.interval_evidence.stopped_watch_work_count >= 5
     assert result.interval_evidence.trustworthy_intervals is True
 
@@ -209,7 +209,7 @@ def test_richard_long_repetitions_are_recovered_from_stopped_watch_boundaries(
     result = audit_activity(1, activity_id)
 
     assert result.proposed_session_type == "interval_workout"
-    assert result.issue_key == "missed_workout"
+    assert result.audit_status == "verified"
     assert result.interval_evidence.boundary_block_count == 3
     assert result.interval_evidence.boundary_block_distance_km == pytest.approx(
         expected_distance,
@@ -234,7 +234,7 @@ def test_jo_short_fast_efforts_with_long_easy_recoveries_are_a_real_session():
 
     assert result.proposed_session_type == "alternating_workout"
     assert result.proposed_label == "Alternating workout"
-    assert result.issue_key == "missed_workout"
+    assert result.audit_status == "verified"
     assert result.interval_evidence.long_recovery_alternation_count == 4
 
 
@@ -242,7 +242,7 @@ def test_jo_equal_distance_on_off_session_is_not_ordinary_auto_laps():
     result = audit_activity(3, 5299)
 
     assert result.proposed_session_type == "alternating_workout"
-    assert result.issue_key == "missed_workout"
+    assert result.audit_status == "verified"
     assert result.interval_evidence.equal_distance_alternation_count >= 3
 
 
@@ -284,7 +284,8 @@ def test_confirmed_easy_and_long_controls_are_not_promoted_by_new_patterns(
     result = audit_activity(athlete_id, activity_id)
 
     assert result.proposed_session_type == expected_type
-    assert result.issue_key == "false_workout_auto_laps"
+    assert result.current_session_type == expected_type
+    assert result.audit_status in {"verified", "protected"}
 
 
 def test_manual_pickup_override_is_supported_by_shared_classification():
@@ -303,5 +304,5 @@ def test_audit_summary_counts_pickups_separately_from_prediction_workouts():
     report = build_recognition_audit(1, activity_ids=(3573, 3496, 3559))
 
     assert report.protected_pickups_count == 2
-    assert report.likely_missed_workout_count == 1
+    assert report.likely_missed_workout_count == 0
     assert report.likely_false_workout_count == 0

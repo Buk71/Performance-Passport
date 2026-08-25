@@ -14,6 +14,7 @@ from core.session import (
 )
 from core.database import get_activity_overrides, get_athlete_sport_roles
 from core.race_detection import score_race_evidence
+from core.session_patterns import analyse_session_patterns
 from core.splits import is_boundary_fragment, parse_splits, recognise_workout
 from core.workout_title_intent import parse_workout_title
 
@@ -526,6 +527,7 @@ def classify_session(facts: ActivityFacts) -> Session:
             raw = {}
 
     raw_splits = _extract_raw_splits(facts.raw_json_text)
+    verified_patterns = analyse_session_patterns(facts)
     standalone_details = _standalone_strides(facts, raw_splits)
     stride_details = _easy_run_with_strides(facts, raw_splits)
     if standalone_details is not None:
@@ -583,6 +585,102 @@ def classify_session(facts: ActivityFacts) -> Session:
             "A confirmed race takes priority over ordinary continuous auto-laps."
         )
 
+    preliminary_scores = {
+        "continuous_run": continuous_score,
+        "structured_workout": workout_score,
+        "race": race_score,
+    }
+    preliminary_order = sorted(
+        preliminary_scores.items(), key=lambda item: item[1], reverse=True
+    )
+    preliminary_winner, preliminary_winner_score = preliminary_order[0]
+    preliminary_margin = preliminary_winner_score - preliminary_order[1][1]
+    preliminary_confidence = max(
+        0.35,
+        min(
+            (preliminary_winner_score / 100.0) * 0.75
+            + min(preliminary_margin / 40.0, 1.0) * 0.25,
+            0.98,
+        ),
+    )
+    # Session-pattern evidence improves workout-versus-continuous decisions;
+    # it must never demote an activity the existing race evidence has already
+    # selected, including older races without a fully confirmed metadata set.
+    protected_race = preliminary_winner == "race"
+    verified_intent = None
+
+    if stride_details is None and not protected_race:
+        if verified_patterns.pickup_count >= 5:
+            verified_intent = "easy_with_pickups"
+            continuous_score = max(continuous_score, 94.0)
+            workout_score = min(workout_score, 35.0)
+            continuous_reasons.append(
+                f"{verified_patterns.pickup_count} short pickups were embedded "
+                "within a substantially longer easy run."
+            )
+            workout_reasons.append(
+                "Short pickups do not establish a prediction-quality workout."
+            )
+        elif verified_patterns.trustworthy_intervals:
+            if (
+                verified_patterns.equal_distance_alternation_count >= 3
+                or verified_patterns.long_recovery_alternation_count >= 3
+            ):
+                verified_intent = "alternating_workout"
+            if (
+                preliminary_winner != "structured_workout"
+                or preliminary_confidence < RELIABLE_SESSION_CONFIDENCE
+            ):
+                workout_score = max(
+                    workout_score,
+                    min(88.0 + verified_patterns.credible_recovery_count, 96.0),
+                )
+                continuous_score = min(continuous_score, 62.0)
+                if verified_patterns.boundary_block_count >= 3:
+                    pattern_reason = (
+                        f"{verified_patterns.boundary_block_count} sustained "
+                        "work blocks were separated by stopped-watch boundaries."
+                    )
+                elif verified_patterns.equal_distance_alternation_count >= 3:
+                    pattern_reason = (
+                        f"{verified_patterns.equal_distance_alternation_count} "
+                        "faster repetitions alternated with equal-distance floats."
+                    )
+                elif verified_patterns.long_recovery_alternation_count >= 3:
+                    pattern_reason = (
+                        f"{verified_patterns.long_recovery_alternation_count} "
+                        "faster efforts alternated with longer easy recoveries."
+                    )
+                elif verified_patterns.stopped_watch_work_count >= 4:
+                    pattern_reason = (
+                        f"{verified_patterns.stopped_watch_work_count} "
+                        "repetitions were supported by stopped-watch recovery gaps."
+                    )
+                else:
+                    pattern_reason = (
+                        f"{verified_patterns.work_count} work repetitions and "
+                        f"{verified_patterns.credible_recovery_count} slower "
+                        "recoveries establish a genuine workout."
+                    )
+                workout_reasons.append(pattern_reason)
+                continuous_reasons.append(
+                    "Verified work/recovery evidence outweighs whole-run averages."
+                )
+        elif (
+            verified_patterns.repeated_auto_laps
+            and preliminary_winner == "structured_workout"
+            and preliminary_confidence < RELIABLE_SESSION_CONFIDENCE
+            and parse_workout_title(facts.title or "") is None
+        ):
+            continuous_score = max(continuous_score, 90.0)
+            workout_score = min(workout_score, 48.0)
+            continuous_reasons.append(
+                "Similar automatic laps lack credible work/recovery alternation."
+            )
+            workout_reasons.append(
+                "Ordinary kilometre or mile auto-laps cannot establish intervals."
+            )
+
     scores = {
         "continuous_run": round(continuous_score, 1),
         "structured_workout": round(workout_score, 1),
@@ -631,6 +729,21 @@ def classify_session(facts: ActivityFacts) -> Session:
         "winner": winner,
         "runner_up": runner_up,
         "score_margin": round(margin, 1),
+        "verified_session_evidence": {
+            "trustworthy_intervals": verified_patterns.trustworthy_intervals,
+            "repeated_auto_laps": verified_patterns.repeated_auto_laps,
+            "credible_recovery_count": verified_patterns.credible_recovery_count,
+            "pickup_count": verified_patterns.pickup_count,
+            "boundary_block_count": verified_patterns.boundary_block_count,
+            "boundary_block_distance_km": verified_patterns.boundary_block_distance_km,
+            "stopped_watch_work_count": verified_patterns.stopped_watch_work_count,
+            "equal_distance_alternation_count": (
+                verified_patterns.equal_distance_alternation_count
+            ),
+            "long_recovery_alternation_count": (
+                verified_patterns.long_recovery_alternation_count
+            ),
+        },
     }
     if stride_details is not None:
         metadata["activity_intent"] = (
@@ -638,12 +751,18 @@ def classify_session(facts: ActivityFacts) -> Session:
             else "easy_with_strides"
         )
         metadata["stride_details"] = stride_details
+    elif verified_intent is not None:
+        metadata["activity_intent"] = verified_intent
     if manual_intent in manual_winners:
         metadata["manual_override"] = manual_intent
         if manual_intent in {
             "easy", "easy_with_strides", "easy_with_pickups", "long_run"
         }:
             metadata["activity_intent"] = manual_intent
+        else:
+            # Explicit coaching decisions must not inherit an automatic
+            # easy/pickup intent that would hide the activity downstream.
+            metadata.pop("activity_intent", None)
 
     if winner == "race":
         routes.extend([CoachRoute.RACE, CoachRoute.GOAL])
@@ -657,7 +776,10 @@ def classify_session(facts: ActivityFacts) -> Session:
             ("threshold", "tempo", "cruise"),
         ):
             purpose = SessionPurpose.THRESHOLD
-        elif _contains_any(facts.title, ("fartlek",)):
+        elif (
+            _contains_any(facts.title, ("fartlek",))
+            or verified_intent == "alternating_workout"
+        ):
             purpose = SessionPurpose.FARTLEK
         elif _contains_any(facts.title, ("hill rep", "hill session")):
             purpose = SessionPurpose.HILLS
@@ -673,7 +795,7 @@ def classify_session(facts: ActivityFacts) -> Session:
         session_type = SessionType.CONTINUOUS_RUN
         purpose = (
             SessionPurpose.EASY
-            if stride_details is not None
+            if stride_details is not None or verified_intent == "easy_with_pickups"
             else SessionPurpose.GENERAL
         )
 
