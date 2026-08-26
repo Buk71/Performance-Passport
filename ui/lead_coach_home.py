@@ -23,6 +23,7 @@ from ui.activity_navigation import activity_review_url
 from ui.athlete_card import image_to_data_uri
 from ui.athlete_selection import render_athlete_id_selector
 from ui.coaching_navigation import coaching_team_url
+from ui.training_coach_navigation import training_coach_url
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -263,21 +264,22 @@ def _focus_cards(athlete_id: int, summary, latest) -> str:
     latest_href = (
         f' href="{latest_link}" target="_self"' if latest.available else ""
     )
+    training_link = html.escape(training_coach_url(athlete_id), quote=True)
 
     return f"""
         <div class="lc-focus-grid">
-            <article class="lc-focus-card lc-focus-today">
+            <a class="lc-focus-card lc-focus-today lc-focus-link" href="{training_link}" target="_self">
                 <div class="lc-card-kicker">Today’s run</div>
                 <div class="lc-card-title">{_safe(today_title)}</div>
                 <p>{_safe(today_detail)}</p>
-                <div class="lc-card-meta">{_safe(today_meta)}</div>
-            </article>
-            <article class="lc-focus-card">
+                <div class="lc-card-meta">{_safe(today_meta)} <span>Open Training Coach →</span></div>
+            </a>
+            <a class="lc-focus-card lc-focus-link" href="{training_link}" target="_self">
                 <div class="lc-card-kicker">Next key session</div>
                 <div class="lc-card-title">{_safe(summary.next_label)}</div>
                 <p>{_safe(summary.next_detail)}</p>
-                <div class="lc-card-meta">{_safe(summary.next_timing)} · {_safe(summary.next_source)}</div>
-            </article>
+                <div class="lc-card-meta">{_safe(summary.next_timing)} · {_safe(summary.next_source)} <span>Full session →</span></div>
+            </a>
             <{latest_wrapper} class="lc-focus-card lc-focus-link"{latest_href}>
                 <div class="lc-card-kicker">Last run</div>
                 <div class="lc-card-title">{_safe(latest_title)}</div>
@@ -323,10 +325,13 @@ def _coach_cards(athlete_id: int, summary, predictions) -> str:
     )
     markup = []
     for initials, title, copy, meta, coach_key in cards:
-        href = (
-            html.escape(coaching_team_url(athlete_id, coach_key), quote=True)
-            if coach_key else team_url
-        )
+        if coach_key == "training":
+            href = html.escape(training_coach_url(athlete_id), quote=True)
+        else:
+            href = (
+                html.escape(coaching_team_url(athlete_id, coach_key), quote=True)
+                if coach_key else team_url
+            )
         markup.append(
             f"""
             <a class="lc-coach-card" href="{href}" target="_self">

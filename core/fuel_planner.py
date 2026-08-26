@@ -479,6 +479,17 @@ def _fuel_guidance(demand: str) -> tuple[str, str, str, str]:
     )
 
 
+def fuel_guidance_for_demand(
+    demand: str,
+) -> tuple[str, str, str, str]:
+    """Return the established Fuel Planner guidance for one training demand.
+
+    This small public boundary lets other coaching surfaces reuse the curated
+    guidance without copying nutrition rules into their presentation layer.
+    """
+    return _fuel_guidance(demand)
+
+
 def compose_fuel_week(
     *,
     athlete_id: int,
