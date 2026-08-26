@@ -1,5 +1,5 @@
 APP_NAME = "Performance Passport"
 APP_SUBTITLE = "Personal Running Intelligence"
 
-VERSION = "0.46.0"
-VERSION_NAME = "Verified Coaching Evidence"
+VERSION = "0.47.1"
+VERSION_NAME = "Full Race Outlook"

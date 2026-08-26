@@ -21,6 +21,7 @@ from ui import home_preview_v11 as approved_v11
 from ui.activity_navigation import activity_review_url
 from ui.coaching_navigation import coaching_team_url
 from ui import athlete_selection
+from ui.lead_coach_home import show_lead_coach_home_page
 
 
 HOME_SUMMARY_CACHE_SCHEMA = 3
@@ -436,7 +437,12 @@ def build_production_lower_html(home_summary, best_runs) -> str:
 
 
 def show_home_page() -> None:
-    """Render the locked production Home using real athlete data."""
+    """Render the premium Lead Coach Home using real athlete data."""
+    show_lead_coach_home_page()
+
+
+def _show_legacy_home_page() -> None:
+    """Retain the previous composition for one-release visual rollback."""
     st.markdown(
         """
         <style>

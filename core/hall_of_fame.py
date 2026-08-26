@@ -47,6 +47,8 @@ STANDARD_DISTANCES = (
     ("marathon", "Marathon", 42195.0),
 )
 
+MINIMUM_BEST_RUN_DISTANCE_KM = 5.0
+
 TRAIL_WORDS = (
     "trail",
     "forest",
@@ -506,13 +508,20 @@ def build_hall_of_fame(athlete_id: int) -> HallOfFame:
             >= RELIABLE_SESSION_CONFIDENCE
         )
 
-    summary_candidates = [
+    # Apply the minimum only to coaching awards. Shorter activities must stay
+    # available to elapsed-time PB recognition and the wider athlete history.
+    award_candidates = [
         item for item in evaluated
+        if item[1].distance_km >= MINIMUM_BEST_RUN_DISTANCE_KM
+    ]
+
+    summary_candidates = [
+        item for item in award_candidates
         if not reliable_session(item, SessionType.STRUCTURED_WORKOUT)
     ]
 
     easy_candidates = [
-        item for item in evaluated
+        item for item in award_candidates
         if (
             reliable_session(item, SessionType.CONTINUOUS_RUN)
             or float(item[2].get("session_confidence") or 0.0)

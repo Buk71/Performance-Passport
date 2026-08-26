@@ -1,4 +1,10 @@
-from core.hall_of_fame import _is_trail
+import pytest
+
+from core.hall_of_fame import (
+    MINIMUM_BEST_RUN_DISTANCE_KM,
+    _is_trail,
+    build_hall_of_fame,
+)
 from core.home_best_runs import build_home_best_runs
 
 
@@ -46,3 +52,29 @@ def test_false_trail_is_removed_from_jo_home_categories():
     assert "Trail" not in {
         award.short_category for award in jo.category_bests
     }
+
+
+@pytest.mark.parametrize("athlete_id", (1, 3, 4))
+def test_every_real_athlete_best_run_is_at_least_five_kilometres(athlete_id):
+    hall = build_hall_of_fame(athlete_id)
+    home = build_home_best_runs(athlete_id)
+
+    assert hall.awards
+    assert all(
+        award.distance_km >= MINIMUM_BEST_RUN_DISTANCE_KM
+        for award in hall.awards
+    )
+    assert home.main is not None
+    assert home.main.distance_km >= MINIMUM_BEST_RUN_DISTANCE_KM
+    assert all(
+        run.distance_km >= MINIMUM_BEST_RUN_DISTANCE_KM
+        for run in home.category_bests
+    )
+
+
+def test_five_kilometre_best_run_rule_does_not_remove_race_personal_bests():
+    richard = build_hall_of_fame(1)
+    jo = build_hall_of_fame(3)
+
+    assert {best.key for best in richard.personal_bests} >= {"5k", "10k"}
+    assert {best.key for best in jo.personal_bests} >= {"5k", "10k"}
