@@ -225,14 +225,14 @@ def build_training_coach_html(
             .tc-eyebrow {{ display:flex; align-items:center; gap:10px; color:#8ee2c4; font-size:12px; font-weight:850; letter-spacing:.17em; text-transform:uppercase; }}
             .tc-eyebrow span {{ width:28px; height:3px; border-radius:99px; background:var(--orange); }}
             .tc-eyebrow.tc-dark {{ color:#6c7d8b; }}
-            .tc-hero h1 {{ margin:14px 0 0; font-size:54px; line-height:.98; letter-spacing:-.048em; }}
+            .tc-hero h1 {{ margin:14px 0 0; color:#fff!important; font-size:54px; line-height:.98; letter-spacing:-.048em; }}
             .tc-headline {{ max-width:760px; margin:13px 0 0; color:#d3dee5; font-size:19px; line-height:1.4; }}
             .tc-immediate-detail {{ margin-top:21px; padding:17px 19px; border-left:4px solid var(--orange); border-radius:0 14px 14px 0; background:rgba(255,255,255,.08); font-size:17px; font-weight:750; line-height:1.45; }}
             .tc-badges {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }}
             .tc-badges span {{ padding:7px 10px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.07); color:#bed0da; font-size:11px; font-weight:750; }}
             .tc-next-key {{ align-self:stretch; padding:24px; border:1px solid rgba(255,255,255,.17); border-radius:21px; background:rgba(255,255,255,.09); backdrop-filter:blur(8px); }}
             .tc-next-label {{ color:#91a9b8; font-size:11px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; }}
-            .tc-next-key h2 {{ margin:12px 0 0; font-size:29px; line-height:1.05; letter-spacing:-.035em; }}
+            .tc-next-key h2 {{ margin:12px 0 0; color:#fff!important; font-size:29px; line-height:1.05; letter-spacing:-.035em; }}
             .tc-next-key p {{ margin:12px 0 20px; color:#c5d3dc; font-size:15px; line-height:1.45; }}
             .tc-next-key strong {{ display:inline-block; padding:8px 11px; border-radius:10px; background:#ecf8f2; color:#167a5e; font-size:12px; }}
             .tc-week-progress {{ display:grid; grid-template-columns:.65fr .8fr 2fr; gap:11px; margin-top:13px; }}
