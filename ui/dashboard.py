@@ -2208,6 +2208,8 @@ def render_evidence_card(item):
                     if prediction_source == "pb_shape"
                     else "Distance-specific workout prediction"
                     if prediction_source == "distance_relevant_workout"
+                    else "Personal cross-distance workout prediction"
+                    if prediction_source == "cross_distance_pb_shape"
                     else "Historical similarity prediction"
                     if prediction_source == "historical_similarity"
                     else "Formula fallback prediction"
@@ -2243,6 +2245,13 @@ def render_evidence_card(item):
                         "threshold and long-interval work relevant to this "
                         "endurance goal. Short historical races cannot "
                         "override stronger current workout evidence."
+                    )
+                elif prediction_source == "cross_distance_pb_shape":
+                    st.caption(
+                        "Ideal, flat conditions · current shorter-distance "
+                        "workout shape carried through this athlete's own "
+                        "verified PB relationship. This is a cautious fallback, "
+                        "not proof of goal-distance endurance."
                     )
                 elif prediction_source == "historical_similarity":
                     st.caption(
@@ -2362,6 +2371,38 @@ def render_evidence_card(item):
                                 "were not allowed to dominate this "
                                 "longer-distance prediction."
                             )
+
+                elif prediction_source == "cross_distance_pb_shape":
+                    with st.expander(
+                        "Personal PB relationship behind this prediction"
+                    ):
+                        source_distance = workout_prediction.get(
+                            "source_distance_km",
+                            0,
+                        )
+                        target_distance = workout_prediction.get(
+                            "target_distance_km",
+                            0,
+                        )
+                        st.write(
+                            f"**{source_distance:g} km current workout shape:** "
+                            f"{format_clock(workout_prediction.get('source_current_seconds'))}"
+                        )
+                        st.write(
+                            f"**{source_distance:g} km PB:** "
+                            f"{format_clock(workout_prediction.get('source_pb_seconds'))}"
+                        )
+                        st.write(
+                            f"**{target_distance:g} km verified PB:** "
+                            f"{format_clock(workout_prediction.get('target_pb_seconds'))} "
+                            f"on {workout_prediction.get('target_pb_date', '—')}"
+                        )
+                        st.caption(
+                            "Current shape ratio applied: "
+                            f"{workout_prediction.get('shape_ratio', 1):.1%}. "
+                            "Direct race and distance-specific workout evidence "
+                            "continue to carry more weight."
+                        )
 
                 elif prediction_source == "historical_similarity":
                     with st.expander(

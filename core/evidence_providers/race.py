@@ -691,6 +691,35 @@ def _select_goal_representative_race(
     if goal_distance_km is None or goal_distance_km <= 0:
         return selected
 
+    # For endurance goals, a recent high-quality performance at the actual
+    # distance is more representative than extrapolating a shorter race. The
+    # quality floor prevents ordinary long runs from being promoted merely
+    # because their distance happens to match the goal.
+    if goal_distance_km >= 15.0:
+        direct_quality_floor = (
+            55.0 if goal_distance_km >= 30.0 else 65.0
+        )
+        direct_age_limit = (
+            365 if goal_distance_km >= 30.0 else 210
+        )
+        recent_direct = [
+            item
+            for item in scored
+            if item.age_days <= direct_age_limit
+            and item.total >= direct_quality_floor
+            and not _is_training_intent(item.candidate)
+            and abs(item.candidate.distance_km - goal_distance_km)
+            / goal_distance_km <= 0.035
+        ]
+        if recent_direct:
+            return max(
+                recent_direct,
+                key=lambda item: (
+                    item.total,
+                    item.candidate.activity_date,
+                ),
+            )
+
     comparable = [
         item for item in scored
         if item.total >= selected.total - 2.5
@@ -868,8 +897,18 @@ class RaceEvidenceProvider(EvidenceProvider):
                 f"{weather_adjustment:.0f} seconds"
             )
 
+        direct_goal_distance = bool(
+            goal_distance_km
+            and abs(candidate.distance_km - goal_distance_km)
+            / goal_distance_km <= 0.035
+        )
         limitations = [
-            "Goal-distance conversion still uses the generic Riegel model.",
+            (
+                "This is direct goal-distance evidence; no material "
+                "cross-distance conversion was required."
+                if direct_goal_distance
+                else "Goal-distance conversion still uses the generic Riegel model."
+            ),
             "Heart rate affects evidence confidence, not race-time correction.",
         ]
 
@@ -916,6 +955,11 @@ class RaceEvidenceProvider(EvidenceProvider):
                 "wind_speed": candidate.wind_speed,
                 "route_name": candidate.route_name,
                 "equivalent_time_seconds": equivalent_time,
+                "selection_basis": (
+                    "recent_direct_goal_distance"
+                    if direct_goal_distance and goal_distance_km >= 15.0
+                    else "best_supported_race_projection"
+                ),
                 "strengths": strengths,
                 "limitations": limitations,
                 "adjustments": adjustment_details,

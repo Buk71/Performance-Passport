@@ -393,8 +393,16 @@ def _coach_opinions(athlete_id: int, predictions) -> str:
     return "".join(cards)
 
 
-def _prediction_matrix_table(predictions) -> str:
-    matrix = build_home_prediction_matrix(predictions)
+def _prediction_matrix_table(predictions, passport) -> str:
+    personal_bests = {
+        pb.key: pb.all_time_seconds
+        for pb in passport.personal_bests
+        if pb.all_time_seconds is not None
+    }
+    matrix = build_home_prediction_matrix(
+        predictions,
+        personal_bests=personal_bests,
+    )
     if not matrix.available:
         return f'<div class="lc-empty">{_safe(matrix.explanation)}</div>'
 
@@ -523,7 +531,7 @@ def build_lead_coach_home_html(
                 <div class="lc-source">Four distances · six race environments</div>
             </div>
             <div class="lc-opinion-grid">{_coach_opinions(athlete_id, predictions)}</div>
-            {_prediction_matrix_table(predictions)}
+            {_prediction_matrix_table(predictions, passport)}
         </section>
 
         <section class="lc-daily">

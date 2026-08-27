@@ -28,6 +28,8 @@ from core.coaching import (
     temperature_adjustment_seconds_per_km,
 )
 from core.database import get_athlete_sport_roles, get_connection
+from core.distance_calibration import personal_pb_ratio_projection
+from core.pb_shape import find_race_pb
 from core.splits import parse_splits, recognise_workout, splits_to_dicts
 from core.workouts import get_or_decode_workout
 from core.evidence import EvidenceItem, EvidenceStatus
@@ -122,6 +124,16 @@ class ScoredThreshold:
     actual_pace_s_per_km: float
     age_days: int
     moving_ratio: float | None
+
+
+def _as_date(value: str | None) -> datetime.date | None:
+    if not value:
+        return None
+
+    try:
+        return datetime.date.fromisoformat(value[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -411,12 +423,65 @@ class ThresholdEvidenceProvider(EvidenceProvider):
         )
 
         predicted_seconds = None
+        generic_predicted_seconds = None
+        personal_distance_calibration = None
 
         if threshold_pace is not None and goal_distance_km:
             race_pace = threshold_pace * _nearest_goal_factor(
                 goal_distance_km
             )
-            predicted_seconds = race_pace * goal_distance_km
+            generic_predicted_seconds = race_pace * goal_distance_km
+            predicted_seconds = generic_predicted_seconds
+
+            if goal_distance_km >= 15.0:
+                source_pb = find_race_pb(
+                    athlete_id=context.athlete_id,
+                    goal_distance_km=10.0,
+                )
+                target_pb = find_race_pb(
+                    athlete_id=context.athlete_id,
+                    goal_distance_km=goal_distance_km,
+                )
+                if source_pb and target_pb:
+                    target_pb_date = _as_date(target_pb.get("date"))
+                    source_pb_date = _as_date(source_pb.get("date"))
+                    dates_are_relevant = bool(
+                        target_pb_date
+                        and source_pb_date
+                        and 0 <= (reference_date - target_pb_date).days <= 365
+                        and 0 <= (reference_date - source_pb_date).days <= 1825
+                    )
+                    if (
+                        dates_are_relevant
+                        and source_pb.get("classification") == "confirmed_race"
+                        and target_pb.get("classification") == "confirmed_race"
+                    ):
+                        current_ten_k_seconds = (
+                            threshold_pace
+                            * TARGET_PACE_FACTORS[10.0]
+                            * 10.0
+                        )
+                        personal_distance_calibration = (
+                            personal_pb_ratio_projection(
+                                source_distance_km=10.0,
+                                target_distance_km=goal_distance_km,
+                                source_pb_seconds=float(source_pb["time_s"]),
+                                source_current_seconds=current_ten_k_seconds,
+                                target_pb_seconds=float(target_pb["time_s"]),
+                            )
+                        )
+                        if personal_distance_calibration is not None:
+                            personal_distance_calibration.update(
+                                {
+                                    "source_pb_date": source_pb["date"],
+                                    "source_pb_title": source_pb["title"],
+                                    "target_pb_date": target_pb["date"],
+                                    "target_pb_title": target_pb["title"],
+                                }
+                            )
+                            predicted_seconds = personal_distance_calibration[
+                                "predicted_seconds"
+                            ]
 
         recent = [
             item
@@ -530,7 +595,11 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             "Recognised rep pace is adjusted for activity-level temperature and humidity, but per-lap heart rate is unavailable.",
             "Elevation is reported but not yet used as a precise pace correction.",
             "Surface and wind are not stored reliably enough for adjustment.",
-            "Goal conversion uses transparent generic race-pace factors.",
+            (
+                "Longer-goal conversion uses the athlete's own verified 10K-to-goal PB relationship."
+                if personal_distance_calibration is not None
+                else "Goal conversion uses transparent generic race-pace factors."
+            ),
         ]
 
         return EvidenceItem(
@@ -544,6 +613,8 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             weight=0.9,
             metadata={
                 "threshold_pace_seconds_per_km": threshold_pace,
+                "generic_predicted_seconds": generic_predicted_seconds,
+                "personal_distance_calibration": personal_distance_calibration,
                 "threshold_pace_text": _format_pace(threshold_pace),
                 "recent_five_k_threshold_floor_seconds_per_km": (
                     round(recent_five_k_floor, 1)

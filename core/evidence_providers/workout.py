@@ -25,6 +25,10 @@ from core.database import (
     get_connection,
     get_effective_activity_heart_rate,
 )
+from core.distance_calibration import (
+    build_personal_pb_shape_bridge,
+    personal_pb_shape_bridge_to_dict,
+)
 from core.evidence import EvidenceItem, EvidenceStatus
 from core.evidence_providers.base import EvidenceContext, EvidenceProvider
 from core.pb_shape import build_pb_shape, pb_shape_to_dict
@@ -1313,6 +1317,110 @@ def _endurance_workout_rank(
     )
 
 
+def _cross_distance_pb_shape_prediction(
+    *,
+    athlete_id: int,
+    candidate_workouts: list[dict],
+    goal_distance_km: float | None,
+    goal_pb_shape: dict | None,
+    reference_date: datetime.date,
+) -> dict | None:
+    """Build a cautious personal endurance fallback from shorter PB Shape.
+
+    This is used only when the current workout has no direct goal-distance PB
+    Shape and no genuinely distance-relevant prediction. It searches the
+    strongest current workouts for a supported shorter-distance PB comparison,
+    then carries that shape ratio through the athlete's own target-distance PB.
+    """
+    if (
+        goal_distance_km is None
+        or goal_distance_km < 15.0
+        or not goal_pb_shape
+        or not goal_pb_shape.get("pb_time_s")
+        or not goal_pb_shape.get("pb_date")
+    ):
+        return None
+
+    source_distances = (
+        (10.0, 5.0)
+        if goal_distance_km < 30.0
+        else (21.0975, 10.0)
+    )
+    ranked_candidates = sorted(
+        candidate_workouts,
+        key=lambda item: float(item.get("trust_score") or 0.0),
+        reverse=True,
+    )[:6]
+    options = []
+
+    for source_distance in source_distances:
+        for item in ranked_candidates:
+            activity_id = int(item["session"].activity_id)
+            try:
+                source_shape = pb_shape_to_dict(
+                    build_pb_shape(
+                        athlete_id=athlete_id,
+                        current_activity_id=activity_id,
+                        goal_distance_km=source_distance,
+                    )
+                )
+            except Exception:
+                continue
+
+            if (
+                source_shape.get("central_seconds") is None
+                or not source_shape.get("pb_time_s")
+                or source_shape.get("pb_workout_count", 0) < 1
+                or float(source_shape.get("confidence") or 0.0) < 0.45
+            ):
+                continue
+
+            bridge = build_personal_pb_shape_bridge(
+                source_distance_km=source_distance,
+                target_distance_km=goal_distance_km,
+                source_pb_seconds=float(source_shape["pb_time_s"]),
+                source_current_seconds=float(source_shape["central_seconds"]),
+                source_confidence=float(source_shape["confidence"]),
+                target_pb_seconds=float(goal_pb_shape["pb_time_s"]),
+                target_pb_date=goal_pb_shape.get("pb_date"),
+                reference_date=reference_date,
+            )
+            if bridge is None:
+                continue
+
+            prediction = personal_pb_shape_bridge_to_dict(bridge)
+            prediction.update(
+                {
+                    "activity_id": activity_id,
+                    "date": (
+                        item["session"].activity_date[:10]
+                        if item["session"].activity_date
+                        else "Unknown"
+                    ),
+                    "title": item["session"].title,
+                    "description": _display_description(item),
+                    "source_pb_shape": source_shape,
+                    "target_pb_shape": goal_pb_shape,
+                }
+            )
+            options.append(prediction)
+
+        if options:
+            # Prefer the nearest supported source distance.
+            break
+
+    if not options:
+        return None
+
+    return max(
+        options,
+        key=lambda item: (
+            float(item["confidence"]),
+            -abs(float(item["shape_ratio"]) - 1.0),
+        ),
+    )
+
+
 WORKOUT_LIBRARY_DECODER_VERSION = 3
 
 
@@ -1805,6 +1913,17 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             similarity_prediction=similarity_prediction,
             pb_shape_prediction=pb_shape_prediction,
         )
+        cross_distance_pb_shape_prediction = (
+            _cross_distance_pb_shape_prediction(
+                athlete_id=context.athlete_id,
+                candidate_workouts=recent_candidates,
+                goal_distance_km=goal_distance_km,
+                goal_pb_shape=pb_shape_prediction,
+                reference_date=reference_date,
+            )
+            if distance_relevant_prediction is None
+            else None
+        )
 
         # PB Shape is the most personal and explainable workout prediction.
         # For longer goals, current distance-specific work outranks linked
@@ -1820,6 +1939,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         elif distance_relevant_prediction is not None:
             workout_prediction = distance_relevant_prediction
             prediction_source = "distance_relevant_workout"
+        elif cross_distance_pb_shape_prediction is not None:
+            workout_prediction = cross_distance_pb_shape_prediction
+            prediction_source = "cross_distance_pb_shape"
         elif (
             similarity_prediction
             and similarity_prediction["distinct_race_count"] >= 2
@@ -1830,6 +1952,17 @@ class WorkoutEvidenceProvider(EvidenceProvider):
         else:
             workout_prediction = formula_prediction
             prediction_source = "formula_fallback"
+
+        if prediction_source == "cross_distance_pb_shape":
+            prediction_activity_id = workout_prediction.get("activity_id")
+            best = next(
+                (
+                    item
+                    for item in recent_candidates
+                    if item["session"].activity_id == prediction_activity_id
+                ),
+                best,
+            )
 
         comparable = [
             item for item in recent_candidates if _comparable(best, item)
@@ -1881,6 +2014,8 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 if prediction_source == "pb_shape"
                 else "Distance-specific workout prediction"
                 if prediction_source == "distance_relevant_workout"
+                else "Personal cross-distance workout prediction"
+                if prediction_source == "cross_distance_pb_shape"
                 else "Historical workout prediction"
                 if prediction_source == "historical_similarity"
                 else "Formula fallback prediction"
@@ -2014,6 +2149,11 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                     workout_prediction
                     and prediction_source == "distance_relevant_workout"
                 )
+                else 0.45
+                if (
+                    workout_prediction
+                    and prediction_source == "cross_distance_pb_shape"
+                )
                 else 0.55
                 if (
                     workout_prediction
@@ -2079,6 +2219,9 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "similarity_prediction": similarity_prediction,
                 "formula_prediction": formula_prediction,
                 "distance_relevant_prediction": distance_relevant_prediction,
+                "cross_distance_pb_shape_prediction": (
+                    cross_distance_pb_shape_prediction
+                ),
                 "historical_similarity":
                     historical_similarity_metadata,
                 "prediction_confidence": prediction_confidence,

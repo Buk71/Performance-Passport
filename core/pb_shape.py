@@ -217,6 +217,18 @@ def _find_pb(
     return min(pool, key=lambda item: item["time_s"])
 
 
+def find_race_pb(
+    *,
+    athlete_id: int,
+    goal_distance_km: float,
+) -> dict[str, Any] | None:
+    """Public read-only access to the verified PB selected by PB Shape."""
+    return _find_pb(
+        athlete_id=athlete_id,
+        goal_distance_km=goal_distance_km,
+    )
+
+
 def _empty_result(
     *,
     athlete_id: int,
