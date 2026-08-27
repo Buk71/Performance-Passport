@@ -39,6 +39,7 @@ from core.race_detection import score_race_evidence
 RIEGEL_EXPONENT = 1.06
 MAX_AGE_DAYS = 548
 MINIMUM_SELECTION_SCORE = 45.0
+MIXED_WIND_EXPOSURE = 0.55
 
 STANDARD_DISTANCES_KM = (
     5.0,
@@ -589,6 +590,31 @@ def _weather_adjustment_seconds(
     }
 
 
+def _wind_adjustment_seconds(
+    candidate: RaceCandidate,
+) -> tuple[float, dict]:
+    """Return the product's existing conservative mixed-exposure allowance.
+
+    Runalyze stores wind speed in km/h. Direction and course exposure are not
+    reliable enough to model precisely, so Race Coach mirrors the Race
+    Outlook's generic mixed-exposure rule and reports the assumption. This is
+    intentionally modest: a 29 km/h reading contributes about 1.9 sec/km.
+    """
+    wind = max(float(candidate.wind_speed or 0.0), 0.0)
+    penalty_per_km = (
+        min(max(wind - 10.0, 0.0) * 0.18, 8.0)
+        * MIXED_WIND_EXPOSURE
+    )
+    total = penalty_per_km * max(candidate.distance_km, 0.0)
+    return total, {
+        "wind_adjustment_applied": total >= 1.0,
+        "wind_adjustment_seconds": total,
+        "wind_penalty_seconds_per_km": penalty_per_km,
+        "wind_exposure_assumption": "mixed",
+        "wind_adjustment_confidence": 0.45 if total >= 1.0 else 0.75,
+    }
+
+
 def _equivalent_race_time(
     candidate: RaceCandidate,
     *,
@@ -601,6 +627,7 @@ def _equivalent_race_time(
     )
 
     weather_seconds, weather_details = _weather_adjustment_seconds(candidate)
+    wind_seconds, wind_details = _wind_adjustment_seconds(candidate)
 
     route_seconds = 0.0
     route_details = {
@@ -625,6 +652,7 @@ def _equivalent_race_time(
         weather_seconds
         + route_seconds
         + elevation_seconds
+        + wind_seconds
     )
 
     # Keep environmental correction conservative.
@@ -643,7 +671,7 @@ def _equivalent_race_time(
         "surface_adjustment_applied": bool(
             route_details.get("route_calibration_applied")
         ),
-        "wind_adjustment_applied": False,
+        **wind_details,
         "heart_rate_time_adjustment_applied": False,
     }
 
@@ -662,6 +690,27 @@ def _riegel_prediction(
         target_distance_km / race_distance_km,
         RIEGEL_EXPONENT,
     )
+
+
+def _projection_distance_km(
+    selected: CandidateScore,
+) -> tuple[float, bool]:
+    """Normalise a GPS-short standard event without inventing a faster time.
+
+    A continuous, race-quality 4.96 km effort is normally a GPS measurement
+    of a 5K event, not a 4.96 km race that needs extrapolating. Race Coach
+    already records the matched standard distance in its evidence score. Use
+    that distance only inside the strict 1.2% standard-distance window; keep
+    the observed elapsed time and all confidence limitations unchanged.
+    """
+    candidate = selected.candidate
+    matched = selected.matched_distance_km
+    if matched is None or matched <= 0:
+        return candidate.distance_km, False
+    relative_error = abs(candidate.distance_km - matched) / matched
+    if relative_error > 0.012 or selected.distance < 0.95:
+        return candidate.distance_km, False
+    return float(matched), abs(candidate.distance_km - matched) > 0.001
 
 
 def _format_duration(seconds: float) -> str:
@@ -850,12 +899,15 @@ class RaceEvidenceProvider(EvidenceProvider):
             candidate,
             athlete_id=context.athlete_id,
         )
+        projection_distance_km, standard_distance_normalised = (
+            _projection_distance_km(selected)
+        )
 
         predicted_seconds = None
         if goal_distance_km:
             predicted_seconds = _riegel_prediction(
                 equivalent_time,
-                candidate.distance_km,
+                projection_distance_km,
                 goal_distance_km,
             )
 
@@ -897,9 +949,24 @@ class RaceEvidenceProvider(EvidenceProvider):
                 f"{weather_adjustment:.0f} seconds"
             )
 
+        wind_adjustment = adjustment_details[
+            "wind_adjustment_seconds"
+        ]
+        if wind_adjustment > 0:
+            strengths.append(
+                "Conservative mixed-exposure wind allowance applied: "
+                f"{wind_adjustment:.0f} seconds"
+            )
+
+        if standard_distance_normalised:
+            strengths.append(
+                f"GPS distance {candidate.distance_km:.2f} km recognised "
+                f"as a {projection_distance_km:.2f} km standard event"
+            )
+
         direct_goal_distance = bool(
             goal_distance_km
-            and abs(candidate.distance_km - goal_distance_km)
+            and abs(projection_distance_km - goal_distance_km)
             / goal_distance_km <= 0.035
         )
         limitations = [
@@ -921,8 +988,9 @@ class RaceEvidenceProvider(EvidenceProvider):
 
         if candidate.wind_speed:
             limitations.append(
-                f"Wind recorded ({candidate.wind_speed:g}), but direction "
-                "and exposure are insufficient for a defensible correction."
+                f"Wind recorded ({candidate.wind_speed:g} km/h). Direction "
+                "and exact exposure are unknown, so only the product's "
+                "conservative mixed-exposure allowance is used."
             )
 
         limitations.append(
@@ -944,6 +1012,9 @@ class RaceEvidenceProvider(EvidenceProvider):
                 "activity_date": candidate.activity_date.isoformat(),
                 "selected_title": display_title,
                 "distance_km": candidate.distance_km,
+                "projection_distance_km": projection_distance_km,
+                "standard_distance_normalised": standard_distance_normalised,
+                "direct_goal_distance": direct_goal_distance,
                 "elapsed_time_s": candidate.elapsed_time_s,
                 "moving_time_s": candidate.moving_time_s,
                 "moving_ratio": selected.moving_ratio,

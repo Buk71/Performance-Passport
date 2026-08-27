@@ -47,10 +47,22 @@ def test_lead_coach_home_uses_real_independent_athlete_services():
         assert expected_name in markup
         assert summary.goal_name in markup
         assert predictions.distance_label in markup
-        assert "Lead Coach briefing" in markup
-        assert "Your coaching team" in markup
-        assert "Race Coach outlook" in markup
-        assert "Four distances · six race environments" in markup
+        assert "Today’s coaching briefing" in markup
+        assert markup.count("Today’s coaching briefing") == 1
+        assert 'class="lc-passport-identity"' in markup
+        assert 'class="lc-capability"' in markup
+        assert 'class="lc-coach-briefing"' in markup
+        assert 'class="lc-briefing"' not in markup
+        assert "What matters today" in markup
+        assert "Your day, at a glance." in markup
+        assert "Meet the coaches behind your day." in markup
+        assert "This week has a purpose." in markup
+        assert "Your potential in real conditions." in markup
+        assert 'class="lc-team-synthesis"' in markup
+        assert 'class="lc-race-anchor"' in markup
+        assert 'class="lc-coach-mark' in markup
+        assert 'class="lc-icon"' not in markup
+        assert "Cool · flat" in markup
         assert "Ballpark capability view" in markup
         assert all(
             label in markup
@@ -103,9 +115,24 @@ def test_lead_coach_home_has_responsive_premium_layout():
 
     assert "grid-template-columns:repeat(4,minmax(0,1fr))" in source
     assert "grid-template-columns:repeat(7,minmax(0,1fr))" in source
+    assert "grid-template-columns:minmax(230px,.72fr) minmax(470px,1.35fr) minmax(360px,1fr)" in source
+    assert ".lc-passport-identity" in source
+    assert ".lc-capability" in source
+    assert ".lc-coach-briefing" in source
+    assert ".lc-team-synthesis" in source
+    assert ".lc-race-anchor" in source
+    assert '--display:"Avenir Next"' in source
+    assert "def _icon_markup" in source
+    assert "<svg class=\"lc-icon\"" not in source
+    assert ".lc-coach-briefing h2,.lc-daily h2 {{ color:#fff!important; }}" in source
+    assert "font-weight:550!important" in source
+    assert ".lc-opinion-bottom {{" in source
+    assert "font-size:11px; }}" in source
+    assert ".lc-matrix-note {{ margin-top:11px;" in source
+    assert "font-size:12px; line-height:1.45;" in source
     assert "@media (max-width:1180px)" in source
     assert "@media (max-width:760px)" in source
-    assert "Four distances · six race environments" in source
+    assert "Your potential in real conditions." in source
 
 
 def test_prediction_matrix_is_a_consistent_real_capability_translation():

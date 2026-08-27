@@ -27,7 +27,7 @@ DIETARY_STYLES = ("Omnivore", "Pescatarian", "Vegetarian", "Vegan")
 BUDGET_STYLES = ("Value conscious", "Standard", "Flexible")
 MEAL_SLOTS = ("Breakfast", "Lunch", "Dinner", "Recovery snack")
 DEMANDS = ("Rest / recovery", "Easy", "Quality", "Long run / race")
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -353,9 +353,9 @@ def meal_options(
     fuel_day: FuelDay,
     meal_slot: str,
     *,
-    count: int = 2,
+    count: int = 3,
 ) -> tuple[Recipe, ...]:
-    """Return stable but day-varying choices for one meal slot."""
+    """Return one recommendation plus stable, day-varying alternatives."""
     if meal_slot not in MEAL_SLOTS:
         raise ValueError(f"Unsupported meal slot: {meal_slot}")
     eligible = [

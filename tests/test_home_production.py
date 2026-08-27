@@ -8,6 +8,7 @@ from ui.home import (
     build_production_goal_html,
     build_production_hero_html,
 )
+from ui.home_preview import _clock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,10 +42,16 @@ def test_production_home_uses_real_independent_athlete_intelligence():
 
     assert "SLR 12 miles" in richard_html
     assert "Trail Warrior" in richard_html
-    assert "38:17" in richard_html
+    assert all(
+        _clock(coach.predicted_seconds) in richard_html
+        for coach in richard[1].coach_positions
+    )
     assert "Trail Warrior" not in jo_html
     assert "Still emerging" in jo_html
-    assert "45:41" in jo_html
+    assert all(
+        _clock(coach.predicted_seconds) in jo_html
+        for coach in jo[1].coach_positions
+    )
 
 
 def test_production_home_has_sidebar_aware_intermediate_composition():

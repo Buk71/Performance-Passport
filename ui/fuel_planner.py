@@ -29,9 +29,19 @@ from core.fuel_planner import (
     shopping_list_csv,
 )
 from ui.athlete_selection import render_athlete_id_selector
+from ui.athlete_selection import (
+    SESSION_ID_KEY,
+    SESSION_NAME_KEY,
+    athlete_name,
+    get_athletes,
+)
+from ui.nutrition_coach_navigation import (
+    clear_nutrition_coach_params,
+    read_nutrition_coach_request,
+)
 
 
-FUEL_PLANNER_CACHE_SCHEMA = 1
+FUEL_PLANNER_CACHE_SCHEMA = 2
 
 
 def _escape(value) -> str:
@@ -49,6 +59,121 @@ def _friendly_date(value: str) -> str:
 def _cached_fuel_week(athlete_id: int, reference_date: datetime.date, schema: int):
     del schema
     return load_next_fuel_week(athlete_id, reference_date=reference_date)
+
+
+def _apply_nutrition_coach_request() -> None:
+    request = read_nutrition_coach_request(st.query_params)
+    if request is None:
+        return
+    rows_by_id = {int(row[0]): row for row in get_athletes()}
+    row = rows_by_id.get(request.athlete_id)
+    if row is not None:
+        st.session_state[SESSION_ID_KEY] = request.athlete_id
+        st.session_state[SESSION_NAME_KEY] = athlete_name(row)
+    clear_nutrition_coach_params(st.query_params)
+
+
+def _key_fuel_day(week):
+    if week is None or not week.days:
+        return None
+    priority = {
+        "Long run / race": 3,
+        "Quality": 2,
+        "Easy": 1,
+        "Rest / recovery": 0,
+    }
+    return max(
+        enumerate(week.days),
+        key=lambda item: (priority.get(item[1].demand, 0), -item[0]),
+    )[1]
+
+
+def build_nutrition_coach_hero_html(
+    athlete_display_name: str,
+    profile: NutritionProfile,
+    week=None,
+) -> str:
+    first_name = (athlete_display_name or "Athlete").split()[0]
+    key_day = _key_fuel_day(week)
+    if key_day is None:
+        headline = "Your food preferences are the coaching foundation."
+        briefing = (
+            "Save an active Training Block and Nutrition Coach will turn its "
+            "real sessions into a practical meal plan and shopping list."
+        )
+        key_label = "Training week needed"
+        key_detail = "No meal plan invented"
+        week_label = "Waiting for an approved block"
+    else:
+        headline = "Fuel the work, without making food complicated."
+        briefing = (
+            f"The next key demand is {key_day.session_type.lower()} on "
+            f"{key_day.day}. Meals can rotate around that session while "
+            "remaining familiar, practical and preference-aware."
+        )
+        key_label = f"{key_day.day} · {key_day.demand}"
+        key_detail = key_day.session_detail
+        week_label = (
+            f"{_friendly_date(week.start_date)}–"
+            f"{_friendly_date(week.end_date)}"
+        )
+    exclusions = len(profile.allergies) + len(profile.dislikes)
+    return f"""
+    <main class="nc-hero">
+      <section class="nc-briefing">
+        <div class="nc-eyebrow"><span></span>Nutrition Coach · {_escape(first_name)}</div>
+        <h1>{_escape(headline)}</h1>
+        <p>{_escape(briefing)}</p>
+        <div class="nc-key-session"><small>NEXT KEY FUEL DEMAND</small><strong>{_escape(key_label)}</strong><span>{_escape(key_detail)}</span></div>
+      </section>
+      <section class="nc-profile-card">
+        <div class="nc-profile-top"><span>ATHLETE FOOD PROFILE</span><b>ACTIVE</b></div>
+        <h2>{_escape(profile.dietary_style)}</h2>
+        <p>{_escape(week_label)}</p>
+        <div class="nc-profile-grid">
+          <div><small>OPTIONS</small><strong>3 per meal</strong><span>1 recommendation + 2 alternatives</span></div>
+          <div><small>COOKING</small><strong>≤ {profile.max_cook_minutes} min</strong><span>{'Leftovers welcomed' if profile.use_leftovers else 'Fresh meals preferred'}</span></div>
+          <div><small>SHOPPING</small><strong>{profile.servings} serving{'s' if profile.servings != 1 else ''}</strong><span>{_escape(profile.budget_style)}</span></div>
+          <div><small>FILTERS</small><strong>{exclusions}</strong><span>allergies and dislikes</span></div>
+        </div>
+      </section>
+    </main>
+    <style>
+      .nc-hero{{--navy:#082943;--ink:#10263d;--green:#2f9a72;--orange:#f15a2a;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,.85fr);overflow:hidden;margin:12px 0 24px;border:1px solid #d9d3ca;border-radius:24px;background:#fff;box-shadow:0 18px 42px rgba(16,38,61,.10);font-family:"Avenir Next",Inter,system-ui,sans-serif}}
+      .nc-briefing{{position:relative;padding:35px 38px;background:radial-gradient(circle at 90% 15%,rgba(47,154,114,.28),transparent 34%),linear-gradient(125deg,#082943,#0b3852);color:#fff}}
+      .nc-eyebrow{{display:flex;align-items:center;gap:10px;color:#8de0bd;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}} .nc-eyebrow span{{width:31px;height:3px;border-radius:2px;background:var(--orange)}}
+      .nc-briefing h1{{max-width:720px;margin:22px 0 14px;color:#fff!important;font-size:clamp(31px,3vw,48px);line-height:1.02;letter-spacing:-.045em}} .nc-briefing>p{{max-width:720px;margin:0;color:#d8e5eb!important;font-size:16px;line-height:1.58}}
+      .nc-key-session{{display:grid;gap:4px;margin-top:31px;padding-top:20px;border-top:1px solid rgba(255,255,255,.16)}} .nc-key-session small{{color:#8de0bd;font-size:11px;font-weight:800;letter-spacing:.11em}} .nc-key-session strong{{color:#fff;font-size:18px}} .nc-key-session span{{color:#b9cad4;font-size:13px}}
+      .nc-profile-card{{padding:32px 34px;background:radial-gradient(circle at 100% 0,rgba(241,90,42,.10),transparent 32%),#fbf8f2}} .nc-profile-top{{display:flex;justify-content:space-between;color:#71818d;font-size:11px;font-weight:800;letter-spacing:.1em}} .nc-profile-top b{{padding:5px 8px;border-radius:999px;background:#e7f5ed;color:#27845f;font-size:9px}}
+      .nc-profile-card h2{{margin:22px 0 4px;color:var(--ink)!important;font-size:33px;line-height:1}} .nc-profile-card>p{{margin:0;color:#72818c;font-size:13px}}
+      .nc-profile-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:25px}} .nc-profile-grid div{{min-height:100px;padding:14px;border:1px solid #e5dfd6;border-radius:13px;background:rgba(255,255,255,.75)}} .nc-profile-grid small,.nc-profile-grid strong,.nc-profile-grid span{{display:block}} .nc-profile-grid small{{color:#83909a;font-size:10px;font-weight:800;letter-spacing:.09em}} .nc-profile-grid strong{{margin-top:8px;color:var(--ink);font-size:16px}} .nc-profile-grid span{{margin-top:4px;color:#73818c;font-size:11px;line-height:1.35}}
+      @media(max-width:900px){{.nc-hero{{grid-template-columns:1fr}}}} @media(max-width:560px){{.nc-briefing,.nc-profile-card{{padding:26px 22px}}.nc-profile-grid{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def build_nutrition_week_strip_html(week) -> str:
+    cards = "".join(
+        f"""
+        <article class="nc-week-day nc-demand-{_escape(day.demand.lower().replace(' / ', '-').replace(' ', '-'))}">
+          <small>{_escape(day.day[:3].upper())}</small>
+          <strong>{_escape(day.session_type)}</strong>
+          <span>{_escape(day.demand)}</span>
+        </article>
+        """
+        for day in week.days
+    )
+    return f"""
+    <section class="nc-week">
+      <div class="nc-section-head"><div><small>THE TRAINING–FOOD CONNECTION</small><h2>One week, seven different demands.</h2></div><span>Meals support the plan; they never rewrite it.</span></div>
+      <div class="nc-week-grid">{cards}</div>
+    </section>
+    <style>
+      .nc-week{{margin:0 0 25px;padding:25px;border:1px solid #ded8cf;border-radius:20px;background:#fff;box-shadow:0 10px 25px rgba(16,38,61,.055);font-family:"Avenir Next",Inter,system-ui,sans-serif}} .nc-section-head{{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}} .nc-section-head small{{color:#2f9a72;font-size:11px;font-weight:850;letter-spacing:.12em}} .nc-section-head h2{{margin:7px 0 0;color:#10263d!important;font-size:27px;letter-spacing:-.035em}} .nc-section-head>span{{color:#71818d;font-size:12px}}
+      .nc-week-grid{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:20px}} .nc-week-day{{min-height:116px;padding:14px 12px;border:1px solid #e4ded5;border-radius:13px;background:#fbfaf7}} .nc-week-day small,.nc-week-day strong,.nc-week-day span{{display:block}} .nc-week-day small{{color:#81909a;font-size:10px;font-weight:850;letter-spacing:.1em}} .nc-week-day strong{{margin-top:15px;color:#10263d;font-size:14px;line-height:1.2}} .nc-week-day span{{margin-top:8px;color:#72818c;font-size:10px;line-height:1.3}} .nc-demand-quality,.nc-demand-long-run-race{{border-top:3px solid #f15a2a;background:#fff8f3}} .nc-demand-easy{{border-top:3px solid #2f9a72}}
+      @media(max-width:1050px){{.nc-week-grid{{grid-template-columns:repeat(4,minmax(0,1fr))}}}} @media(max-width:620px){{.nc-section-head{{align-items:flex-start;flex-direction:column}}.nc-week-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
+    </style>
+    """
 
 
 def build_fuel_week_overview_html(week, profile: NutritionProfile) -> str:
@@ -196,24 +321,45 @@ def _profile_form(athlete_id: int, saved: NutritionProfile | None) -> None:
             st.rerun()
 
 
-def _recipe_label(recipe) -> str:
-    extras = [f"{recipe.cook_minutes} min", recipe.dietary_style]
+def build_recipe_choice_html(
+    recipe,
+    *,
+    choice_label: str,
+    show_detail: bool,
+) -> str:
+    tags = [recipe.dietary_style, f"{recipe.cook_minutes} min"]
+    if recipe.cook_minutes <= 15:
+        tags.append("Quick")
     if recipe.batch_friendly:
-        extras.append("batch-friendly")
-    return f"{recipe.name} · {' · '.join(extras)}"
-
-
-def _recipe_caption(recipe, *, show_detail: bool) -> str:
-    detail = recipe.summary
-    if show_detail:
-        detail += (
-            f" Approx. {recipe.energy_kcal} kcal · "
-            f"{recipe.carbohydrate_g}g carbohydrate · "
-            f"{recipe.protein_g}g protein per serving."
-        )
-    if recipe.allergens:
-        detail += " Listed allergens: " + ", ".join(recipe.allergens) + "."
-    return detail
+        tags.append("Batch-friendly")
+    if recipe.carbohydrate_g >= 90:
+        tags.append("Carbohydrate-supportive")
+    if recipe.protein_g >= 35:
+        tags.append("Higher protein")
+    tag_markup = "".join(f"<span>{_escape(tag)}</span>" for tag in tags)
+    nutrition = (
+        f"<p class='nc-recipe-nutrition'>Approx. {recipe.energy_kcal} kcal · "
+        f"{recipe.carbohydrate_g}g carbohydrate · {recipe.protein_g}g protein "
+        "per serving.</p>"
+        if show_detail else ""
+    )
+    allergen = (
+        f"<small>Listed allergens: {_escape(', '.join(recipe.allergens))}</small>"
+        if recipe.allergens else "<small>No listed catalogue allergens.</small>"
+    )
+    return f"""
+    <article class="nc-recipe-card">
+      <div class="nc-recipe-label">{_escape(choice_label)}</div>
+      <h4>{_escape(recipe.name)}</h4>
+      <p>{_escape(recipe.summary)}</p>
+      {nutrition}
+      <div class="nc-recipe-tags">{tag_markup}</div>
+      {allergen}
+    </article>
+    <style>
+      .nc-recipe-card{{margin:8px 0 17px;padding:16px 17px;border:1px solid #e2dcd3;border-left:4px solid #2f9a72;border-radius:13px;background:#fbfaf7;font-family:"Avenir Next",Inter,system-ui,sans-serif}} .nc-recipe-label{{color:#2f9a72;font-size:10px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}} .nc-recipe-card h4{{margin:7px 0 5px;color:#10263d!important;font-size:17px}} .nc-recipe-card p{{margin:0;color:#647684;font-size:12px;line-height:1.45}} .nc-recipe-card .nc-recipe-nutrition{{margin-top:7px;color:#435d70}} .nc-recipe-tags{{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}} .nc-recipe-tags span{{padding:5px 8px;border-radius:999px;background:#eaf5ef;color:#34745d;font-size:9px;font-weight:750}} .nc-recipe-card>small{{color:#82909a;font-size:10px}}
+    </style>
+    """
 
 
 def _meal_plan_form(week, profile: NutritionProfile, saved):
@@ -222,8 +368,8 @@ def _meal_plan_form(week, profile: NutritionProfile, saved):
     with st.form(f"fuel_week_{week.athlete_id}_{week.start_date}"):
         st.markdown("### Choose the week’s meals")
         st.caption(
-            "Choose one option for every meal. Recommendations rotate through "
-            "the week and prioritise the day’s training demand."
+            "Every meal has one training-aware recommendation and two compatible "
+            "alternatives. Choose what you will genuinely enjoy and eat."
         )
         if profile.dietary_style == "Omnivore":
             st.caption(
@@ -246,7 +392,7 @@ def _meal_plan_form(week, profile: NutritionProfile, saved):
                 columns = st.columns(2)
                 for index, slot in enumerate(MEAL_SLOTS):
                     with columns[index % 2]:
-                        options = meal_options(profile, day, slot)
+                        options = meal_options(profile, day, slot, count=3)
                         if not options:
                             incomplete.append((day.date, slot))
                             st.warning(
@@ -267,17 +413,30 @@ def _meal_plan_form(week, profile: NutritionProfile, saved):
                         )
                         if st.session_state.get(key) not in option_ids:
                             st.session_state[key] = selected_id
-                        chosen_id = st.selectbox(
+                        labels = {
+                            recipe_id: (
+                                f"Recommended · {RECIPE_BY_ID[recipe_id].name}"
+                                if option_index == 0
+                                else f"Alternative {option_index} · "
+                                f"{RECIPE_BY_ID[recipe_id].name}"
+                            )
+                            for option_index, recipe_id in enumerate(option_ids)
+                        }
+                        chosen_id = st.radio(
                             slot,
                             option_ids,
                             key=key,
-                            format_func=lambda recipe_id: _recipe_label(
-                                RECIPE_BY_ID[recipe_id]
-                            ),
+                            format_func=lambda recipe_id: labels[recipe_id],
                         )
                         recipe = RECIPE_BY_ID[chosen_id]
-                        st.caption(_recipe_caption(
+                        chosen_index = option_ids.index(chosen_id)
+                        st.html(build_recipe_choice_html(
                             recipe,
+                            choice_label=(
+                                "Nutrition Coach recommendation"
+                                if chosen_index == 0
+                                else f"Selected alternative {chosen_index}"
+                            ),
                             show_detail=profile.show_nutrition_detail,
                         ))
                         selections.append(MealSelection(
@@ -290,7 +449,7 @@ def _meal_plan_form(week, profile: NutritionProfile, saved):
                             servings=profile.servings,
                         ))
         submitted = st.form_submit_button(
-            "Save choices and build shopping list",
+            "Save meal choices and update shopping list",
             type="primary",
             use_container_width=True,
             disabled=bool(incomplete),
@@ -309,7 +468,9 @@ def _shopping_list(week, profile: NutritionProfile, current_saved) -> None:
             for slot in MEAL_SLOTS:
                 choice = current_saved.get((day.date, slot))
                 option_ids = {
-                    recipe.id for recipe in meal_options(profile, day, slot)
+                    recipe.id for recipe in meal_options(
+                        profile, day, slot, count=3
+                    )
                 }
                 if (
                     choice is None
@@ -384,42 +545,74 @@ def _shopping_list(week, profile: NutritionProfile, current_saved) -> None:
 
 
 def show_fuel_planner_page() -> None:
-    selector, heading = st.columns([1, 2.7])
-    with selector:
-        athlete_id = render_athlete_id_selector(label_visibility="collapsed")
-    with heading:
-        st.markdown("## Weekly Fuel Planner")
-        st.caption(
-            "What should this athlete eat around next week’s approved training?"
-        )
+    st.markdown(
+        """
+        <style>
+          [data-testid="stMainBlockContainer"] { max-width:1480px; padding-top:4rem; padding-bottom:3rem; }
+          [data-testid="stSelectbox"] { max-width:430px; }
+          [data-testid="stSelectbox"] > div > div { min-height:48px; border:1px solid #d9d3ca; border-radius:14px; background:#fff; box-shadow:0 8px 20px rgba(30,42,52,.055); }
+          [data-testid="stExpander"] { border:1px solid #ded8cf; border-radius:15px; background:#fff; overflow:hidden; }
+          [data-testid="stExpander"] summary { min-height:58px; font-weight:750; color:#10263d; }
+          [data-testid="stTabs"] button { min-height:48px; font-size:14px; }
+          [data-testid="stRadio"] label p { font-size:13px; color:#304b60; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    _apply_nutrition_coach_request()
+    athlete_id = render_athlete_id_selector(
+        label="Athlete",
+        label_visibility="collapsed",
+    )
     if athlete_id is None:
-        st.info("Add an athlete before planning meals.")
+        st.info("Add an athlete before asking the Nutrition Coach.")
         return
     saved_profile = load_nutrition_profile(athlete_id)
-    _profile_form(athlete_id, saved_profile)
+    profile = saved_profile or default_nutrition_profile(athlete_id)
+    week = (
+        _cached_fuel_week(
+            athlete_id,
+            datetime.date.today(),
+            FUEL_PLANNER_CACHE_SCHEMA,
+        )
+        if saved_profile is not None else None
+    )
+    st.html(build_nutrition_coach_hero_html(
+        st.session_state.get(SESSION_NAME_KEY, "Athlete"),
+        profile,
+        week,
+    ))
     if saved_profile is None:
         st.info(
-            "Save the athlete’s nutrition profile first. The planner will then "
-            "filter every meal before making recommendations."
+            "Set up this athlete’s food preferences first. Nutrition Coach will "
+            "then filter every recommendation before it reaches the page."
         )
+        _profile_form(athlete_id, None)
         return
-    _plant_based_note(saved_profile.dietary_style)
-    week = _cached_fuel_week(
-        athlete_id,
-        datetime.date.today(),
-        FUEL_PLANNER_CACHE_SCHEMA,
-    )
     if week is None:
         st.warning(
             "No future week is available from an active, saved Training Block. "
-            "Save or update the athlete’s Training Block first; Fuel Planner "
-            "will not invent a training week."
+            "Save or update the athlete’s Training Block first; Nutrition Coach "
+            "will not invent sessions or meal demand."
         )
+        _profile_form(athlete_id, saved_profile)
         return
-    st.html(build_fuel_week_overview_html(week, saved_profile))
+    st.html(build_nutrition_week_strip_html(week))
+    key_day = _key_fuel_day(week)
+    if key_day is not None:
+        st.markdown("### Next key-session fuelling")
+        st.html(build_day_fuel_html(key_day))
     saved = load_week_selections(athlete_id, week.start_date)
-    _meal_plan_form(week, saved_profile, saved)
-    _shopping_list(week, saved_profile, saved)
+    meal_tab, shopping_tab, preferences_tab = st.tabs(
+        ("Meal choices", "Shopping list", "Food preferences")
+    )
+    with meal_tab:
+        _meal_plan_form(week, saved_profile, saved)
+    with shopping_tab:
+        _shopping_list(week, saved_profile, saved)
+    with preferences_tab:
+        _plant_based_note(saved_profile.dietary_style)
+        _profile_form(athlete_id, saved_profile)
     st.caption(
         "Food quantities and optional calories/macros are planning estimates, "
         "not diagnosis or treatment. Appetite, health needs and food labels "

@@ -13,6 +13,7 @@ from ui.home_preview_v10 import (
     build_v10_hero_html,
     build_v10_lower_html,
 )
+from ui.home_preview import _clock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,14 +59,16 @@ def test_v10_keeps_real_intelligence_values_and_athlete_isolation():
     assert "SLR 12 miles" in richard_html
     assert "#10" in richard_html
     assert "Trail Warrior" in richard_html
-    assert "38:17" in richard_html
-    assert "39:10" in richard_html
-    assert "39:26" in richard_html
+    assert all(
+        _clock(coach.predicted_seconds) in richard_html
+        for coach in richard_predictions.coach_positions
+    )
     assert "Trail Warrior" not in jo_html
     assert "Still emerging" in jo_html
-    assert "45:41" in jo_html
-    assert "50:44" in jo_html
-    assert "46:39" in jo_html
+    assert all(
+        _clock(coach.predicted_seconds) in jo_html
+        for coach in jo_predictions.coach_positions
+    )
 
 
 def test_v10_aligns_outlook_metadata_and_allows_week_copy_to_wrap():

@@ -1,9 +1,9 @@
-"""Cross-distance race outlook derived from the active-goal capability.
+"""Four-distance Race Outlook composed from independent capability anchors.
 
-The matrix is deliberately a translation, not another coach vote. When the
-caller supplies verified personal bests, it carries current capability through
-the athlete's own cross-distance relationship. The existing Riegel 1.06 rule
-remains the fallback. It never reads from or writes to the database.
+Distance-specific Race, Workout and Threshold Coach anchors take priority.
+Verified PB relationships and the Riegel 1.06 rule remain transparent fallbacks
+when a distance lacks direct evidence. The matrix then applies the active
+environment profile consistently and never reads from or writes to the database.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+from core.distance_prediction_outlook import DistancePredictionOutlook
 from core.home_predictions import HomePredictions
 
 
@@ -54,6 +55,8 @@ class HomePredictionMatrixRow:
     label: str
     distance_km: float
     is_active_distance: bool
+    confidence: float
+    readiness_label: str
     cells: tuple[HomePredictionMatrixCell, ...]
 
 
@@ -106,8 +109,9 @@ def _condition_multipliers(
 def build_home_prediction_matrix(
     predictions: HomePredictions,
     personal_bests: dict[str, float] | None = None,
+    distance_outlook: DistancePredictionOutlook | None = None,
 ) -> HomePredictionMatrix:
-    """Translate active-goal capability across four standard distances."""
+    """Compose four standard-distance capabilities across race conditions."""
     base_distance_km = DISTANCE_BY_LABEL.get(predictions.distance_label)
     baseline = predictions.central_seconds
     multipliers = _condition_multipliers(predictions)
@@ -142,9 +146,29 @@ def build_home_prediction_matrix(
         None,
     )
     base_pb_seconds = personal_bests.get(active_key) if active_key else None
+    anchors = {
+        anchor.key: anchor
+        for anchor in (distance_outlook.anchors if distance_outlook else ())
+        if anchor.available
+        and anchor.central_seconds is not None
+        and anchor.central_seconds > 0
+    }
     personal_rows = 0
-    rows = []
+    distance_specific_rows = 0
+    endurance_calibrated_rows = 0
+    ideal_by_key = {}
+    confidence_by_key = {}
+    readiness_by_key = {}
     for key, label, distance_km in DISTANCES:
+        anchor = anchors.get(key)
+        if anchor is not None:
+            ideal_by_key[key] = float(anchor.central_seconds)
+            confidence_by_key[key] = anchor.confidence
+            readiness_by_key[key] = anchor.readiness_label
+            distance_specific_rows += 1
+            if anchor.transfer_fraction > 0:
+                endurance_calibrated_rows += 1
+            continue
         target_pb_seconds = personal_bests.get(key)
         if (
             base_pb_seconds is not None
@@ -162,6 +186,39 @@ def build_home_prediction_matrix(
                 distance_km / base_distance_km,
                 RIEGEL_EXPONENT,
             )
+        ideal_by_key[key] = ideal_seconds
+        confidence_by_key[key] = (
+            predictions.confidence
+            if key == active_key
+            else predictions.confidence * 0.75
+        )
+        readiness_by_key[key] = ""
+
+    # Personal PB relationships and generic fallbacks can come from different
+    # fitness eras. Reconcile them before rendering so a longer prediction can
+    # never imply covering the additional distance faster. When a contradiction
+    # exists, carry the immediately shorter displayed capability through the
+    # same transparent Riegel rule used by the generic fallback.
+    consistency_adjustments = 0
+    previous_key = None
+    previous_distance_km = None
+    for key, _label, distance_km in DISTANCES:
+        if previous_key is not None and previous_distance_km is not None:
+            previous_seconds = ideal_by_key[previous_key]
+            distance_ratio = distance_km / previous_distance_km
+            minimum_elapsed = previous_seconds * distance_ratio
+            if ideal_by_key[key] <= minimum_elapsed:
+                ideal_by_key[key] = previous_seconds * math.pow(
+                    distance_ratio,
+                    RIEGEL_EXPONENT,
+                )
+                consistency_adjustments += 1
+        previous_key = key
+        previous_distance_km = distance_km
+
+    rows = []
+    for key, label, distance_km in DISTANCES:
+        ideal_seconds = ideal_by_key[key]
         cells = tuple(
             HomePredictionMatrixCell(
                 key=condition_key,
@@ -176,6 +233,8 @@ def build_home_prediction_matrix(
                 label=label,
                 distance_km=distance_km,
                 is_active_distance=abs(distance_km - base_distance_km) < 0.12,
+                confidence=confidence_by_key[key],
+                readiness_label=readiness_by_key[key],
                 cells=cells,
             )
         )
@@ -188,10 +247,32 @@ def build_home_prediction_matrix(
         confidence=predictions.confidence,
         rows=tuple(rows),
         explanation=(
-            "Ballpark cross-distance times translated from the current "
-            "active-goal capability using the athlete's verified PB relationship "
-            f"for {personal_rows} other distance(s), and Race Coach's 1.06 "
-            "equivalence rule where personal evidence is unavailable. They "
+            (
+                f"Each of {distance_specific_rows} distance(s) uses its own "
+                "Race, Workout and Threshold Coach evidence. Condition columns "
+                "then apply the athlete's current environmental response. "
+                + (
+                    f"For {endurance_calibrated_rows} longer distance(s), "
+                    "current shorter-distance fitness contributes only the "
+                    "share supported by recent volume, long-run coverage and "
+                    "prior distance completion. "
+                    if endurance_calibrated_rows
+                    else ""
+                )
+                if distance_specific_rows
+                else "Ballpark cross-distance times translated from the current "
+                "active-goal capability using the athlete's verified PB relationship "
+                f"for {personal_rows} other distance(s), and Race Coach's 1.06 "
+                "equivalence rule where personal evidence is unavailable. "
+            )
+            + (
+                f"A cross-distance consistency guard reconciled "
+                f"{consistency_adjustments} contradictory longer-distance "
+                "estimate(s). "
+                if consistency_adjustments
+                else ""
+            )
+            + "They "
             "describe capability, not distance-specific race readiness."
         ),
     )

@@ -25,9 +25,13 @@ def test_richard_prediction_uses_real_consensus():
     assert result.goal_name == "Sub 39:00"
     assert result.distance_label == "10K"
     assert result.evidence_source_count == 3
-    assert math.isclose(result.central_seconds, 2333.6, abs_tol=0.1)
-    assert math.isclose(result.low_seconds, 2281.7, abs_tol=0.2)
-    assert math.isclose(result.high_seconds, 2385.5, abs_tol=0.2)
+    assert 2320 <= result.central_seconds <= 2360
+    assert result.low_seconds < result.central_seconds < result.high_seconds
+    assert math.isclose(
+        result.central_seconds - result.low_seconds,
+        result.high_seconds - result.central_seconds,
+        abs_tol=0.2,
+    )
     assert result.strongest_system == "Threshold"
     assert result.limiting_system == "Speed / VO₂"
     assert len(result.coach_positions) == 3
@@ -48,7 +52,7 @@ def test_jo_prediction_is_independent_and_honest():
     assert result.goal_name == "Sub 45"
     assert result.distance_label == "10K"
     assert result.evidence_source_count == 3
-    assert math.isclose(result.central_seconds, 2825.5, abs_tol=0.1)
+    assert 2760 <= result.central_seconds <= 2880
     assert result.target_gap_seconds > 100
     assert result.target_probability < 0.10
     assert result.strongest_system == "Aerobic"

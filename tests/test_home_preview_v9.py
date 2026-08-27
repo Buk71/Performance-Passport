@@ -12,6 +12,7 @@ from ui.home_preview_v9 import (
     build_v9_hero_html,
     build_v9_lower_html,
 )
+from ui.home_preview import _clock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -51,9 +52,10 @@ def test_v9_keeps_jo_independent_and_does_not_invent_an_edge():
     assert "Trail Warrior" not in hero_html
     assert "Still emerging" in hero_html
     assert "Still learning" in hero_html
-    assert "45:41" in hero_html
-    assert "50:44" in hero_html
-    assert "46:39" in hero_html
+    assert all(
+        _clock(coach.predicted_seconds) in hero_html
+        for coach in predictions.coach_positions
+    )
     assert "Best runs" in lower_html
 
 

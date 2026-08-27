@@ -38,9 +38,37 @@ class FuelPlannerCoreTests(unittest.TestCase):
             )
             for slot in MEAL_SLOTS:
                 options = meal_options(profile, _day(), slot)
-                self.assertGreaterEqual(len(options), 2, (style, slot))
+                self.assertGreaterEqual(len(options), 3, (style, slot))
                 if style == "Vegan":
                     self.assertTrue(all(item.dietary_style == "Vegan" for item in options))
+
+    def test_default_choice_contract_is_one_recommendation_plus_two_alternatives(self):
+        profile = NutritionProfile(
+            athlete_id=1, dietary_style="Omnivore", max_cook_minutes=90,
+        )
+        options = meal_options(profile, _day(), "Dinner")
+
+        self.assertEqual(len(options), 3)
+        self.assertEqual(len({recipe.id for recipe in options}), 3)
+        self.assertIn(options[0].dietary_style, {"Omnivore", "Pescatarian"})
+        self.assertIn(options[1].dietary_style, {"Vegetarian", "Vegan"})
+
+    def test_third_alternative_is_a_complete_shoppable_recipe(self):
+        profile = NutritionProfile(
+            athlete_id=1, dietary_style="Vegetarian", max_cook_minutes=90,
+        )
+        recipe = meal_options(profile, _day(), "Dinner")[2]
+        choice = MealSelection(
+            1, 9, "2026-08-17", "2026-08-17", "Dinner", recipe.id, 2,
+        )
+
+        items = build_shopping_list((choice,), include_pantry=True)
+
+        self.assertTrue(items)
+        self.assertEqual(
+            {item.name for item in items},
+            {ingredient.name for ingredient in recipe.ingredients},
+        )
 
     def test_choices_rotate_between_days(self):
         profile = NutritionProfile(athlete_id=1, dietary_style="Vegan", max_cook_minutes=90)

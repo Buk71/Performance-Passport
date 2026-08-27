@@ -57,7 +57,7 @@ def test_richard_real_history_can_feed_nutrition_without_saving_test_data():
     assert week.block_name == "Sub 39:00 Training Block"
     assert len(week.days) == 7
     assert all(
-        len(meal_options(vegan, day, slot)) == 2
+        len(meal_options(vegan, day, slot)) == 3
         for day in week.days
         for slot in MEAL_SLOTS
     )

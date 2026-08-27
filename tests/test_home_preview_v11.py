@@ -6,6 +6,7 @@ from core.home_latest_run import build_home_latest_run
 from core.home_predictions import build_home_predictions
 from core.home_summary import build_home_summary
 from ui.home_preview_v11 import build_v11_goal_html, build_v11_hero_html
+from ui.home_preview import _clock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,10 +50,16 @@ def test_v11_preserves_real_intelligence_for_both_athletes():
 
     assert "SLR 12 miles" in richard_html
     assert "Trail Warrior" in richard_html
-    assert "38:17" in richard_html
+    assert all(
+        _clock(coach.predicted_seconds) in richard_html
+        for coach in richard_predictions.coach_positions
+    )
     assert "Trail Warrior" not in jo_html
     assert "Still emerging" in jo_html
-    assert "45:41" in jo_html
+    assert all(
+        _clock(coach.predicted_seconds) in jo_html
+        for coach in jo_predictions.coach_positions
+    )
 
 
 def test_v11_protects_the_approved_v10_source():

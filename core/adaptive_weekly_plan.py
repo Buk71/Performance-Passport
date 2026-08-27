@@ -29,7 +29,10 @@ from core.adaptive_training_block import (
     build_adaptive_block_preview,
 )
 from core.database import get_active_goal, get_athlete_sport_roles, get_connection
-from core.performance_backtracking import build_performance_backtracking_profile
+from core.performance_backtracking import (
+    _family_components,
+    build_performance_backtracking_profile,
+)
 from core.session_designer import (
     _historical_candidates,
     _targets,
