@@ -43,6 +43,7 @@ def test_navigation_has_one_coherent_route_and_no_visible_none_option():
         "Hall of Fame",
     ]
     assert "Fuel Planner" in PRIMARY_NAVIGATION
+    assert "Recovery Coach" in PRIMARY_NAVIGATION
 
 
 def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection():
@@ -50,7 +51,7 @@ def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection
 
     assert "label:nth-of-type(5)" in theme
     assert "label:nth-of-type(9)" in theme
-    assert "label:nth-of-type(14)" in theme
+    assert "label:nth-of-type(15)" in theme
     assert 'content: "Analyse"' not in theme
     assert "p::before" in theme
     assert 'label:has(input[type="radio"]:checked)' in theme
@@ -67,3 +68,10 @@ def test_sidebar_toggle_keeps_explicit_contrast_in_dark_browser_chrome():
     assert "background: #F7F3EC !important" in theme
     assert "background: #F05A28 !important" in theme
     assert "fill: currentColor !important" in theme
+    assert "color-scheme: light !important" in theme
+    assert '[data-baseweb="select"] span' in theme
+    assert "-webkit-text-fill-color: #10263D !important" in theme
+    assert '[role="option"][aria-selected="true"]' in theme
+    assert '[data-testid="stSelectbox"] [data-baseweb="select"] div' in theme
+    assert "opacity: 1 !important" in theme
+    assert "fill: #536576 !important" in theme

@@ -26,6 +26,7 @@ from ui.athlete_selection import render_athlete_id_selector
 from ui.coaching_navigation import coaching_team_url
 from ui.training_coach_navigation import training_coach_url
 from ui.nutrition_coach_navigation import nutrition_coach_url
+from ui.recovery_coach_navigation import recovery_coach_url
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -245,25 +246,20 @@ def _passport_photo(passport) -> str:
 
 
 def _icon_markup(name: str) -> str:
-    """Return Streamlit-safe text-presentation line symbols.
+    """Return Streamlit-safe CSS line icons.
 
     Streamlit's HTML sanitiser can remove inline SVG paths while leaving their
-    coloured containers behind. These restrained symbols use ordinary text
-    markup, so every deployed browser renders the intended graphic.
+    coloured containers behind. These icons use only ordinary elements and
+    CSS borders, so Safari and deployed Streamlit render them consistently.
     """
-    symbols = {
-        "run": "≋",
-        "calendar": "▦",
-        "pulse": "⌁",
-        "training": "≋",
-        "race": "⚑︎",
-        "recovery": "⌁",
-        "nutrition": "⊕",
+    supported = {
+        "run", "calendar", "pulse", "training", "race", "recovery",
+        "nutrition",
     }
-    symbol = symbols.get(name, symbols["pulse"])
+    icon_name = name if name in supported else "pulse"
     return (
-        f'<span class="lc-icon lc-icon-{_safe(name)}" '
-        f'aria-hidden="true">{symbol}</span>'
+        f'<span class="lc-icon lc-icon-{_safe(icon_name)}" '
+        'aria-hidden="true"><i></i><i></i><i></i></span>'
     )
 
 
@@ -364,6 +360,8 @@ def _coach_cards(athlete_id: int, summary, predictions) -> str:
             href = html.escape(training_coach_url(athlete_id), quote=True)
         elif coach_key == "nutrition":
             href = html.escape(nutrition_coach_url(athlete_id), quote=True)
+        elif coach_key == "aerobic":
+            href = html.escape(recovery_coach_url(athlete_id), quote=True)
         else:
             href = (
                 html.escape(coaching_team_url(athlete_id, coach_key), quote=True)
@@ -703,7 +701,7 @@ def build_lead_coach_home_html(
             .lc-focus-card {{ display:flex; min-height:190px; flex-direction:column; padding:23px 24px; border:1px solid #dfd9d0; border-radius:19px; background:#fff; box-shadow:0 12px 30px rgba(36,44,50,.055); }}
             .lc-focus-today {{ background:linear-gradient(145deg,#fff7f0,#fff); border-color:#f1c4ae; }}
             .lc-card-kicker {{ display:flex; align-items:center; gap:9px; color:#738592; font-size:10px; font-weight:850; letter-spacing:.13em; text-transform:uppercase; }}
-            .lc-card-kicker .lc-icon {{ display:grid; width:19px; height:19px; place-items:center; color:#7d929f; font-family:Georgia,serif; font-size:21px; font-weight:400; line-height:1; }}
+            .lc-card-kicker .lc-icon {{ width:19px; height:19px; color:#6e8796; }}
             .lc-card-title {{ margin-top:20px; font-size:25px; font-weight:550; letter-spacing:-.025em; }}
             .lc-focus-card p {{ margin:9px 0 14px; color:#7a8995; font-size:13px; line-height:1.48; }}
             .lc-card-meta {{ margin-top:auto; color:#607181; font-size:11px; font-weight:750; }}
@@ -723,8 +721,28 @@ def build_lead_coach_home_html(
             .lc-coach-race .lc-coach-mark {{ background:#fff0eb; color:var(--orange); }}
             .lc-coach-recovery .lc-coach-mark {{ background:#eef4f9; color:#557b9b; }}
             .lc-coach-nutrition .lc-coach-mark {{ background:#faf4e9; color:#9a7848; }}
-            .lc-coach-mark .lc-icon {{ display:grid; width:25px; height:25px; place-items:center; font-family:Georgia,serif; font-size:25px; font-weight:400; line-height:1; }}
-            .lc-coach-mark .lc-icon-calendar {{ font-family:var(--display); font-size:20px; }}
+            .lc-coach-mark .lc-icon {{ width:25px; height:25px; }}
+            .lc-icon {{ position:relative; display:inline-block; flex:0 0 auto; color:currentColor; }}
+            .lc-icon i {{ position:absolute; display:block; background:currentColor; border-radius:99px; }}
+            .lc-icon-run i,.lc-icon-training i {{ bottom:18%; width:10%; }}
+            .lc-icon-run i:nth-child(1),.lc-icon-training i:nth-child(1) {{ left:18%; height:42%; }}
+            .lc-icon-run i:nth-child(2),.lc-icon-training i:nth-child(2) {{ left:45%; height:70%; }}
+            .lc-icon-run i:nth-child(3),.lc-icon-training i:nth-child(3) {{ right:18%; height:52%; }}
+            .lc-icon-calendar {{ border:2px solid currentColor; border-radius:4px; }}
+            .lc-icon-calendar:before {{ content:""; position:absolute; right:-2px; top:27%; left:-2px; border-top:2px solid currentColor; }}
+            .lc-icon-calendar i {{ top:-15%; width:2px; height:25%; }}
+            .lc-icon-calendar i:nth-child(1) {{ left:25%; }} .lc-icon-calendar i:nth-child(2) {{ right:25%; }} .lc-icon-calendar i:nth-child(3) {{ display:none; }}
+            .lc-icon-pulse i,.lc-icon-recovery i {{ top:49%; height:2px; transform-origin:left center; }}
+            .lc-icon-pulse i:nth-child(1),.lc-icon-recovery i:nth-child(1) {{ left:8%; width:30%; }}
+            .lc-icon-pulse i:nth-child(2),.lc-icon-recovery i:nth-child(2) {{ left:34%; width:32%; transform:rotate(-58deg); }}
+            .lc-icon-pulse i:nth-child(3),.lc-icon-recovery i:nth-child(3) {{ left:57%; width:35%; transform:rotate(45deg); }}
+            .lc-icon-race i {{ display:none; }}
+            .lc-icon-race:before {{ content:""; position:absolute; left:24%; top:10%; bottom:8%; border-left:2px solid currentColor; }}
+            .lc-icon-race:after {{ content:""; position:absolute; left:29%; top:12%; width:45%; height:36%; border:2px solid currentColor; border-left:0; border-radius:0 3px 3px 0; }}
+            .lc-icon-nutrition {{ border:2px solid currentColor; border-radius:50%; }}
+            .lc-icon-nutrition i:nth-child(1) {{ top:46%; left:22%; width:56%; height:2px; }}
+            .lc-icon-nutrition i:nth-child(2) {{ top:22%; left:46%; width:2px; height:56%; }}
+            .lc-icon-nutrition i:nth-child(3) {{ display:none; }}
             .lc-coach-head small,.lc-coach-head strong {{ display:block; }}
             .lc-coach-head small {{ margin-top:3px; color:#8a969f; font-size:8px; font-weight:700; letter-spacing:.02em; }}
             .lc-coach-head strong {{ font-size:14px; }}
@@ -760,32 +778,32 @@ def build_lead_coach_home_html(
             .lc-opinion {{ min-width:0; padding:17px 20px; border:0; border-right:1px solid #e3ded7; border-radius:0; background:transparent; transition:background .16s ease; }}
             .lc-opinion:last-child {{ border-right:0; }}
             .lc-opinion:hover {{ transform:none; background:#fff; box-shadow:none; }}
-            .lc-opinion-top {{ display:flex; align-items:center; justify-content:space-between; color:#5f7180; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }}
+            .lc-opinion-top {{ display:flex; align-items:center; justify-content:space-between; color:#5f7180; font-size:12px; font-weight:700; letter-spacing:.055em; text-transform:uppercase; }}
             .lc-lead-tag {{ padding:4px 7px; border-radius:999px; background:var(--orange); color:#fff; font-size:9px; }}
             .lc-opinion-time {{ margin-top:8px; color:var(--navy); font-size:24px; font-weight:600!important; letter-spacing:-.025em; }}
-            .lc-opinion-bottom {{ display:flex; justify-content:space-between; gap:12px; margin-top:7px; color:#657683; font-size:11px; }}
-            .lc-opinion-bottom strong {{ color:#244058; }}
+            .lc-opinion-bottom {{ display:flex; justify-content:space-between; gap:12px; margin-top:7px; color:#657683; font-size:12px; }}
+            .lc-opinion-bottom strong {{ color:#244058; font-weight:650; }}
             .lc-matrix-wrap {{ overflow-x:auto; margin-top:20px; border:1px solid #ded8cf; border-radius:16px; background:#fff; }}
             .lc-matrix {{ width:100%; min-width:830px; border-collapse:collapse; }}
             .lc-matrix th,.lc-matrix td {{ padding:16px 15px; border-right:1px solid #e5e0d8; border-bottom:1px solid #e5e0d8; text-align:left; }}
             .lc-matrix tr:last-child th,.lc-matrix tr:last-child td {{ border-bottom:0; }}
             .lc-matrix th:last-child,.lc-matrix td:last-child {{ border-right:0; }}
             .lc-matrix thead th {{ background:#f7f5f0; color:#687987; white-space:nowrap; }}
-            .lc-matrix thead th strong {{ display:block; color:var(--navy); font-family:var(--display); font-size:14px; font-weight:600!important; letter-spacing:0; text-transform:none; }}
-            .lc-matrix thead th small {{ display:block; margin-top:4px; color:#7d8b95; font-size:10px; font-weight:600; letter-spacing:0; text-transform:none; }}
+            .lc-matrix thead th strong {{ display:block; color:var(--navy); font-family:var(--display); font-size:15px; font-weight:600!important; letter-spacing:0; text-transform:none; }}
+            .lc-matrix thead th small {{ display:block; margin-top:4px; color:#6f808c; font-size:11.5px; font-weight:550; letter-spacing:0; text-transform:none; }}
             .lc-matrix thead th:first-child strong {{ color:#5f7180; font-family:inherit; font-size:11px; font-weight:750!important; letter-spacing:.1em; text-transform:uppercase; }}
             .lc-matrix thead th:first-child small {{ display:none; }}
             .lc-matrix tbody th {{ position:relative; min-width:132px; background:#faf8f4; }}
             .lc-matrix tbody th strong,.lc-matrix tbody th small {{ display:block; }}
-            .lc-matrix tbody th strong {{ color:var(--navy); font-family:var(--display); font-size:17px; font-weight:600!important; }}
-            .lc-matrix tbody th small {{ max-width:170px; margin-top:4px; color:#687b89; font-size:11px; line-height:1.3; }}
+            .lc-matrix tbody th strong {{ color:var(--navy); font-family:var(--display); font-size:18px; font-weight:600!important; }}
+            .lc-matrix tbody th small {{ max-width:170px; margin-top:4px; color:#607482; font-size:12px; line-height:1.3; }}
             .lc-matrix td strong {{ color:var(--navy); font-size:17px; font-weight:550!important; letter-spacing:-.015em; white-space:nowrap; }}
             .lc-matrix-ideal {{ background:#fdfaf4!important; }}
             .lc-matrix-typical {{ background:#eef8f3!important; }}
             .lc-matrix-trail {{ background:#f7f8f4!important; }}
             .lc-active-row th {{ box-shadow:inset 4px 0 0 var(--orange); }}
             .lc-active-distance {{ position:absolute; top:11px; right:9px; padding:4px 7px; border-radius:999px; background:var(--orange); color:#fff; font-size:9px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; }}
-            .lc-matrix-note {{ margin-top:11px; color:#5f7281; font-size:12px; line-height:1.45; }}
+            .lc-matrix-note {{ margin-top:12px; color:#526b7b; font-size:13px; line-height:1.5; }}
             .lc-matrix-note strong {{ color:#314b60; }}
             .lc-daily {{ display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:21px; margin:20px 0 8px; padding:26px 29px; overflow:hidden; border-radius:22px; background:radial-gradient(circle at 90% 10%,rgba(47,162,132,.23),transparent 30%),linear-gradient(120deg,#08243d,#0c3852); color:#fff; box-shadow:0 18px 40px rgba(8,36,61,.15); }}
             .lc-daily-number {{ display:grid; place-items:center; width:70px; height:70px; border:1px solid rgba(255,255,255,.2); border-radius:20px; background:rgba(255,255,255,.08); font-size:29px; font-weight:900; }}

@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 15
 
 
 def get_connection():
@@ -1522,6 +1522,90 @@ def migrate_to_schema_v13(cursor):
     set_schema_version(cursor, 13)
 
 
+def create_recovery_checkins_table(cursor):
+    """Store one explicit, athlete-reported recovery check-in per day."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_recovery_checkins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            checkin_date TEXT NOT NULL,
+            sleep_quality INTEGER NOT NULL CHECK (sleep_quality BETWEEN 1 AND 5),
+            fatigue INTEGER NOT NULL CHECK (fatigue BETWEEN 1 AND 5),
+            soreness INTEGER NOT NULL CHECK (soreness BETWEEN 1 AND 5),
+            motivation INTEGER NOT NULL CHECK (motivation BETWEEN 1 AND 5),
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id) ON DELETE CASCADE,
+            UNIQUE(athlete_id, checkin_date)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_recovery_checkins_athlete_date
+        ON athlete_recovery_checkins (athlete_id, checkin_date DESC)
+        """
+    )
+
+
+def migrate_to_schema_v14(cursor):
+    """Add athlete-reported recovery check-ins without inferred physiology."""
+    create_recovery_checkins_table(cursor)
+    set_schema_version(cursor, 14)
+
+
+def create_athlete_health_daily_table(cursor):
+    """Store source-labelled daily health evidence for one athlete."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_health_daily (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            health_date TEXT NOT NULL,
+            source TEXT NOT NULL,
+            hrv_value REAL,
+            hrv_metric_code TEXT,
+            hrv_measurement_type TEXT,
+            hrv_source_code TEXT,
+            hrv_source_id TEXT,
+            resting_hr REAL,
+            resting_hr_source_id TEXT,
+            sleep_source_id TEXT,
+            sleep_start_time TEXT,
+            sleep_end_time TEXT,
+            sleep_duration_min REAL,
+            sleep_rem_min REAL,
+            sleep_awake_min REAL,
+            sleep_deep_min REAL,
+            sleep_light_min REAL,
+            sleep_unknown_min REAL,
+            sleep_quality REAL,
+            sleep_quality_100 REAL,
+            weight_kg REAL,
+            raw_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id) ON DELETE CASCADE,
+            UNIQUE(athlete_id, health_date, source)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_health_daily_athlete_date
+        ON athlete_health_daily (athlete_id, health_date DESC)
+        """
+    )
+
+
+def migrate_to_schema_v15(cursor):
+    """Add auditable Runalyze health evidence without a readiness score."""
+    create_athlete_health_daily_table(cursor)
+    set_schema_version(cursor, 15)
+
+
 @lru_cache(maxsize=128)
 def get_activity_overrides(athlete_id):
     conn = get_connection()
@@ -1704,6 +1788,14 @@ def initialise_database():
         migrate_to_schema_v13(cursor)
         schema_version = 13
 
+    if schema_version < 14:
+        migrate_to_schema_v14(cursor)
+        schema_version = 14
+
+    if schema_version < 15:
+        migrate_to_schema_v15(cursor)
+        schema_version = 15
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
@@ -1714,6 +1806,8 @@ def initialise_database():
     create_athlete_sport_mappings_table(cursor)
     create_workout_library_tables(cursor)
     create_athlete_evidence_overrides_tables(cursor)
+    create_recovery_checkins_table(cursor)
+    create_athlete_health_daily_table(cursor)
 
     backfill_missing_athlete_ids(cursor)
 

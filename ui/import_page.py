@@ -14,6 +14,11 @@ from core.garmin_import import (
     import_garmin_activities,
     parse_fit_payloads,
 )
+from core.runalyze_health import (
+    get_athlete_health_count,
+    import_runalyze_health_records,
+    parse_runalyze_health_rows,
+)
 from ui.athlete_selection import render_athlete_id_selector
 
 
@@ -341,6 +346,96 @@ def _show_garmin_import(athlete_id, athlete_name):
                     st.write(f"• {error}")
 
 
+def _show_runalyze_health_import(athlete_id, athlete_name):
+    st.markdown("### Runalyze health data")
+    st.write(
+        "Upload Runalyze’s combined health CSV to connect nightly HRV, "
+        "resting heart rate and sleep to Recovery Coach. The standalone HRV "
+        "CSV is also accepted."
+    )
+    st.caption(
+        "Health evidence is stored separately from activities, remains assigned "
+        "to one athlete and never changes an approved Training Block automatically."
+    )
+    uploaded_file = st.file_uploader(
+        "Upload Runalyze combined health or HRV CSV",
+        type=["csv"],
+        key="runalyze_health_upload",
+    )
+    if uploaded_file is None:
+        st.info(
+            "In Runalyze, download Combined health data when possible. It contains "
+            "more useful recovery context than the HRV-only export."
+        )
+        return
+    try:
+        frame = pd.read_csv(uploaded_file)
+    except Exception as error:
+        st.error(f"The health CSV could not be read: {error}")
+        return
+    parsed = parse_runalyze_health_rows(frame.to_dict(orient="records"))
+    if not parsed.records:
+        st.error(parsed.issues[0] if parsed.issues else "No usable health rows were found.")
+        return
+
+    records = parsed.records
+    hrv_count = sum(record.hrv_value is not None for record in records)
+    resting_count = sum(record.resting_hr is not None for record in records)
+    sleep_count = sum(record.sleep_duration_min is not None for record in records)
+    dates = [record.health_date for record in records]
+    kind = "Combined health" if parsed.file_kind == "combined_health" else "HRV only"
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Usable health days", f"{len(records):,}")
+    c2.metric("HRV readings", f"{hrv_count:,}")
+    c3.metric("Resting-HR readings", f"{resting_count:,}")
+    c4.metric("Sleep records", f"{sleep_count:,}")
+    st.success(
+        f"{kind} export ready for {athlete_name}: {dates[0]} to {dates[-1]}."
+    )
+    if parsed.skipped:
+        st.info(
+            f"{parsed.skipped:,} row(s) without supported recovery evidence will be skipped."
+        )
+    if parsed.issues:
+        with st.expander(f"Rows needing review ({len(parsed.issues):,})"):
+            for issue in parsed.issues:
+                st.write(f"• {issue}")
+    st.info(
+        "Repeated uploads are safe. Matching dates are counted as duplicates; "
+        "newly available values enrich the existing day."
+    )
+    confirmation = st.checkbox(
+        f"I confirm this health export belongs to {athlete_name}.",
+        key="runalyze_health_confirmation",
+    )
+    if st.button(
+        "Import Runalyze Health Data",
+        type="primary",
+        disabled=not confirmation,
+        use_container_width=True,
+    ):
+        with st.spinner(f"Importing recovery evidence into {athlete_name}…"):
+            result = import_runalyze_health_records(
+                records,
+                athlete_id=athlete_id,
+            )
+        st.cache_data.clear()
+        st.success(f"Runalyze health import complete for {athlete_name}.")
+        columns = st.columns(5)
+        columns[0].metric("New days", result.imported)
+        columns[1].metric("Enriched", result.enriched)
+        columns[2].metric("Duplicates", result.duplicates)
+        columns[3].metric("Errors", len(result.errors))
+        columns[4].metric(
+            f"{athlete_name} health days",
+            get_athlete_health_count(athlete_id),
+        )
+        if result.errors:
+            with st.expander(f"Import errors ({len(result.errors):,})"):
+                for error in result.errors:
+                    st.write(f"• {error}")
+
+
 def show_import_page():
     st.title("📥 Import")
 
@@ -374,12 +469,16 @@ def show_import_page():
 
     import_type = st.radio(
         "Import type",
-        ["Runalyze CSV", "Garmin FIT / ZIP"],
+        ["Runalyze CSV", "Runalyze Health CSV", "Garmin FIT / ZIP"],
         horizontal=True,
     )
 
     if import_type == "Garmin FIT / ZIP":
         _show_garmin_import(athlete_id, athlete_name)
+        return
+
+    if import_type == "Runalyze Health CSV":
+        _show_runalyze_health_import(athlete_id, athlete_name)
         return
 
     uploaded_file = st.file_uploader(

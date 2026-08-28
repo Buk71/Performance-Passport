@@ -10,6 +10,7 @@ from ui.training_block_navigation import read_training_block_week_request
 from ui.coaching_navigation import read_coaching_team_request
 from ui.training_coach_navigation import read_training_coach_request
 from ui.nutrition_coach_navigation import read_nutrition_coach_request
+from ui.recovery_coach_navigation import read_recovery_coach_request
 
 
 PRIMARY_NAVIGATION = [
@@ -24,6 +25,7 @@ PRIMARY_NAVIGATION = [
     "Goals",
     "Training Blocks",
     "Fuel Planner",
+    "Recovery Coach",
     "Passport",
     "Learning",
 ]
@@ -96,6 +98,8 @@ def show_sidebar():
         requested_page = "Next Run"
     elif read_nutrition_coach_request(st.query_params) is not None:
         requested_page = "Fuel Planner"
+    elif read_recovery_coach_request(st.query_params) is not None:
+        requested_page = "Recovery Coach"
     elif read_activity_review_request(st.query_params) is not None:
         requested_page = "Activities"
     elif read_training_block_week_request(st.query_params) is not None:

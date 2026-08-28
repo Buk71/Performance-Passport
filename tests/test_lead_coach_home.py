@@ -124,12 +124,14 @@ def test_lead_coach_home_has_responsive_premium_layout():
     assert '--display:"Avenir Next"' in source
     assert "def _icon_markup" in source
     assert "<svg class=\"lc-icon\"" not in source
+    assert "CSS line icons" in source
+    assert ".lc-icon-nutrition" in source
     assert ".lc-coach-briefing h2,.lc-daily h2 {{ color:#fff!important; }}" in source
     assert "font-weight:550!important" in source
     assert ".lc-opinion-bottom {{" in source
-    assert "font-size:11px; }}" in source
-    assert ".lc-matrix-note {{ margin-top:11px;" in source
-    assert "font-size:12px; line-height:1.45;" in source
+    assert "font-size:12px; }}" in source
+    assert ".lc-matrix-note {{ margin-top:12px;" in source
+    assert "font-size:13px; line-height:1.5;" in source
     assert "@media (max-width:1180px)" in source
     assert "@media (max-width:760px)" in source
     assert "Your potential in real conditions." in source

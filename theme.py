@@ -39,6 +39,7 @@ def inject_global_theme():
         f"""
         <style>
         :root {{
+            color-scheme: light;
             --pp-background: {BACKGROUND};
             --pp-sidebar: {SIDEBAR_BACKGROUND};
             --pp-card: {CARD_BACKGROUND};
@@ -281,17 +282,77 @@ def inject_global_theme():
 
         [data-testid="stSidebar"] .stRadio label:nth-of-type(5),
         [data-testid="stSidebar"] .stRadio label:nth-of-type(9),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(14) {{
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(15) {{
             margin-top: 1.42rem;
+        }}
+
+        .stApp,
+        [data-baseweb="select"],
+        [data-baseweb="input"],
+        [data-baseweb="textarea"] {{
+            color-scheme: light !important;
+        }}
+
+        /* Safari can retain dark-form text inside BaseWeb's generated value
+           container even when the select itself has a light colour scheme.
+           Target every rendered athlete-name descendant, then restore the
+           arrow colour explicitly. */
+        [data-testid="stSelectbox"] [data-baseweb="select"],
+        [data-testid="stSelectbox"] [data-baseweb="select"] > div {{
+            color: #10263D !important;
+            background: #FFFFFF !important;
+            -webkit-text-fill-color: #10263D !important;
+        }}
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] div,
+        [data-testid="stSelectbox"] [data-baseweb="select"] span,
+        [data-testid="stSelectbox"] [data-baseweb="select"] p,
+        [data-testid="stSelectbox"] [data-baseweb="select"] input {{
+            color: #10263D !important;
+            -webkit-text-fill-color: #10263D !important;
+            opacity: 1 !important;
+        }}
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] svg {{
+            color: #536576 !important;
+            fill: #536576 !important;
+            -webkit-text-fill-color: initial !important;
         }}
 
         [data-baseweb="select"] > div,
         [data-baseweb="input"] > div,
         [data-baseweb="textarea"] > div {{
-            color: var(--pp-text);
-            background: var(--pp-card);
-            border-color: var(--pp-border);
+            color: #10263D !important;
+            background: #FFFFFF !important;
+            border-color: var(--pp-border) !important;
             border-radius: 11px;
+        }}
+
+        [data-baseweb="select"] span,
+        [data-baseweb="select"] input,
+        [data-baseweb="input"] input,
+        [data-baseweb="textarea"] textarea {{
+            color: #10263D !important;
+            -webkit-text-fill-color: #10263D !important;
+            caret-color: #10263D !important;
+        }}
+
+        [data-baseweb="select"] svg,
+        [data-baseweb="input"] svg {{
+            color: #536576 !important;
+            fill: currentColor !important;
+        }}
+
+        [role="listbox"],
+        [role="option"] {{
+            color: #10263D !important;
+            background: #FFFFFF !important;
+        }}
+
+        [role="option"]:hover,
+        [role="option"][aria-selected="true"] {{
+            color: #10263D !important;
+            background: #F3EFE8 !important;
         }}
 
         [data-baseweb="select"] > div:focus-within,
@@ -838,7 +899,7 @@ def inject_global_theme():
                 display: none;
             }}
         }}
-        
+
         /* PERFORMANCE PASSPORT DESIGN SYSTEM v1 */
         :root {{
             --pp-ink: #10263D;

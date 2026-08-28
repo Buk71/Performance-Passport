@@ -21,6 +21,7 @@ from ui.goals import show_goals_page
 from ui.sidebar import show_sidebar
 from ui.training_blocks import show_training_blocks_page
 from ui.fuel_planner import show_fuel_planner_page
+from ui.recovery_coach import show_recovery_coach_page
 from ui.welcome import product_entry_granted, show_welcome_page
 from ui.settings import show_settings_page
 
@@ -73,6 +74,9 @@ elif page == "Training Blocks":
 
 elif page == "Fuel Planner":
     show_fuel_planner_page()
+
+elif page == "Recovery Coach":
+    show_recovery_coach_page()
 
 elif page == "Hall of Fame":
     show_hall_of_fame_page()

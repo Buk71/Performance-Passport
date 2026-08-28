@@ -269,18 +269,19 @@ def build_training_coach_html(
             .tc-execution-grid article:nth-child(2) {{ background:var(--navy); color:#fff; }}
             .tc-execution-grid .tc-mistake {{ background:#fff1e9; }}
             .tc-execution-grid span {{ color:#5f7b75; font-size:10px; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }}
-            .tc-execution-grid article:nth-child(2) span {{ color:#8ee2c4; }}
+            .tc-execution-grid article:nth-child(2) span {{ color:#8ee2c4!important; }}
+            .tc-execution-grid article:nth-child(2) h3 {{ color:#fff!important; }}
             .tc-execution-grid h3 {{ margin:9px 0 0; font-size:16px; line-height:1.4; }}
             .tc-source {{ color:#718391; font-size:11px; font-weight:750; text-align:right; }}
             .tc-why-grid {{ display:grid; grid-template-columns:.85fr 1.15fr; gap:18px; margin-top:22px; }}
             .tc-why-grid>ul {{ padding:21px 21px 21px 38px; border-radius:17px; background:#faf8f4; }}
             .tc-history {{ padding:22px; border-radius:18px; background:var(--navy); color:#fff; }}
             .tc-history>span {{ color:#8ee2c4; font-size:10px; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }}
-            .tc-history>h3 {{ margin:9px 0 17px; color:#dce5eb; font-size:15px; line-height:1.45; }}
+            .tc-history>h3 {{ margin:9px 0 17px; color:#dce5eb!important; font-size:15px; line-height:1.45; }}
             .tc-evidence-row {{ display:grid; grid-template-columns:1fr auto auto; gap:13px; padding:10px 0; border-top:1px solid rgba(255,255,255,.12); }}
             .tc-evidence-row strong,.tc-evidence-row span {{ display:block; }}
-            .tc-evidence-row strong {{ font-size:11px; }} .tc-evidence-row span {{ margin-top:3px; color:#97aab7; font-size:9px; }}
-            .tc-muted {{ color:#adc0cc; font-size:12px; }}
+            .tc-evidence-row strong {{ color:#fff!important; font-size:11px; }} .tc-evidence-row span {{ margin-top:3px; color:#aebfca!important; font-size:10px; }}
+            .tc-muted {{ color:#c2d1da!important; font-size:12px; }}
             .tc-support-grid {{ display:grid; grid-template-columns:1.15fr .85fr; gap:13px; padding:0; border:0; background:transparent; box-shadow:none; }}
             .tc-support-grid>article {{ padding:28px; border:1px solid #ded8cf; border-radius:22px; background:#fff; box-shadow:0 14px 36px rgba(36,44,50,.065); }}
             .tc-support-grid h2 {{ font-size:27px; }}
