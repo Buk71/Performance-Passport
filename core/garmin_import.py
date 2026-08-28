@@ -534,6 +534,33 @@ def _raw_identity(
     )
 
 
+def known_garmin_activity_ids(athlete_id: int) -> set[str]:
+    """Return Garmin IDs already represented by exactly one athlete."""
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            """
+            SELECT source_activity_id, raw_json
+            FROM activities
+            WHERE athlete_id = ?
+            """,
+            (int(athlete_id),),
+        ).fetchall()
+    finally:
+        connection.close()
+    known = set()
+    for source_activity_id, raw_json in rows:
+        source_text = str(source_activity_id or "")
+        if source_text.startswith("garmin_") and source_text[7:]:
+            known.add(source_text[7:])
+        _, _, garmin_id, runalyze_external_id = _raw_identity(raw_json)
+        if garmin_id:
+            known.add(str(garmin_id))
+        if runalyze_external_id:
+            known.add(str(runalyze_external_id))
+    return known
+
+
 def _runalyze_environment(raw_json_text: str | None) -> dict[str, float]:
     """Return weather-adjusted environment values retained by Runalyze.
 

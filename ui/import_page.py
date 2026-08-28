@@ -1,3 +1,4 @@
+import datetime
 import json
 import sqlite3
 
@@ -14,8 +15,20 @@ from core.garmin_import import (
     import_garmin_activities,
     parse_fit_payloads,
 )
+from core.garmin_connect import (
+    GarminConnectPrototypeError,
+    begin_login,
+    complete_mfa,
+    connect_with_saved_tokens,
+    dependency_available,
+    download_original_activities,
+    fetch_garmin_preview,
+    has_saved_connection,
+)
 from core.runalyze_health import (
+    GARMIN_CONNECT_HEALTH_SOURCE,
     get_athlete_health_count,
+    import_health_records,
     import_runalyze_health_records,
     parse_runalyze_health_rows,
 )
@@ -346,6 +359,228 @@ def _show_garmin_import(athlete_id, athlete_name):
                     st.write(f"• {error}")
 
 
+def _garmin_state_key(label, athlete_id):
+    return f"pp_garmin_connect_{label}_{int(athlete_id)}"
+
+
+def _safe_garmin_error(error):
+    message = " ".join(str(error or "Garmin Connect request failed.").split())
+    return message[:500]
+
+
+def _store_garmin_login(result, athlete_id):
+    st.session_state[_garmin_state_key("client", athlete_id)] = result.client
+    if result.account_name:
+        st.session_state[_garmin_state_key("account", athlete_id)] = (
+            result.account_name
+        )
+
+
+def _show_garmin_connect(athlete_id, athlete_name):
+    st.markdown("### Experimental Garmin Connect")
+    st.write(
+        "Preview running activities and recent recovery data, then confirm the "
+        "destination athlete before anything is imported."
+    )
+    st.warning(
+        "Private prototype: this uses the unofficial python-garminconnect "
+        "connector, not Garmin's commercial API. It makes read-only data calls."
+    )
+    st.caption(
+        "Your Garmin password is used only for the sign-in request and is not "
+        "stored by Performance Passport. Persistent session tokens are kept "
+        "locally for this athlete in `.garmin_tokens/`, which is excluded from Git."
+    )
+    if not dependency_available():
+        st.error(
+            "Garmin Connect support is not installed. Run "
+            "`python -m pip install -r requirements.txt`, restart the app and "
+            "return to this page."
+        )
+        return
+
+    client_key = _garmin_state_key("client", athlete_id)
+    account_key = _garmin_state_key("account", athlete_id)
+    mfa_key = _garmin_state_key("mfa", athlete_id)
+    preview_key = _garmin_state_key("preview", athlete_id)
+
+    if st.session_state.get(mfa_key) is not None:
+        st.info("Garmin requires a verification code to finish this sign-in.")
+        with st.form(_garmin_state_key("mfa_form", athlete_id), clear_on_submit=True):
+            code = st.text_input("Garmin verification code", type="password")
+            verify = st.form_submit_button("Verify Garmin sign-in", type="primary")
+        if verify:
+            try:
+                result = complete_mfa(
+                    st.session_state[mfa_key], code, athlete_id=athlete_id
+                )
+            except GarminConnectPrototypeError as error:
+                st.error(_safe_garmin_error(error))
+            else:
+                _store_garmin_login(result, athlete_id)
+                st.session_state.pop(mfa_key, None)
+                st.rerun()
+        return
+
+    client = st.session_state.get(client_key)
+    if client is None and has_saved_connection(athlete_id):
+        if st.button(
+            f"Use saved Garmin connection for {athlete_name}",
+            use_container_width=True,
+        ):
+            try:
+                result = connect_with_saved_tokens(athlete_id=athlete_id)
+            except GarminConnectPrototypeError as error:
+                st.error(_safe_garmin_error(error))
+            else:
+                _store_garmin_login(result, athlete_id)
+                st.rerun()
+
+    client = st.session_state.get(client_key)
+    if client is None:
+        with st.form(_garmin_state_key("login_form", athlete_id), clear_on_submit=True):
+            email = st.text_input("Garmin email")
+            password = st.text_input("Garmin password", type="password")
+            connect = st.form_submit_button("Connect read-only", type="primary")
+        if connect:
+            try:
+                result = begin_login(email, password, athlete_id=athlete_id)
+            except GarminConnectPrototypeError as error:
+                st.error(_safe_garmin_error(error))
+            else:
+                if result.needs_mfa:
+                    st.session_state[mfa_key] = result.client
+                else:
+                    _store_garmin_login(result, athlete_id)
+                st.rerun()
+        return
+
+    account_name = st.session_state.get(account_key, "Garmin account")
+    c1, c2 = st.columns(2)
+    c1.success(f"Connected read-only: **{account_name}**")
+    c2.info(f"Selected destination: **{athlete_name}**")
+
+    history_days = st.selectbox(
+        "Running activity history to preview",
+        options=(14, 30, 90, 365),
+        index=1,
+        format_func=lambda days: f"Last {days} days",
+    )
+    if st.button("Preview Garmin data", type="primary", use_container_width=True):
+        end_date = datetime.date.today()
+        start_date = end_date - datetime.timedelta(days=int(history_days) - 1)
+        try:
+            with st.spinner("Reading Garmin activities and recovery data…"):
+                preview = fetch_garmin_preview(
+                    client,
+                    athlete_id=athlete_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+        except GarminConnectPrototypeError as error:
+            st.error(_safe_garmin_error(error))
+        else:
+            st.session_state[preview_key] = preview
+
+    preview = st.session_state.get(preview_key)
+    if preview is None:
+        st.info(
+            "Preview first. Performance Passport will not download or import "
+            "activity files until you confirm the account and athlete."
+        )
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Runs found", len(preview.activities))
+    c2.metric("New runs", len(preview.new_activities))
+    c3.metric(
+        "Already represented",
+        len(preview.activities) - len(preview.new_activities),
+    )
+    c4.metric("Recovery days", len(preview.health_records))
+
+    if preview.activities:
+        table = pd.DataFrame(
+            {
+                "Date": [item.activity_date for item in preview.activities[:50]],
+                "Run": [item.title for item in preview.activities[:50]],
+                "Distance (km)": [
+                    round(item.distance_m / 1000.0, 2)
+                    if item.distance_m is not None
+                    else None
+                    for item in preview.activities[:50]
+                ],
+                "Time (min)": [
+                    round(item.duration_s / 60.0, 1)
+                    if item.duration_s is not None
+                    else None
+                    for item in preview.activities[:50]
+                ],
+                "Status": [
+                    "Already represented" if item.already_imported else "New"
+                    for item in preview.activities[:50]
+                ],
+            }
+        )
+        st.dataframe(table, hide_index=True, use_container_width=True)
+    if preview.issues:
+        with st.expander(f"Preview notes ({len(preview.issues):,})"):
+            for issue in preview.issues:
+                st.write(f"• {_safe_garmin_error(issue)}")
+
+    confirmation = st.checkbox(
+        f"I confirm Garmin account {account_name} belongs to {athlete_name} "
+        "and this preview should be imported only to this athlete.",
+        key=_garmin_state_key("confirmation", athlete_id),
+    )
+    has_importable_data = bool(preview.new_activities or preview.health_records)
+    if st.button(
+        f"Import preview into {athlete_name}",
+        type="primary",
+        disabled=not confirmation or not has_importable_data,
+        use_container_width=True,
+    ):
+        with st.spinner(f"Importing confirmed Garmin data into {athlete_name}…"):
+            downloaded = download_original_activities(
+                client, preview.new_activities
+            )
+            if downloaded.uploads:
+                discovery = discover_fit_payloads(downloaded.uploads)
+                parsed = parse_fit_payloads(discovery.payloads)
+                activity_result = import_garmin_activities(
+                    parsed.activities,
+                    athlete_id=athlete_id,
+                    athlete_name=athlete_name,
+                    running_only=True,
+                )
+                activity_issues = (
+                    *downloaded.issues,
+                    *discovery.issues,
+                    *parsed.issues,
+                    *activity_result.errors,
+                )
+            else:
+                activity_result = None
+                activity_issues = downloaded.issues
+            health_result = import_health_records(
+                preview.health_records,
+                athlete_id=athlete_id,
+                source=GARMIN_CONNECT_HEALTH_SOURCE,
+            )
+        st.cache_data.clear()
+        st.success(f"Confirmed Garmin data imported only into {athlete_name}.")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("New runs", activity_result.imported if activity_result else 0)
+        c2.metric("Runs enriched", activity_result.enriched if activity_result else 0)
+        c3.metric("New health days", health_result.imported)
+        c4.metric("Health days enriched", health_result.enriched)
+        all_errors = (*activity_issues, *health_result.errors)
+        if all_errors:
+            with st.expander(f"Import notes ({len(all_errors):,})"):
+                for error in all_errors:
+                    st.write(f"• {_safe_garmin_error(error)}")
+
+
 def _show_runalyze_health_import(athlete_id, athlete_name):
     st.markdown("### Runalyze health data")
     st.write(
@@ -469,9 +704,18 @@ def show_import_page():
 
     import_type = st.radio(
         "Import type",
-        ["Runalyze CSV", "Runalyze Health CSV", "Garmin FIT / ZIP"],
+        [
+            "Runalyze CSV",
+            "Runalyze Health CSV",
+            "Garmin FIT / ZIP",
+            "Garmin Connect (Experimental)",
+        ],
         horizontal=True,
     )
+
+    if import_type == "Garmin Connect (Experimental)":
+        _show_garmin_connect(athlete_id, athlete_name)
+        return
 
     if import_type == "Garmin FIT / ZIP":
         _show_garmin_import(athlete_id, athlete_name)

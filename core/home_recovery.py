@@ -140,7 +140,7 @@ def compose_home_recovery_signal(
             "pain—and symptoms of illness—need appropriate assessment."
         )
         reasons = (*reported, *health_flags, *training_flags)[:3]
-    elif reported or health_flags or training_flags or (health_ready and checkin_required):
+    elif reported or health_flags or training_flags:
         level = "amber"
         label = "Check in"
         headline = "How do you feel today?"
@@ -149,8 +149,6 @@ def compose_home_recovery_signal(
             "if the concern persists."
         )
         reasons_list = [*reported, *health_flags, *training_flags]
-        if checkin_required:
-            reasons_list.append("Today’s athlete check-in is missing")
         reasons = tuple(reasons_list[:3])
     elif not health_ready:
         return HomeRecoverySignal(
@@ -182,8 +180,8 @@ def compose_home_recovery_signal(
         label = "On track"
         headline = "Follow today’s plan."
         guidance = (
-            "Current recovery evidence supports the planned session. Continue to "
-            "respect unusual fatigue, illness or pain."
+            "Current recovery trends support the planned session. How you feel "
+            "takes precedence—adjust for unusual fatigue, illness or pain."
         )
         reasons = _positive_reasons(detail)
 
@@ -206,7 +204,9 @@ def compose_home_recovery_signal(
         latest_health_date=detail.health.latest_date,
         explanation=(
             "The signal combines personal health trends, today’s athlete report, "
-            "completed load and the approved week. No single HRV reading can turn it red."
+            "completed load and the approved week. Green means no adverse trend in "
+            "the available metrics, not a guarantee; how the athlete feels takes "
+            "precedence. No single HRV reading can turn it red."
         ),
     )
 

@@ -530,7 +530,11 @@ def build_recovery_health_signal(
         FROM athlete_health_daily
         WHERE athlete_id = ?
           AND date(health_date) BETWEEN date(?, '-60 days') AND date(?)
-        ORDER BY health_date
+        ORDER BY health_date,
+                 CASE source
+                     WHEN 'garmin_connect_health' THEN 0
+                     ELSE 1
+                 END
         """,
         (int(athlete_id), today.isoformat(), today.isoformat()),
     ).fetchall()
@@ -538,7 +542,21 @@ def build_recovery_health_signal(
     if not rows:
         return _empty_health()
 
-    dated = [(_date(row[0]), row) for row in rows]
+    # More than one connector can provide the same calendar day. Prefer the
+    # direct Garmin row, then fill any missing values from another source so
+    # one night is never counted twice in the personal baseline.
+    merged_days = {}
+    for row in rows:
+        key = str(row[0])
+        if key not in merged_days:
+            merged_days[key] = list(row)
+            continue
+        current = merged_days[key]
+        for index in range(2, len(current)):
+            if current[index] is None and row[index] is not None:
+                current[index] = row[index]
+    merged_rows = [tuple(row) for row in merged_days.values()]
+    dated = [(_date(row[0]), row) for row in merged_rows]
     dated = [(day, row) for day, row in dated if day is not None]
     if not dated:
         return _empty_health()
@@ -605,7 +623,7 @@ def build_recovery_health_signal(
         confidence = "Moderate"
     else:
         confidence = "Limited"
-    source = str(rows[-1][1] or "health data").replace("_", " ").title()
+    source = str(merged_rows[-1][1] or "health data").replace("_", " ").title()
     freshness = "current" if stale_days <= 1 else f"last updated {stale_days} days ago"
     return RecoveryHealthSignal(
         available=True,

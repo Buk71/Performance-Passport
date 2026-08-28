@@ -18,6 +18,7 @@ from core.database import create_athlete_health_daily_table, get_connection
 
 
 RUNALYZE_HEALTH_SOURCE = "runalyze_health_csv"
+GARMIN_CONNECT_HEALTH_SOURCE = "garmin_connect_health"
 
 
 @dataclass(frozen=True)
@@ -258,6 +259,23 @@ def import_runalyze_health_records(
     athlete_id: int,
 ) -> RunalyzeHealthImportResult:
     """Insert or enrich one athlete's daily health rows idempotently."""
+    return import_health_records(
+        records,
+        athlete_id=athlete_id,
+        source=RUNALYZE_HEALTH_SOURCE,
+    )
+
+
+def import_health_records(
+    records: Iterable[RunalyzeHealthRecord],
+    *,
+    athlete_id: int,
+    source: str,
+) -> RunalyzeHealthImportResult:
+    """Insert or enrich source-labelled health evidence for one athlete."""
+    clean_source = str(source or "").strip()
+    if not clean_source:
+        raise ValueError("Health source is required.")
     connection = get_connection()
     cursor = connection.cursor()
     create_athlete_health_daily_table(cursor)
@@ -279,7 +297,7 @@ def import_runalyze_health_records(
                 FROM athlete_health_daily
                 WHERE athlete_id = ? AND health_date = ? AND source = ?
                 """,
-                (int(athlete_id), record.health_date, RUNALYZE_HEALTH_SOURCE),
+                (int(athlete_id), record.health_date, clean_source),
             ).fetchone()
             values = [getattr(record, field) for field in _UPDATE_FIELDS]
             if existing is None:
@@ -294,7 +312,7 @@ def import_runalyze_health_records(
                     (
                         int(athlete_id),
                         record.health_date,
-                        RUNALYZE_HEALTH_SOURCE,
+                        clean_source,
                         *values,
                         record.raw_json,
                     ),
@@ -326,7 +344,7 @@ def import_runalyze_health_records(
                     _merged_raw(existing[-1], record.raw_json),
                     int(athlete_id),
                     record.health_date,
-                    RUNALYZE_HEALTH_SOURCE,
+                    clean_source,
                 ),
             )
             enriched += 1

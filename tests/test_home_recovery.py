@@ -43,13 +43,14 @@ def test_home_recovery_is_grey_when_baseline_and_checkin_are_missing():
     assert "never treated as green" in signal.explanation
 
 
-def test_stable_health_without_today_checkin_is_amber_not_green():
+def test_stable_health_without_today_checkin_is_green_with_feeling_override():
     signal = compose_home_recovery_signal(_detail(health=_health()))
 
-    assert signal.level == "amber"
-    assert signal.headline == "How do you feel today?"
+    assert signal.level == "green"
+    assert signal.headline == "Follow today’s plan."
     assert signal.checkin_required is True
-    assert any("check-in is missing" in reason for reason in signal.reasons)
+    assert "How you feel" in signal.guidance
+    assert "takes precedence" in signal.explanation
 
 
 def test_stable_health_and_clear_athlete_report_are_green():

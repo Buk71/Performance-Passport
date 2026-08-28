@@ -2,3 +2,4 @@ streamlit
 pandas
 fitparse
 watchdog
+garminconnect==0.3.11

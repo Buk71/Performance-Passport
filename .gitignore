@@ -17,3 +17,6 @@ database/performance_passport.db
 
 # SQLite
 *.sqlite3
+
+# Experimental Garmin Connect tokens
+.garmin_tokens/

@@ -111,5 +111,8 @@ def test_health_import_is_idempotent_enriches_missing_values_and_isolates_athlet
 def test_import_page_exposes_health_csv_without_replacing_activity_import():
     source = (ROOT / "ui" / "import_page.py").read_text(encoding="utf-8")
 
-    assert '["Runalyze CSV", "Runalyze Health CSV", "Garmin FIT / ZIP"]' in source
+    assert '"Runalyze CSV"' in source
+    assert '"Runalyze Health CSV"' in source
+    assert '"Garmin FIT / ZIP"' in source
+    assert '"Garmin Connect (Experimental)"' in source
     assert "Repeated uploads are safe" in source
