@@ -7,6 +7,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.training_block_designer import (
     WEEKDAYS,
     TrainingBlockDesign,
@@ -46,22 +50,24 @@ TRAINING_BLOCK_CACHE_SCHEMA = 1
 OPERATIONAL_BLOCK_CACHE_SCHEMA = 2
 
 
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_foundation(
     athlete_id: int,
     schema: int,
+    data_version,
 ) -> tuple[TrainingHistoryProfile | None, GoalHierarchy]:
-    del schema
+    del schema, data_version
     return build_training_history_profile(athlete_id), build_goal_hierarchy(athlete_id)
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_operational_week(
     athlete_id: int,
     reference_date: datetime.date,
     schema: int,
+    data_version,
 ) -> OperationalWeek | None:
-    del schema
+    del schema, data_version
     return build_operational_block_week(athlete_id, today=reference_date)
 
 
@@ -573,7 +579,12 @@ def show_training_blocks_page():
     if athlete_id is None:
         st.info("Add an athlete before designing a Training Block.")
         return
-    history, hierarchy = _cached_foundation(athlete_id, TRAINING_BLOCK_CACHE_SCHEMA)
+    data_version = get_athlete_cache_version(athlete_id)
+    history, hierarchy = _cached_foundation(
+        athlete_id,
+        TRAINING_BLOCK_CACHE_SCHEMA,
+        data_version,
+    )
     if hierarchy.primary is None:
         st.warning("Choose one Active Primary goal in Goals before designing a Training Block.")
         return
@@ -592,6 +603,7 @@ def show_training_blocks_page():
             athlete_id,
             datetime.date.today(),
             OPERATIONAL_BLOCK_CACHE_SCHEMA,
+            data_version,
         )
         if operational is not None:
             st.html(build_operational_week_html(operational))

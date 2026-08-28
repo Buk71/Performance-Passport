@@ -376,6 +376,17 @@ def _store_garmin_login(result, athlete_id):
         )
 
 
+def _garmin_import_changed(activity_result, health_result) -> bool:
+    """Return whether an import wrote evidence that invalidates coaching caches."""
+    activity_changes = (
+        int(activity_result.imported) + int(activity_result.enriched)
+        if activity_result is not None
+        else 0
+    )
+    health_changes = int(health_result.imported) + int(health_result.enriched)
+    return bool(activity_changes or health_changes)
+
+
 def _show_garmin_connect(athlete_id, athlete_name):
     st.markdown("### Experimental Garmin Connect")
     st.write(
@@ -567,8 +578,15 @@ def _show_garmin_connect(athlete_id, athlete_name):
                 athlete_id=athlete_id,
                 source=GARMIN_CONNECT_HEALTH_SOURCE,
             )
-        st.cache_data.clear()
-        st.success(f"Confirmed Garmin data imported only into {athlete_name}.")
+        changed = _garmin_import_changed(activity_result, health_result)
+        if changed:
+            st.cache_data.clear()
+            st.success(f"Confirmed Garmin data imported only into {athlete_name}.")
+        else:
+            st.info(
+                f"No new Garmin evidence was added for {athlete_name}; the "
+                "preview is already represented in the database."
+            )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("New runs", activity_result.imported if activity_result else 0)
         c2.metric("Runs enriched", activity_result.enriched if activity_result else 0)

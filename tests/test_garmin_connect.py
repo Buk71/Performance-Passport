@@ -122,6 +122,35 @@ def test_health_transport_maps_nightly_hrv_resting_hr_and_sleep():
     assert record.sleep_quality_100 == 84
 
 
+def test_health_transport_stops_repeating_a_rejected_sleep_request():
+    calls = []
+
+    class Client:
+        def get_hrv_data_range(self, _start, _end):
+            return {
+                "hrvSummaries": [
+                    {"calendarDate": "2026-08-27", "lastNightAvg": 67}
+                ]
+            }
+
+        def get_rhr_daily(self, _start, _end):
+            return {}
+
+        def get_sleep_data(self, day):
+            calls.append(day)
+            raise RuntimeError("Display name is not set")
+
+    fetched = fetch_garmin_health_records(
+        Client(),
+        start_date=TODAY - datetime.timedelta(days=9),
+        end_date=TODAY,
+    )
+
+    assert len(calls) == garmin_connect.MAX_CONSECUTIVE_SLEEP_FAILURES
+    assert fetched.records[0].health_date == TODAY.isoformat()
+    assert "Sleep was unavailable for 10 of 10 requested day(s)." in fetched.issues
+
+
 def test_preview_marks_only_the_selected_athletes_existing_garmin_ids(
     tmp_path, monkeypatch
 ):

@@ -14,6 +14,10 @@ from core.activity_review import (
     build_activity_review,
     list_review_activities,
 )
+from core.workout_coach import (
+    WorkoutCoachReview,
+    build_workout_coach_review,
+)
 from core.database import (
     clear_activity_override,
     get_activity_overrides,
@@ -26,6 +30,7 @@ from ui.activity_navigation import (
 )
 from ui import athlete_selection
 from ui.athlete_selection import render_athlete_selector
+from ui.training_coach_navigation import training_coach_url
 
 
 WINDOWS = {
@@ -105,6 +110,21 @@ def _cached_review(
 ) -> ActivityReview | None:
     del data_version
     return build_activity_review(athlete_id, activity_id)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _cached_workout_coach(
+    athlete_id: int,
+    activity_id: int,
+    data_version: tuple[int, int],
+    today_iso: str,
+) -> WorkoutCoachReview | None:
+    del data_version
+    return build_workout_coach_review(
+        athlete_id,
+        activity_id,
+        today=datetime.date.fromisoformat(today_iso),
+    )
 
 
 def _date_text(value: str | None) -> str:
@@ -204,6 +224,134 @@ def _header_html(review: ActivityReview) -> str:
                 <strong>{review.classification_confidence:.0%}</strong>
                 <small>{_safe(review.confidence_label)}</small>
             </div>
+        </section>
+    """
+
+
+def build_workout_coach_hero_html(detail: WorkoutCoachReview) -> str:
+    review = detail.activity
+    status = _status_class(review)
+    prediction = detail.prediction
+    execution = (
+        f" · execution {prediction.execution_score:.0f}/100"
+        if prediction.execution_score is not None else ""
+    )
+    return f"""
+        <section class="wc-hero">
+            <div class="wc-hero-main">
+                <div class="wc-kicker"><i>WC</i> YOUR WORKOUT COACH · {_safe(_date_text(review.activity_date))}</div>
+                <h1>{_safe(review.title)}</h1>
+                <p class="wc-hero-purpose">{_safe(review.coaching_headline)}</p>
+                <p class="wc-hero-copy">{_safe(review.coaching_detail)}</p>
+                <div class="wc-hero-meta">
+                    <span>{_safe(review.purpose_label)}</span>
+                    <span>{_safe(review.route_name or 'Route unavailable')}</span>
+                    <span>{_safe(review.source or 'Imported activity')}</span>
+                </div>
+            </div>
+            <aside class="wc-hero-verdict">
+                <div class="wc-verdict-label">RECOGNISED PURPOSE</div>
+                <strong>{_safe(_session_display_label(review))}</strong>
+                <div class="wc-confidence {status}">{review.classification_confidence:.0%} · {_safe(review.confidence_label)}</div>
+                <div class="wc-verdict-rule"></div>
+                <div class="wc-verdict-label">PREDICTION STATUS</div>
+                <b>{_safe(prediction.headline)}</b>
+                <small>{prediction.confidence:.0%} evidence confidence{_safe(execution)}</small>
+            </aside>
+        </section>
+    """
+
+
+def build_plan_execution_html(detail: WorkoutCoachReview) -> str:
+    plan = detail.plan
+    alignment_class = f"is-{plan.alignment}"
+    source = " · ".join(
+        value for value in (plan.block_name, plan.week_label) if value
+    ) or "No saved plan for this date"
+    return f"""
+        <section class="wc-section wc-plan">
+            <div class="wc-section-head">
+                <div><div class="wc-section-kicker">PLAN → PERFORMANCE</div><h2>Did the run deliver its intended purpose?</h2></div>
+                <span class="wc-alignment {alignment_class}">{_safe(plan.alignment_label)}</span>
+            </div>
+            <div class="wc-plan-grid">
+                <article>
+                    <div class="wc-card-label">PLANNED</div>
+                    <strong>{_safe(plan.planned_title)}</strong>
+                    <p>{_safe(plan.planned_detail)}</p>
+                </article>
+                <div class="wc-plan-arrow">→</div>
+                <article class="is-performed">
+                    <div class="wc-card-label">PERFORMED</div>
+                    <strong>{_safe(plan.performed_title)}</strong>
+                    <p>{_safe(review_summary(detail.activity))}</p>
+                </article>
+            </div>
+            <div class="wc-plan-note"><strong>{_safe(source)}</strong><span>{_safe(plan.detail)}</span></div>
+        </section>
+    """
+
+
+def review_summary(review: ActivityReview) -> str:
+    if review.workout_description and review.session_type == "structured_workout":
+        return review.workout_description
+    distance, _context = _distance_value(review.distance_km)
+    pace = _pace_value(review.pace_s_per_km)
+    return f"{distance} · {pace} · {review.purpose_label}"
+
+
+def _zone_cards(detail: WorkoutCoachReview) -> str:
+    if not detail.heart_rate.zones:
+        return '<div class="wc-empty">LT1 and LT2 are not available for this athlete yet.</div>'
+    return "".join(
+        f"""
+        <article class="wc-zone {'is-current' if zone.is_current else ''}">
+            <div class="wc-card-label">{_safe(zone.label)}</div>
+            <strong>{_safe(zone.range_text)}</strong>
+            <p>{_safe(zone.purpose)}</p>
+            {'<span>WHOLE-RUN AVERAGE</span>' if zone.is_current else ''}
+        </article>
+        """
+        for zone in detail.heart_rate.zones
+    )
+
+
+def build_workout_intelligence_html(detail: WorkoutCoachReview) -> str:
+    heart_rate = detail.heart_rate
+    prediction = detail.prediction
+    coaches = " · ".join(prediction.coaches) or "Context only"
+    return f"""
+        <div class="wc-intelligence-grid">
+            <section class="wc-section wc-zones">
+                <div class="wc-section-kicker">PERSONAL EFFORT CONTEXT</div>
+                <h2>{_safe(heart_rate.current_label)}</h2>
+                <p class="wc-intro">{_safe(heart_rate.current_detail)}</p>
+                <div class="wc-zone-grid">{_zone_cards(detail)}</div>
+                <div class="wc-audit">LT1/LT2 source: {_safe(heart_rate.source)}. These are coaching boundaries, not a medical assessment.</div>
+            </section>
+            <section class="wc-prediction is-{_safe(prediction.status)}">
+                <div class="wc-section-kicker">WHAT CHANGES IN THE COACHING TEAM?</div>
+                <h2>{_safe(prediction.headline)}</h2>
+                <p>{_safe(prediction.detail)}</p>
+                <div class="wc-prediction-footer"><span>USED BY</span><strong>{_safe(coaches)}</strong><em>{prediction.confidence:.0%} confidence</em></div>
+            </section>
+        </div>
+    """
+
+
+def build_workout_direction_html(detail: WorkoutCoachReview) -> str:
+    direction = detail.next_direction
+    link = html.escape(training_coach_url(detail.athlete_id), quote=True)
+    return f"""
+        <section class="wc-direction">
+            <div class="wc-direction-mark">LC</div>
+            <div>
+                <div class="wc-section-kicker">LEAD COACH · WHAT HAPPENS NEXT</div>
+                <h2>{_safe(direction.timing)} · {_safe(direction.title)}</h2>
+                <p>{_safe(direction.detail)}</p>
+                <small>{_safe(direction.caveat)}</small>
+            </div>
+            <a href="{link}" target="_self">Open Training Coach →</a>
         </section>
     """
 
@@ -445,8 +593,66 @@ def _inject_activity_styles() -> None:
         """
         <style>
             [data-testid="stMainBlockContainer"] { max-width:1450px; }
+            .wc-hero { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,.45fr); overflow:hidden; margin-top:8px; color:#fff!important; background:linear-gradient(135deg,#0b2942,#0d3f53); border:1px solid #214e62; border-radius:24px; box-shadow:0 18px 45px rgba(16,38,61,.14); }
+            .wc-hero * { box-sizing:border-box; }
+            .wc-hero-main { min-height:320px; padding:34px 38px; background:radial-gradient(circle at 92% 4%,rgba(99,182,142,.18),transparent 33%); }
+            .wc-kicker,.wc-section-kicker { display:flex; align-items:center; gap:10px; color:#63d0a1; font-size:12px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+            .wc-kicker i { display:inline-grid; place-items:center; width:39px; height:39px; color:#fff; background:#f05a28; border-radius:11px; font-style:normal; font-size:13px; letter-spacing:0; }
+            .wc-hero h1 { margin:22px 0 0; color:#fff!important; font-size:clamp(38px,4.4vw,64px); line-height:.98; letter-spacing:-.052em; }
+            .wc-hero-purpose { margin:20px 0 0; color:#fff!important; font-size:clamp(19px,2vw,28px); font-weight:650; line-height:1.15; }
+            .wc-hero-copy { max-width:820px; margin:12px 0 0; color:#cfdae2!important; font-size:16px; line-height:1.55; }
+            .wc-hero-meta { display:flex; flex-wrap:wrap; gap:9px; margin-top:24px; }
+            .wc-hero-meta span { padding:7px 11px; color:#e5edf2!important; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.13); border-radius:999px; font-size:12px; font-weight:650; }
+            .wc-hero-verdict { display:flex; flex-direction:column; justify-content:center; padding:30px; color:#10263d!important; background:#fffaf3; }
+            .wc-verdict-label,.wc-card-label { color:#7b8791; font-size:11px; font-weight:820; letter-spacing:.1em; text-transform:uppercase; }
+            .wc-hero-verdict > strong { margin-top:8px; color:#10263d!important; font-size:25px; line-height:1.1; }
+            .wc-confidence { margin-top:9px; color:#3e8e72!important; font-size:13px; font-weight:750; }
+            .wc-confidence.is-moderate { color:#ad6a14!important; }
+            .wc-confidence.is-review { color:#d94d22!important; }
+            .wc-verdict-rule { height:1px; margin:25px 0; background:#e7e1d8; }
+            .wc-hero-verdict b { margin-top:8px; color:#10263d!important; font-size:18px; line-height:1.25; }
+            .wc-hero-verdict small { margin-top:9px; color:#687581!important; font-size:12px; font-weight:650; }
+            .wc-section { margin-top:10px; padding:24px 27px; background:#fff; border:1px solid #e7e1d8; border-radius:19px; box-shadow:0 7px 24px rgba(16,38,61,.04); }
+            .wc-section-head { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+            .wc-section-kicker { color:#3e8e72; }
+            .wc-section h2,.wc-prediction h2,.wc-direction h2 { margin:7px 0 0; color:#10263d!important; font-size:clamp(22px,2.4vw,32px); line-height:1.08; letter-spacing:-.035em; }
+            .wc-alignment { display:inline-flex; padding:7px 10px; color:#3e8e72; background:#eaf6ef; border-radius:999px; font-size:12px; font-weight:800; white-space:nowrap; }
+            .wc-alignment.is-different,.wc-alignment.is-extra { color:#b55d19; background:#fff0e8; }
+            .wc-alignment.is-unplanned { color:#687581; background:#f1eee8; }
+            .wc-plan-grid { display:grid; grid-template-columns:minmax(0,1fr) 42px minmax(0,1fr); gap:12px; align-items:stretch; margin-top:19px; }
+            .wc-plan-grid article { padding:18px; background:#f8f5ef; border:1px solid #ece5da; border-radius:14px; }
+            .wc-plan-grid article.is-performed { background:#f1f8f5; border-color:#cde5da; }
+            .wc-plan-grid strong { display:block; margin-top:7px; color:#10263d; font-size:20px; line-height:1.15; }
+            .wc-plan-grid p,.wc-intro,.wc-prediction p,.wc-direction p { margin:8px 0 0; color:#687581; font-size:14px; line-height:1.5; }
+            .wc-plan-arrow { display:grid; place-items:center; color:#f05a28; font-size:26px; font-weight:500; }
+            .wc-plan-note { display:grid; grid-template-columns:minmax(180px,.35fr) 1fr; gap:18px; margin-top:16px; padding-top:14px; border-top:1px solid #eee8df; }
+            .wc-plan-note strong { color:#10263d; font-size:13px; }
+            .wc-plan-note span { color:#687581; font-size:13px; line-height:1.45; }
+            .wc-intelligence-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr); gap:10px; }
+            .wc-zone-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:18px; }
+            .wc-zone { position:relative; min-height:130px; padding:15px; background:#f8f5ef; border:1px solid #ece5da; border-radius:13px; }
+            .wc-zone.is-current { background:#eaf6ef; border-color:#a9d8c3; box-shadow:inset 0 3px 0 #3e8e72; }
+            .wc-zone strong { display:block; margin-top:7px; color:#10263d; font-size:18px; }
+            .wc-zone p { margin:6px 0 0; color:#687581; font-size:12px; line-height:1.4; }
+            .wc-zone span { display:inline-block; margin-top:9px; color:#3e8e72; font-size:9px; font-weight:850; letter-spacing:.06em; }
+            .wc-audit { margin-top:13px; color:#7b8791; font-size:11px; line-height:1.45; }
+            .wc-empty { margin-top:15px; padding:18px; color:#687581; background:#f8f5ef; border-radius:12px; font-size:13px; }
+            .wc-prediction { margin-top:10px; padding:27px; color:#fff!important; background:linear-gradient(145deg,#0b2942,#0d3f53); border:1px solid #214e62; border-radius:19px; box-shadow:0 9px 26px rgba(16,38,61,.10); }
+            .wc-prediction .wc-section-kicker { color:#63d0a1!important; }
+            .wc-prediction h2 { color:#fff!important; }
+            .wc-prediction p { color:#d1dce3!important; font-size:15px; }
+            .wc-prediction-footer { display:grid; grid-template-columns:1fr; gap:4px; margin-top:25px; padding-top:18px; border-top:1px solid rgba(255,255,255,.16); }
+            .wc-prediction-footer span { color:#8fa7b6!important; font-size:10px; font-weight:800; letter-spacing:.1em; }
+            .wc-prediction-footer strong { color:#fff!important; font-size:15px; }
+            .wc-prediction-footer em { margin-top:4px; color:#63d0a1!important; font-size:12px; font-style:normal; font-weight:750; }
+            .wc-direction { display:grid; grid-template-columns:auto 1fr auto; gap:20px; align-items:center; margin-top:10px; padding:23px 27px; background:linear-gradient(90deg,#fff0e8,#fff 68%); border:1px solid #f0d4c6; border-left:4px solid #f05a28; border-radius:18px; }
+            .wc-direction-mark { display:grid; place-items:center; width:56px; height:56px; color:#fff; background:#10263d; border-radius:15px; font-size:14px; font-weight:800; }
+            .wc-direction small { display:block; margin-top:8px; color:#7b8791; font-size:11px; line-height:1.4; }
+            .wc-direction a { display:inline-flex; padding:12px 16px; color:#fff!important; background:#10263d; border-radius:11px; text-decoration:none!important; font-size:13px; font-weight:800; white-space:nowrap; }
+            .wc-review-divider { display:flex; align-items:center; gap:13px; margin:25px 3px 7px; color:#687581; font-size:11px; font-weight:850; letter-spacing:.12em; }
+            .wc-review-divider::before { content:""; width:31px; height:3px; background:#f05a28; border-radius:999px; }
             .ar-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; padding:18px 20px; background:#fff; border:1px solid #e7e1d8; border-radius:18px; box-shadow:0 7px 22px rgba(16,38,61,.045); }
-            .ar-kicker,.ar-label { color:#7b8791; font-size:10px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+            .ar-kicker,.ar-label { color:#7b8791; font-size:11px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
             .ar-header h1 { margin:5px 0 0; color:#10263d!important; font-size:clamp(24px,3vw,36px); line-height:1.05; letter-spacing:-.035em; }
             .ar-header-meta { margin-top:7px; color:#687581; font-size:12px; font-weight:650; }
             .ar-session-badge { min-width:170px; padding:10px 12px; text-align:right; color:#10263d; background:#eef6f2; border:1px solid #cce4d8; border-radius:13px; }
@@ -466,7 +672,7 @@ def _inject_activity_styles() -> None:
             .ar-panel { padding:15px 16px; background:#fff; border:1px solid #e7e1d8; border-radius:16px; box-shadow:0 5px 18px rgba(16,38,61,.035); }
             .ar-panel-head,.ar-comparison-top { display:flex; justify-content:space-between; align-items:flex-start; gap:15px; }
             .ar-panel h2,.ar-coaching h2 { margin:5px 0 0; color:#10263d!important; font-size:18px; line-height:1.15; letter-spacing:-.025em; }
-            .ar-panel p,.ar-coaching p,.ar-comparison-empty p { margin:7px 0 0; color:#687581; font-size:12px; line-height:1.4; }
+            .ar-panel p,.ar-coaching p,.ar-comparison-empty p { margin:7px 0 0; color:#687581; font-size:13px; line-height:1.5; }
             .ar-mini-badge { display:inline-flex; padding:4px 7px; color:#3e8e72; background:#eaf6ef; border-radius:999px; font-size:10px; font-weight:800; letter-spacing:.04em; white-space:nowrap; }
             .ar-mini-badge.is-warn { color:#b86d08; background:#fff5e4; }
             .ar-score-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:12px; }
@@ -481,13 +687,13 @@ def _inject_activity_styles() -> None:
             .ar-trust-line strong { color:#10263d; font-size:11px; }
             .ar-trust-line span { color:#687581; font-size:11px; line-height:1.4; }
             .ar-comparison-panel { background:linear-gradient(135deg,#10263d,#14354f); border-color:#10263d; }
-            .ar-comparison-panel .ar-label,.ar-comparison-panel p,.ar-comparison-panel .ar-footnote { color:#c7d2dc; }
-            .ar-comparison-category { margin-top:4px; color:#fff; font-size:15px; font-weight:760; }
-            .ar-rank-line { display:flex; align-items:baseline; gap:8px; margin-top:10px; color:#fff; }
+            .ar-comparison-panel .ar-label,.ar-comparison-panel p,.ar-comparison-panel .ar-footnote { color:#c7d2dc!important; }
+            .ar-comparison-category { margin-top:4px; color:#fff!important; font-size:15px; font-weight:760; }
+            .ar-rank-line { display:flex; align-items:baseline; gap:8px; margin-top:10px; color:#fff!important; }
             .ar-rank-line strong { color:#63b68e; font-size:31px; line-height:1; letter-spacing:-.04em; }
-            .ar-rank-line span { color:#e5ecf0; font-size:11px; font-weight:700; }
-            .ar-top-percent { margin-top:4px; color:#fff; font-size:14px; font-weight:780; }
-            .ar-comparison-empty strong { display:block; margin-top:7px; color:#fff; font-size:18px; }
+            .ar-rank-line span { color:#e5ecf0!important; font-size:11px; font-weight:700; }
+            .ar-top-percent { margin-top:4px; color:#fff!important; font-size:14px; font-weight:780; }
+            .ar-comparison-empty strong { display:block; margin-top:7px; color:#fff!important; font-size:18px; }
             .ar-footnote { margin-top:9px; color:#7b8791; font-size:10px; font-weight:650; }
             .ar-structure-strip,.ar-condition-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:12px; }
             .ar-condition-grid { grid-template-columns:repeat(4,1fr); }
@@ -508,6 +714,12 @@ def _inject_activity_styles() -> None:
             .ar-split-row .role-recovery { color:#3e8e72; }
             .ar-split-row .role-boundary { color:#9a7b69; }
             @media (max-width:900px) {
+                .wc-hero,.wc-intelligence-grid { grid-template-columns:1fr; }
+                .wc-hero-main { min-height:auto; }
+                .wc-plan-grid { grid-template-columns:1fr; }
+                .wc-plan-arrow { transform:rotate(90deg); }
+                .wc-direction { grid-template-columns:auto 1fr; }
+                .wc-direction a { grid-column:1/-1; justify-content:center; }
                 .ar-header { flex-direction:column; }
                 .ar-session-badge { width:100%; text-align:left; }
                 .ar-metric-grid { grid-template-columns:repeat(2,1fr); }
@@ -516,6 +728,10 @@ def _inject_activity_styles() -> None:
                 .ar-benefit { padding:10px 0 0; border-left:0; border-top:1px solid #ecdcd3; }
             }
             @media (max-width:560px) {
+                .wc-hero-main,.wc-hero-verdict,.wc-section,.wc-prediction,.wc-direction { padding:20px; }
+                .wc-zone-grid { grid-template-columns:1fr; }
+                .wc-plan-note { grid-template-columns:1fr; gap:6px; }
+                .wc-section-head { flex-direction:column; }
                 .ar-metric-grid,.ar-score-grid { grid-template-columns:1fr 1fr; }
                 .ar-trust-line { grid-template-columns:1fr; }
                 .ar-condition-grid { grid-template-columns:1fr 1fr; }
@@ -535,12 +751,12 @@ def show_activities_page() -> None:
     _html(
         """
         <div class="pp-page-header">
-            <div class="pp-page-eyebrow">Your running evidence</div>
-            <div class="pp-page-title">Activity Review</div>
+            <div class="pp-page-eyebrow">Your completed-run coaching</div>
+            <div class="pp-page-title">Workout Coach</div>
             <div class="pp-page-intro">
-                How good was this run, really—and why? Classification,
-                continuity, conditions and comparison are kept separate so
-                the conclusion remains honest.
+                What did this run deliver, how trustworthy is the evidence,
+                and what should happen next? Plan, performance, zones and
+                prediction impact stay separate so the review remains honest.
             </div>
         </div>
         """
@@ -593,19 +809,26 @@ def show_activities_page() -> None:
         format_func=lambda value: labels[value],
     )
 
-    with st.spinner("Reviewing this activity against your real history…"):
-        review = _cached_review(
+    with st.spinner("Workout Coach is reviewing this run against your plan and history…"):
+        workout_coach = _cached_workout_coach(
             athlete_id,
             int(activity_id),
             data_version,
+            datetime.date.today().isoformat(),
         )
 
-    if review is None:
+    if workout_coach is None:
         st.warning("This activity is no longer available for this athlete.")
         return
+    review = workout_coach.activity
 
-    _html(_header_html(review))
+    _html(build_workout_coach_hero_html(workout_coach))
     _html(build_activity_overview_html(review))
+    _html(build_plan_execution_html(workout_coach))
+    _html(build_workout_intelligence_html(workout_coach))
+    _html(build_workout_direction_html(workout_coach))
+
+    _html('<div class="wc-review-divider"><span>DETAILED EVIDENCE REVIEW</span></div>')
     _html(build_activity_verdict_html(review))
     _html(build_activity_detail_html(review))
     _html(build_coaching_html(review))
@@ -684,5 +907,5 @@ def show_activities_page() -> None:
                 st.write(f"• {limitation}")
 
     st.caption(
-        "Recognition before recommendation. Every run has something to give."
+        "Recognition before recommendation. Corrections remain reversible. Every run has something to give."
     )

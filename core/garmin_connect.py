@@ -24,6 +24,7 @@ GARMIN_TOKEN_ROOT = Path(os.getenv("PP_GARMIN_TOKEN_ROOT", ".garmin_tokens"))
 GARMIN_HEALTH_HISTORY_DAYS = 35
 MAX_ACTIVITY_LOOKBACK_DAYS = 366
 MAX_ACTIVITY_DOWNLOADS = 250
+MAX_CONSECUTIVE_SLEEP_FAILURES = 3
 
 
 class GarminConnectPrototypeError(RuntimeError):
@@ -378,13 +379,30 @@ def fetch_garmin_health_records(
 
     records = []
     sleep_failures = 0
-    for day in _dates(start_date, end_date):
+    consecutive_sleep_failures = 0
+    sleep_requests_disabled = False
+    # Prioritise the newest nights.  If Garmin rejects the sleep endpoint
+    # repeatedly, retain the full HRV/RHR baseline without making another
+    # thirty-plus requests that are expected to fail in the same way.
+    requested_days = tuple(_dates(start_date, end_date))
+    for day in reversed(requested_days):
         day_text = day.isoformat()
-        try:
-            sleep_payload = client.get_sleep_data(day_text)
-        except Exception:
+        if sleep_requests_disabled:
             sleep_payload = {}
             sleep_failures += 1
+        else:
+            try:
+                sleep_payload = client.get_sleep_data(day_text)
+                consecutive_sleep_failures = 0
+            except Exception:
+                sleep_payload = {}
+                sleep_failures += 1
+                consecutive_sleep_failures += 1
+                if (
+                    consecutive_sleep_failures
+                    >= MAX_CONSECUTIVE_SLEEP_FAILURES
+                ):
+                    sleep_requests_disabled = True
         record = _health_record(
             day_text,
             hrv=hrv_rows.get(day_text),
@@ -393,6 +411,7 @@ def fetch_garmin_health_records(
         )
         if record is not None:
             records.append(record)
+    records.sort(key=lambda record: record.health_date)
     if sleep_failures:
         issues.append(
             f"Sleep was unavailable for {sleep_failures} of "

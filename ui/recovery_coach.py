@@ -7,6 +7,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.recovery_coach import (
     RecoveryCoachDetail,
     build_recovery_coach_detail,
@@ -415,13 +419,14 @@ def build_recovery_coach_html(detail: RecoveryCoachDetail) -> str:
     return build_recovery_coach_upper_html(detail) + build_recovery_coach_lower_html(detail)
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_recovery_coach(
     athlete_id: int,
     today: datetime.date,
     schema: int,
+    data_version,
 ) -> RecoveryCoachDetail | None:
-    del schema
+    del schema, data_version
     return build_recovery_coach_detail(athlete_id, today=today)
 
 
@@ -524,6 +529,7 @@ def show_recovery_coach_page() -> None:
             athlete_id,
             today,
             RECOVERY_COACH_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
         )
     if detail is None:
         st.warning("Recovery evidence is not available for this athlete yet.")

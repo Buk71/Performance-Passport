@@ -6,6 +6,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.training_coach import TrainingCoachDetail, build_training_coach_detail
 from ui.athlete_selection import (
     SESSION_ID_KEY,
@@ -68,12 +72,13 @@ def _apply_training_coach_request() -> None:
     clear_training_coach_params(st.query_params)
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_training_coach_detail(
     athlete_id: int,
     schema: int,
+    data_version,
 ) -> TrainingCoachDetail | None:
-    del schema
+    del schema, data_version
     return build_training_coach_detail(athlete_id)
 
 
@@ -341,6 +346,7 @@ def show_next_run_page() -> None:
         detail = _cached_training_coach_detail(
             athlete_id,
             TRAINING_COACH_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
         )
     if detail is None:
         st.info("Performance Passport needs enough recent evidence to coach the next run.")

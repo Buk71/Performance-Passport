@@ -9,6 +9,7 @@ new physiological formula and is safe to cache at the presentation boundary.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from core.coach_brain import CoachBrain
@@ -56,14 +57,46 @@ class DistancePredictionOutlook:
         return sum(anchor.available for anchor in self.anchors)
 
 
+def _build_distance_anchor(
+    athlete_id: int,
+    definition: tuple[str, str, float],
+) -> DistancePredictionAnchor:
+    """Build one independent distance view with its own read-only coach."""
+    key, label, distance_km = definition
+    goal = {
+        "id": None,
+        "goal_name": f"{label} capability",
+        "distance_m": distance_km * 1000.0,
+        "target_time_s": None,
+    }
+    brain = CoachBrain(athlete_id)
+    evidence = brain.build_evidence(goal)
+    prediction = brain.prediction_engine.predict_goal(
+        athlete_id,
+        goal,
+        evidence,
+    )
+    return DistancePredictionAnchor(
+        key=key,
+        label=label,
+        distance_km=distance_km,
+        available=prediction.available,
+        central_seconds=prediction.predicted_seconds,
+        confidence=prediction.confidence,
+        evidence_source_count=len(evidence.prediction_items),
+        source="distance_specific_coaches",
+        explanation=prediction.explanation,
+    )
+
+
 def build_distance_prediction_outlook(
     athlete_id: int,
     *,
     active_predictions: HomePredictions | None = None,
 ) -> DistancePredictionOutlook:
     """Build four independent real-evidence predictions for one athlete."""
-    brain = CoachBrain(athlete_id)
-    anchors = []
+    anchors_by_key: dict[str, DistancePredictionAnchor] = {}
+    missing_definitions = []
 
     for key, label, distance_km in DISTANCE_DEFINITIONS:
         is_active = bool(
@@ -73,48 +106,44 @@ def build_distance_prediction_outlook(
             and active_predictions.central_seconds is not None
         )
         if is_active:
-            anchors.append(
-                DistancePredictionAnchor(
-                    key=key,
-                    label=label,
-                    distance_km=distance_km,
-                    available=True,
-                    central_seconds=active_predictions.central_seconds,
-                    confidence=active_predictions.confidence,
-                    evidence_source_count=(
-                        active_predictions.evidence_source_count
-                    ),
-                    source="active_goal_coaches",
-                    explanation=active_predictions.explanation,
-                )
-            )
-            continue
-
-        goal = {
-            "id": None,
-            "goal_name": f"{label} capability",
-            "distance_m": distance_km * 1000.0,
-            "target_time_s": None,
-        }
-        evidence = brain.build_evidence(goal)
-        prediction = brain.prediction_engine.predict_goal(
-            athlete_id,
-            goal,
-            evidence,
-        )
-        anchors.append(
-            DistancePredictionAnchor(
+            anchors_by_key[key] = DistancePredictionAnchor(
                 key=key,
                 label=label,
                 distance_km=distance_km,
-                available=prediction.available,
-                central_seconds=prediction.predicted_seconds,
-                confidence=prediction.confidence,
-                evidence_source_count=len(evidence.prediction_items),
-                source="distance_specific_coaches",
-                explanation=prediction.explanation,
+                available=True,
+                central_seconds=active_predictions.central_seconds,
+                confidence=active_predictions.confidence,
+                evidence_source_count=(
+                    active_predictions.evidence_source_count
+                ),
+                source="active_goal_coaches",
+                explanation=active_predictions.explanation,
             )
-        )
+            continue
+        missing_definitions.append((key, label, distance_km))
+
+    # Each distance asks the same read-only evidence services an independent
+    # question. Running those questions concurrently changes wall-clock time,
+    # not the underlying evidence, weighting or calibration.
+    if missing_definitions:
+        with ThreadPoolExecutor(
+            max_workers=min(len(missing_definitions), 3),
+            thread_name_prefix="pp-distance",
+        ) as executor:
+            built = executor.map(
+                lambda definition: _build_distance_anchor(
+                    athlete_id,
+                    definition,
+                ),
+                missing_definitions,
+            )
+            for anchor in built:
+                anchors_by_key[anchor.key] = anchor
+
+    anchors = tuple(
+        anchors_by_key[key]
+        for key, _label, _distance_km in DISTANCE_DEFINITIONS
+    )
 
     endurance_profile = load_endurance_profile(athlete_id)
     calibrated = calibrate_endurance_anchors(anchors, endurance_profile)

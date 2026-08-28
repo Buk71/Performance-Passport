@@ -7,6 +7,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.database import save_goal
 from core.goal_coach import GoalCoachDetail, build_goal_coach_detail
 from core.goals import (
@@ -99,12 +103,13 @@ def _distance_label(distance_m: float | None, goal_type: str = "") -> str:
     return goal_type or "Outcome"
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_goal_coach_detail(
     athlete_id: int,
     schema: int,
+    data_version,
 ) -> GoalCoachDetail:
-    del schema
+    del schema, data_version
     return build_goal_coach_detail(athlete_id)
 
 
@@ -579,6 +584,7 @@ def show_goals_page() -> None:
         detail = _cached_goal_coach_detail(
             athlete_id,
             GOAL_COACH_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
         )
     hierarchy = detail.hierarchy
     st.html(build_goal_coach_html(detail))

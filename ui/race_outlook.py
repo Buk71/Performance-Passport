@@ -6,6 +6,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.database import get_goals_for_athlete
 from core.home_predictions import HomePredictions, build_goal_predictions
 from core.race_coach import (
@@ -418,7 +422,7 @@ def _cached_race_predictions(
     )
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=NAVIGATION_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_race_coach_detail(
     athlete_id: int,
     goal_id: int | None,
@@ -428,9 +432,10 @@ def _cached_race_coach_detail(
     target_time_s: float | None,
     target_date: str | None,
     cache_schema: int,
+    data_version,
 ) -> RaceCoachDetail:
     """Compose one selected-distance coaching view without changing goals."""
-    _ = cache_schema
+    _ = cache_schema, data_version
     return build_race_coach_detail(
         athlete_id,
         {
@@ -526,6 +531,7 @@ def render_interactive_race_outlook(athlete_id: int) -> None:
             goal.get("target_time_s"),
             goal.get("target_date"),
             RACE_OUTLOOK_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
         )
     predictions = detail.predictions
     if not predictions.available:

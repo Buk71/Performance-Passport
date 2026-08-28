@@ -6,6 +6,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.passport_detail import PassportDetail, build_passport_detail
 from core.training_blueprint import BlueprintCategory
 from ui.athlete_selection import render_athlete_id_selector
@@ -14,9 +18,11 @@ from ui.athlete_selection import render_athlete_id_selector
 PASSPORT_CACHE_SCHEMA = 1
 
 
-@st.cache_data(show_spinner=False, ttl=300)
-def _cached_passport(athlete_id: int, schema: int) -> PassportDetail | None:
-    del schema
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
+def _cached_passport(
+    athlete_id: int, schema: int, data_version
+) -> PassportDetail | None:
+    del schema, data_version
     return build_passport_detail(athlete_id)
 
 
@@ -406,7 +412,11 @@ def show_passport_page() -> None:
         st.warning("No athletes found. Add an athlete first.")
         return
     with st.spinner("Assembling your evidence-backed Passport…"):
-        detail = _cached_passport(athlete_id, PASSPORT_CACHE_SCHEMA)
+        detail = _cached_passport(
+            athlete_id,
+            PASSPORT_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
+        )
     if detail is None:
         st.info("Import running history to begin building your Passport.")
         return

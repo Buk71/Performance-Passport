@@ -7,6 +7,7 @@ composed from the established Performance Passport services.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import html
 from pathlib import Path
@@ -15,6 +16,10 @@ import re
 import streamlit as st
 
 from core.athlete_passport import build_athlete_passport
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.distance_prediction_outlook import build_distance_prediction_outlook
 from core.home_latest_run import build_home_latest_run
 from core.home_prediction_matrix import build_home_prediction_matrix
@@ -126,33 +131,45 @@ DAILY_COACHING_TIPS = (
 )
 
 
-@st.cache_data(show_spinner=False, ttl=120)
-def _cached_lead_coach_data(athlete_id: int, schema: int):
-    del schema
-    return (
-        build_athlete_passport(athlete_id),
-        build_home_summary(athlete_id),
-        build_home_predictions(athlete_id),
-        build_home_latest_run(athlete_id),
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
+def _cached_lead_coach_data(athlete_id: int, schema: int, data_version):
+    del schema, data_version
+    builders = (
+        build_athlete_passport,
+        build_home_summary,
+        build_home_predictions,
+        build_home_latest_run,
     )
+    # These services are read-only and independent. Build them concurrently
+    # so switching athletes waits for the slowest service rather than the sum
+    # of all four, while preserving their established return order.
+    with ThreadPoolExecutor(
+        max_workers=len(builders),
+        thread_name_prefix="pp-home",
+    ) as executor:
+        futures = [executor.submit(builder, athlete_id) for builder in builders]
+        return tuple(future.result() for future in futures)
 
 
-@st.cache_data(show_spinner=False, ttl=900)
-def _cached_distance_outlook(athlete_id: int, predictions, schema: int):
-    del schema
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
+def _cached_distance_outlook(
+    athlete_id: int, predictions, schema: int, data_version
+):
+    del schema, data_version
     return build_distance_prediction_outlook(
         athlete_id,
         active_predictions=predictions,
     )
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
 def _cached_home_recovery(
     athlete_id: int,
     today: datetime.date,
     schema: int,
+    data_version,
 ):
-    del schema
+    del schema, data_version
     return build_home_recovery_signal(athlete_id, today=today)
 
 
@@ -947,19 +964,23 @@ def show_lead_coach_home_page() -> None:
 
     with st.spinner("Your coaching team is reviewing the latest evidence…"):
         today = datetime.date.today()
+        data_version = get_athlete_cache_version(athlete_id)
         passport, summary, predictions, latest = _cached_lead_coach_data(
             athlete_id,
             HOME_CACHE_SCHEMA,
+            data_version,
         )
         distance_outlook = _cached_distance_outlook(
             athlete_id,
             predictions,
             HOME_DISTANCE_CACHE_SCHEMA,
+            data_version,
         )
         recovery = _cached_home_recovery(
             athlete_id,
             today,
             HOME_RECOVERY_CACHE_SCHEMA,
+            data_version,
         )
     st.html(
         build_lead_coach_home_html(

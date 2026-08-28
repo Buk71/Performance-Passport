@@ -7,6 +7,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.fuel_planner import (
     BUDGET_STYLES,
     DEMANDS,
@@ -55,9 +59,11 @@ def _friendly_date(value: str) -> str:
         return str(value)
 
 
-@st.cache_data(show_spinner=False, ttl=120)
-def _cached_fuel_week(athlete_id: int, reference_date: datetime.date, schema: int):
-    del schema
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
+def _cached_fuel_week(
+    athlete_id: int, reference_date: datetime.date, schema: int, data_version
+):
+    del schema, data_version
     return load_next_fuel_week(athlete_id, reference_date=reference_date)
 
 
@@ -574,6 +580,7 @@ def show_fuel_planner_page() -> None:
             athlete_id,
             datetime.date.today(),
             FUEL_PLANNER_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
         )
         if saved_profile is not None else None
     )

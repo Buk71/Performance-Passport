@@ -615,15 +615,11 @@ def infer_athlete_sport_mappings(cursor):
             )
 
 
-@lru_cache(maxsize=32)
-def get_athlete_sport_roles(athlete_id):
-    """
-    Return stored sport-role mappings for one athlete.
-
-    Important: this function must remain read-only because Session
-    Intelligence calls it once for every activity during diagnostics.
-    """
-    conn = get_connection()
+@lru_cache(maxsize=64)
+def _get_athlete_sport_roles_cached(athlete_id, database_path):
+    """Read sport roles from one exact database-backed cache namespace."""
+    conn = sqlite3.connect(database_path)
+    conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
 
     cursor.execute(
@@ -638,7 +634,32 @@ def get_athlete_sport_roles(athlete_id):
     roles = {str(row[0]): row[1] for row in cursor.fetchall()}
     conn.close()
 
+    # Direct Garmin FIT imports use canonical sport names rather than the
+    # account-specific numeric IDs supplied by Runalyze.  Keep those canonical
+    # values visible alongside the inferred mappings so an athlete can have
+    # more than one source representing the same sport.
+    roles.setdefault("running", "running")
+    roles.setdefault("walking", "walking")
+
     return roles
+
+
+def get_athlete_sport_roles(athlete_id):
+    """
+    Return stored sport-role mappings for one athlete.
+
+    The database path is part of the internal cache key. This matters for the
+    isolated test databases and also keeps a future database switch from
+    reusing another database's athlete IDs. The public cache_clear contract is
+    retained for import and repair workflows.
+    """
+    return _get_athlete_sport_roles_cached(
+        int(athlete_id),
+        str(DATABASE_PATH.resolve()),
+    )
+
+
+get_athlete_sport_roles.cache_clear = _get_athlete_sport_roles_cached.cache_clear
 
 
 def refresh_athlete_sport_mappings():

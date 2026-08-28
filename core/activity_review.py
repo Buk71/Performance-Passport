@@ -323,7 +323,13 @@ def _selected_recognition(
         sport_id=selected_row[6],
         distance_km=_distance_km(selected_row[7]),
         moving_time_seconds=_safe_float(selected_row[8]),
-        avg_hr=_safe_float(selected_row[10]),
+        avg_hr=_safe_float(
+            get_effective_activity_heart_rate(
+                athlete_id,
+                selected_row[0],
+                selected_row[10],
+            )
+        ),
         run_max_hr=_safe_float(selected_row[11]),
         elevation_m=_safe_float(selected_row[12]),
         temperature_c=_safe_float(selected_row[13]),
@@ -664,7 +670,7 @@ def build_activity_review(
         stopped_time_s=stopped_time_s,
         moving_percent=moving_percent,
         pace_s_per_km=pace_s_per_km,
-        avg_hr=_safe_float(selected[10]),
+        avg_hr=facts.avg_hr,
         max_hr=_safe_float(selected[11]),
         elevation_up_m=_safe_float(selected[12]),
         temperature_c=_safe_float(selected[13]),

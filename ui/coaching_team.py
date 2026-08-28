@@ -6,6 +6,10 @@ import html
 
 import streamlit as st
 
+from core.cache_version import (
+    NAVIGATION_CACHE_TTL_SECONDS,
+    get_athlete_cache_version,
+)
 from core.coaching_team import CoachProfile, CoachingTeamDetail, build_coaching_team_detail
 from ui.activity_navigation import activity_review_url
 from ui.athlete_selection import (
@@ -349,9 +353,9 @@ def build_coaching_team_html(
     """
 
 
-@st.cache_data(show_spinner=False, ttl=120)
-def _cached_team(athlete_id: int, schema: int):
-    del schema
+@st.cache_data(show_spinner=False, ttl=NAVIGATION_CACHE_TTL_SECONDS)
+def _cached_team(athlete_id: int, schema: int, data_version):
+    del schema, data_version
     return build_coaching_team_detail(athlete_id)
 
 
@@ -390,7 +394,11 @@ def show_coaching_team_page() -> None:
         st.warning("No athletes found. Add an athlete first.")
         return
     with st.spinner("Assembling the coaching team's real evidence…"):
-        detail = _cached_team(athlete_id, COACHING_TEAM_CACHE_SCHEMA)
+        detail = _cached_team(
+            athlete_id,
+            COACHING_TEAM_CACHE_SCHEMA,
+            get_athlete_cache_version(athlete_id),
+        )
     if detail is None:
         st.warning("No coaching evidence is available for this athlete yet.")
         return

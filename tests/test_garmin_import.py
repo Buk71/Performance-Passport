@@ -17,6 +17,7 @@ from core.garmin_import import (
     import_garmin_activities,
     parse_fit_payload,
 )
+from core.database import get_athlete_sport_roles
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -342,6 +343,64 @@ def test_running_only_does_not_import_other_garmin_sports(tmp_path, monkeypatch)
             "SELECT COUNT(*) FROM activities WHERE athlete_id = ?", (athlete_id,)
         ).fetchone()[0]
     assert count == 0
+
+
+def test_direct_garmin_running_sport_is_visible_to_coaching_services(
+    tmp_path, monkeypatch
+):
+    path, athlete_id = _database(tmp_path, monkeypatch)
+
+    result = import_garmin_activities(
+        (_activity(),),
+        athlete_id=athlete_id,
+        athlete_name="Paul Tester",
+    )
+
+    assert result.imported == 1
+    assert get_athlete_sport_roles(athlete_id)["running"] == "running"
+    with sqlite3.connect(path) as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM activities WHERE athlete_id = ?", (athlete_id,)
+        ).fetchone()[0]
+    assert count == 1
+
+
+def test_sport_role_cache_is_scoped_to_the_database_path(tmp_path, monkeypatch):
+    first_path, athlete_id = _database(tmp_path / "first", monkeypatch)
+    with sqlite3.connect(first_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO athlete_sport_mappings (
+                athlete_id, sport_id, sport_role, confidence, source
+            ) VALUES (?, '101', 'running', 1.0, 'test')
+            """,
+            (athlete_id,),
+        )
+    get_athlete_sport_roles.cache_clear()
+    assert get_athlete_sport_roles(athlete_id)["101"] == "running"
+
+    second_path = tmp_path / "second" / "performance_passport.db"
+    monkeypatch.setattr(database, "DATABASE_PATH", second_path)
+    database.initialise_database()
+    with sqlite3.connect(second_path) as connection:
+        second_athlete_id = connection.execute(
+            """
+            INSERT INTO athletes (first_name, last_name, date_of_birth, sex)
+            VALUES ('Richard', 'Independent', '1971-12-11', 'Male')
+            """
+        ).lastrowid
+        connection.execute(
+            """
+            INSERT INTO athlete_sport_mappings (
+                athlete_id, sport_id, sport_role, confidence, source
+            ) VALUES (?, '202', 'running', 1.0, 'test')
+            """,
+            (second_athlete_id,),
+        )
+
+    second_roles = get_athlete_sport_roles(second_athlete_id)
+    assert second_roles["202"] == "running"
+    assert "101" not in second_roles
 
 
 def test_import_page_exposes_real_garmin_fit_and_zip_flow():

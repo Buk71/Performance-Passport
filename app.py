@@ -1,7 +1,7 @@
 import streamlit as st
 
 from config import APP_NAME
-from core.database import initialise_database
+from core import database
 from theme import inject_global_theme
 from ui.athletes import show_athletes_page
 from ui.activities import show_activities_page
@@ -34,7 +34,20 @@ st.set_page_config(
 )
 
 inject_global_theme()
-initialise_database()
+
+
+@st.cache_resource(show_spinner=False)
+def _initialise_database_once(database_path: str, schema_version: int) -> bool:
+    """Run schema checks once for this database and schema within the server."""
+    del database_path, schema_version
+    database.initialise_database()
+    return True
+
+
+_initialise_database_once(
+    str(database.DATABASE_PATH.resolve()),
+    database.CURRENT_SCHEMA_VERSION,
+)
 
 if not product_entry_granted(st.session_state, st.query_params):
     show_welcome_page()
