@@ -55,6 +55,10 @@ def test_lead_coach_home_uses_real_independent_athlete_services():
         assert 'class="lc-briefing"' not in markup
         assert "What matters today" in markup
         assert "Your day, at a glance." in markup
+        assert "Recovery signal · Baseline building" in markup
+        assert "No automatic plan change" in markup
+        assert f"pp_athlete={athlete_id}" in markup
+        assert 'class="lc-traffic"' in markup
         assert "Meet the coaches behind your day." in markup
         assert "This week has a purpose." in markup
         assert "Your potential in real conditions." in markup
@@ -120,6 +124,9 @@ def test_lead_coach_home_has_responsive_premium_layout():
     assert ".lc-capability" in source
     assert ".lc-coach-briefing" in source
     assert ".lc-team-synthesis" in source
+    assert ".lc-recovery-signal" in source
+    assert ".lc-status-amber" in source
+    assert "build_home_recovery_signal" in source
     assert ".lc-race-anchor" in source
     assert '--display:"Avenir Next"' in source
     assert "def _icon_markup" in source

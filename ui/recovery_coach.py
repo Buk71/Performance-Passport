@@ -494,7 +494,7 @@ def _checkin_form(detail: RecoveryCoachDetail, today: datetime.date) -> None:
             motivation=motivation,
             notes=notes,
         )
-        _cached_recovery_coach.clear()
+        st.cache_data.clear()
         st.success("Today’s recovery check-in has been saved.")
         st.rerun()
 

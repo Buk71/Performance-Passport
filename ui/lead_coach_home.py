@@ -19,6 +19,10 @@ from core.distance_prediction_outlook import build_distance_prediction_outlook
 from core.home_latest_run import build_home_latest_run
 from core.home_prediction_matrix import build_home_prediction_matrix
 from core.home_predictions import build_home_predictions
+from core.home_recovery import (
+    build_home_recovery_signal,
+    empty_home_recovery_signal,
+)
 from core.home_summary import build_home_summary
 from ui.activity_navigation import activity_review_url
 from ui.athlete_card import image_to_data_uri
@@ -30,8 +34,9 @@ from ui.recovery_coach_navigation import recovery_coach_url
 
 
 ROOT = Path(__file__).resolve().parent.parent
-HOME_CACHE_SCHEMA = 1
+HOME_CACHE_SCHEMA = 2
 HOME_DISTANCE_CACHE_SCHEMA = 1
+HOME_RECOVERY_CACHE_SCHEMA = 1
 
 DAILY_COACHING_TIPS = (
     (
@@ -139,6 +144,16 @@ def _cached_distance_outlook(athlete_id: int, predictions, schema: int):
         athlete_id,
         active_predictions=predictions,
     )
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _cached_home_recovery(
+    athlete_id: int,
+    today: datetime.date,
+    schema: int,
+):
+    del schema
+    return build_home_recovery_signal(athlete_id, today=today)
 
 
 def _safe(value) -> str:
@@ -321,6 +336,34 @@ def _focus_cards(athlete_id: int, summary, latest) -> str:
     """
 
 
+def _recovery_signal_card(athlete_id: int, recovery) -> str:
+    href = html.escape(recovery_coach_url(athlete_id), quote=True)
+    reasons = "".join(
+        f"<li>{_safe(reason)}</li>"
+        for reason in recovery.reasons
+    ) or "<li>Recovery evidence is still building.</li>"
+    lights = "".join(
+        f'<i class="lc-light-{level} {'is-active' if recovery.level == level else ''}"></i>'
+        for level in ("red", "amber", "green")
+    )
+    return f"""
+        <a class="lc-recovery-signal lc-recovery-{_safe(recovery.level)}" href="{href}" target="_self">
+            <div class="lc-traffic" aria-label="{_safe(recovery.level.title())} recovery signal">{lights}</div>
+            <div class="lc-recovery-copy">
+                <div class="lc-card-kicker">Recovery signal · {_safe(recovery.label)}</div>
+                <h2>{_safe(recovery.headline)}</h2>
+                <p>{_safe(recovery.guidance)}</p>
+            </div>
+            <ul>{reasons}</ul>
+            <div class="lc-recovery-meta">
+                <strong>{_safe(recovery.confidence)} evidence</strong>
+                <span>No automatic plan change</span>
+                <b>Open Recovery Coach →</b>
+            </div>
+        </a>
+    """
+
+
 def _coach_cards(athlete_id: int, summary, predictions) -> str:
     team_url = html.escape(coaching_team_url(athlete_id), quote=True)
     lead_time = _clock(predictions.central_seconds)
@@ -498,11 +541,13 @@ def build_lead_coach_home_html(
     predictions,
     latest,
     distance_outlook=None,
+    recovery=None,
     *,
     today: datetime.date | None = None,
 ) -> str:
     """Return the complete premium Home markup for one real athlete."""
     today = today or datetime.date.today()
+    recovery = recovery or empty_home_recovery_signal(athlete_id)
     headline, briefing = _lead_briefing(summary)
     tip_title, tip_copy, tip_coach = _tip_for_date(today)
     range_text = (
@@ -531,7 +576,7 @@ def build_lead_coach_home_html(
                 <div class="lc-eyebrow lc-dark"><span></span>Your Lead Coach</div>
                 <h1>Welcome back, {_safe(passport.first_name)}.</h1>
             </div>
-            <div class="lc-status"><i></i> Coaching direction is active</div>
+            <div class="lc-status lc-status-{_safe(recovery.level)}"><i></i> Recovery · {_safe(recovery.label)}</div>
         </section>
 
         <section class="lc-passport">
@@ -594,6 +639,8 @@ def build_lead_coach_home_html(
 
         {_focus_cards(athlete_id, summary, latest)}
 
+        {_recovery_signal_card(athlete_id, recovery)}
+
         <section class="lc-section">
             <div class="lc-section-heading">
                 <div><div class="lc-eyebrow lc-dark"><span></span>One team · one direction</div><h2>Meet the coaches behind your day.</h2></div>
@@ -647,6 +694,9 @@ def build_lead_coach_home_html(
             .lc-welcome h1 {{ margin:8px 0 0; color:var(--navy); font-size:42px; line-height:1; letter-spacing:-.045em; }}
             .lc-status {{ display:flex; align-items:center; gap:9px; margin-bottom:2px; padding:10px 15px; border-radius:999px; background:#eaf6f0; color:#257c61; font-size:12px; font-weight:850; }}
             .lc-status i {{ width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(39,150,117,.12); }}
+            .lc-status-amber {{ background:#fff4dc; color:#8d651c; }} .lc-status-amber i {{ background:#d79a2e; box-shadow:0 0 0 4px rgba(215,154,46,.14); }}
+            .lc-status-red {{ background:#fff0ed; color:#a3483b; }} .lc-status-red i {{ background:#c95445; box-shadow:0 0 0 4px rgba(201,84,69,.14); }}
+            .lc-status-grey {{ background:#eef1f3; color:#607181; }} .lc-status-grey i {{ background:#82909a; box-shadow:0 0 0 4px rgba(130,144,154,.13); }}
             .lc-passport {{ position:relative; display:grid; grid-template-columns:minmax(230px,.72fr) minmax(470px,1.35fr) minmax(360px,1fr); min-height:360px; overflow:hidden; border:1px solid #dcd6cd; border-radius:28px; background:#fff; box-shadow:0 24px 55px rgba(10,33,53,.14); }}
             .lc-passport-identity {{ position:relative; min-height:360px; overflow:hidden; background:var(--navy); color:#fff; }}
             .lc-photo-shell {{ position:absolute; inset:0; overflow:hidden; background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.18)); }}
@@ -708,6 +758,25 @@ def build_lead_coach_home_html(
             .lc-card-meta span {{ float:right; color:var(--green); }}
             .lc-focus-link {{ transition:transform .16s ease,box-shadow .16s ease; }}
             .lc-focus-link:hover,.lc-coach-card:hover,.lc-opinion:hover {{ transform:translateY(-2px); box-shadow:0 15px 32px rgba(11,38,60,.11); }}
+            .lc-recovery-signal {{ --signal:#279675; --signal-bg:#f3faf7; display:grid; grid-template-columns:auto minmax(270px,1.2fr) minmax(260px,1fr) auto; align-items:center; gap:22px; margin-top:14px; padding:21px 23px; border:1px solid #ded8cf; border-left:5px solid var(--signal); border-radius:19px; background:var(--signal-bg); box-shadow:0 12px 30px rgba(36,44,50,.055); transition:transform .16s ease,box-shadow .16s ease; }}
+            .lc-recovery-signal:hover {{ transform:translateY(-2px); box-shadow:0 15px 32px rgba(11,38,60,.11); }}
+            .lc-recovery-amber {{ --signal:#d18c25; --signal-bg:#fff9ed; }}
+            .lc-recovery-red {{ --signal:#c95445; --signal-bg:#fff5f2; }}
+            .lc-recovery-grey {{ --signal:#7a8994; --signal-bg:#f5f7f8; }}
+            .lc-traffic {{ display:flex; flex-direction:column; gap:6px; padding:8px; border-radius:16px; background:var(--navy); box-shadow:0 7px 16px rgba(8,37,62,.13); }}
+            .lc-traffic i {{ width:14px; height:14px; border-radius:50%; background:#526474; opacity:.32; }}
+            .lc-traffic .lc-light-red.is-active {{ background:#df6253; opacity:1; box-shadow:0 0 0 3px rgba(223,98,83,.15); }}
+            .lc-traffic .lc-light-amber.is-active {{ background:#e4a43c; opacity:1; box-shadow:0 0 0 3px rgba(228,164,60,.15); }}
+            .lc-traffic .lc-light-green.is-active {{ background:#63c9a2; opacity:1; box-shadow:0 0 0 3px rgba(99,201,162,.15); }}
+            .lc-recovery-copy h2 {{ margin:7px 0 0; color:var(--navy)!important; font-size:24px; font-weight:600; letter-spacing:-.025em; }}
+            .lc-recovery-copy p {{ margin:7px 0 0; color:#617482!important; font-size:12.5px; line-height:1.5; }}
+            .lc-recovery-signal ul {{ margin:0; padding-left:19px; color:#526a79; font-size:12px; line-height:1.5; }}
+            .lc-recovery-signal li {{ margin:4px 0; }}
+            .lc-recovery-meta {{ min-width:150px; text-align:right; }}
+            .lc-recovery-meta strong,.lc-recovery-meta span,.lc-recovery-meta b {{ display:block; }}
+            .lc-recovery-meta strong {{ color:var(--signal); font-size:12px; }}
+            .lc-recovery-meta span {{ margin-top:5px; color:#74848f; font-size:10px; }}
+            .lc-recovery-meta b {{ margin-top:13px; color:var(--green); font-size:11px; }}
             .lc-section {{ margin-top:24px; padding:30px; border:1px solid #ded8cf; border-radius:23px; background:#fff; box-shadow:0 14px 36px rgba(36,44,50,.055); }}
             .lc-section-heading {{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }}
             .lc-section-heading>a {{ color:var(--green); font-size:12px; font-weight:850; }}
@@ -826,6 +895,7 @@ def build_lead_coach_home_html(
                 .lc-coach-briefing {{ min-height:330px; padding:26px 22px; }} .lc-primary-action {{ justify-content:space-between; }}
                 .lc-focus-heading {{ align-items:flex-start; flex-direction:column; }}
                 .lc-focus-grid {{ grid-template-columns:1fr; }} .lc-coach-grid {{ grid-template-columns:1fr; }}
+                .lc-recovery-signal {{ grid-template-columns:auto 1fr; align-items:start; }} .lc-recovery-signal ul,.lc-recovery-meta {{ grid-column:1/-1; text-align:left; }}
                 .lc-section {{ padding:21px; }} .lc-section-heading {{ align-items:flex-start; flex-direction:column; }} .lc-source {{ text-align:left; }}
                 .lc-team-synthesis {{ padding-right:0; padding-left:0; }}
                 .lc-week-summary {{ align-items:flex-start; flex-direction:column; }} .lc-week-summary span {{ text-align:left; }}
@@ -876,6 +946,7 @@ def show_lead_coach_home_page() -> None:
         return
 
     with st.spinner("Your coaching team is reviewing the latest evidence…"):
+        today = datetime.date.today()
         passport, summary, predictions, latest = _cached_lead_coach_data(
             athlete_id,
             HOME_CACHE_SCHEMA,
@@ -885,6 +956,11 @@ def show_lead_coach_home_page() -> None:
             predictions,
             HOME_DISTANCE_CACHE_SCHEMA,
         )
+        recovery = _cached_home_recovery(
+            athlete_id,
+            today,
+            HOME_RECOVERY_CACHE_SCHEMA,
+        )
     st.html(
         build_lead_coach_home_html(
             athlete_id,
@@ -893,5 +969,7 @@ def show_lead_coach_home_page() -> None:
             predictions,
             latest,
             distance_outlook,
+            recovery,
+            today=today,
         )
     )
