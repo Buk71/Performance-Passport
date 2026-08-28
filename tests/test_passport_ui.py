@@ -82,3 +82,30 @@ def test_passport_route_and_responsive_contract():
     assert "@container (max-width:1050px)" in markup
     assert "@container (max-width:760px)" in markup
     assert "@container (max-width:500px)" in markup
+
+
+def test_passport_hero_is_identity_led_and_preserves_running_zones():
+    markup = _markup(1)
+
+    assert "YOUR RUNNING IDENTITY" in markup
+    assert "Richard’s performance passport." in markup
+    assert "Live profile" in markup
+    assert "BEST AGE GRADE" not in markup
+    assert "CURRENT ANCHORS" in markup
+    assert "TRAINING PROFILE" in markup
+    assert "152 bpm" in markup
+    assert "161 bpm" in markup
+    assert "Health and notes remain private" in markup
+    assert ".passport-hero-confidence h2 { color:#fff!important" in markup
+
+
+def test_share_preview_never_publishes_health_or_creates_a_link():
+    markup = _markup(1)
+
+    assert "SHAREABLE PERFORMANCE PROFILE" in markup
+    assert "Private · sharing off" in markup
+    assert "PREVIEW ONLY" in markup
+    assert "No public URL exists" in markup
+    assert "HRV, resting heart rate and sleep history" in markup
+    assert "no health data leaves this private athlete view" in markup
+    assert "Enable sharing" not in markup

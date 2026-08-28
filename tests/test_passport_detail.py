@@ -68,3 +68,14 @@ def test_passport_training_profile_reuses_blueprint_safeguards():
     assert richard.training.long_easy.typical_distance_km == 18.6
     assert any("not mandatory pace limits" in note for note in richard.evidence_notes)
     assert any("Heart rate is not used as the primary guide" in note for note in richard.evidence_notes)
+
+
+def test_passport_sharing_is_private_and_excludes_health_by_default():
+    detail = build_passport_detail(1, reference_date=REFERENCE_DATE)
+
+    assert detail.share_profile.enabled is False
+    assert detail.share_profile.status == "Private · sharing off"
+    assert any("PBs" in item for item in detail.share_profile.included)
+    assert any("HRV" in item for item in detail.share_profile.excluded)
+    assert any("zone" in item.lower() for item in detail.share_profile.excluded)
+    assert detail.health_history.calendar_days >= 0

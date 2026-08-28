@@ -14,7 +14,11 @@ import json
 import statistics
 
 from core.athlete_passport import AthletePassportData, build_athlete_passport
-from core.database import get_connection, get_effective_athlete_thresholds
+from core.database import (
+    create_athlete_health_daily_table,
+    get_connection,
+    get_effective_athlete_thresholds,
+)
 from core.environment_profile import build_personal_environment_profile
 from core.home_predictions import (
     HomeEnvironmentResponse,
@@ -24,6 +28,7 @@ from core.home_predictions import (
 )
 from core.learning_engine import LearnedPattern, build_learning_profile
 from core.progress import ProgressSummary, build_progress_summary
+from core.recovery_coach import RecoveryHealthSignal, build_recovery_health_signal
 from core.training_blueprint import BlueprintCategory, build_training_blueprint
 
 
@@ -55,6 +60,27 @@ class PassportThresholdEvidence:
 
 
 @dataclass(frozen=True)
+class PassportHealthHistory:
+    available: bool
+    calendar_days: int
+    hrv_days: int
+    resting_hr_days: int
+    sleep_days: int
+    first_date: str | None
+    latest_date: str | None
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PassportShareProfile:
+    enabled: bool
+    included: tuple[str, ...]
+    excluded: tuple[str, ...]
+    status: str
+    explanation: str
+
+
+@dataclass(frozen=True)
 class PassportDetail:
     athlete: AthletePassportData
     reference_date: str
@@ -73,7 +99,10 @@ class PassportDetail:
     evidence_notes: tuple[str, ...]
     progress: ProgressSummary
     threshold_source: str
-    model_version: int = 1
+    health: RecoveryHealthSignal
+    health_history: PassportHealthHistory
+    share_profile: PassportShareProfile
+    model_version: int = 2
 
 
 def _pace_text(
@@ -150,6 +179,78 @@ def _threshold_work_distances(athlete_id: int) -> list[float]:
         if found:
             distances.append(distance)
     return distances
+
+
+def _health_history(
+    athlete_id: int,
+    *,
+    reference_date: datetime.date,
+) -> PassportHealthHistory:
+    """Summarise source-labelled health coverage without interpreting health."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    create_athlete_health_daily_table(cursor)
+    row = cursor.execute(
+        """
+        SELECT
+            COUNT(DISTINCT health_date),
+            COUNT(DISTINCT CASE WHEN hrv_value IS NOT NULL THEN health_date END),
+            COUNT(DISTINCT CASE WHEN resting_hr IS NOT NULL THEN health_date END),
+            COUNT(DISTINCT CASE WHEN sleep_duration_min IS NOT NULL THEN health_date END),
+            MIN(health_date),
+            MAX(health_date)
+        FROM athlete_health_daily
+        WHERE athlete_id = ?
+          AND date(health_date) <= date(?)
+        """,
+        (int(athlete_id), reference_date.isoformat()),
+    ).fetchone()
+    source_rows = cursor.execute(
+        """
+        SELECT DISTINCT source
+        FROM athlete_health_daily
+        WHERE athlete_id = ?
+          AND date(health_date) <= date(?)
+        ORDER BY source
+        """,
+        (int(athlete_id), reference_date.isoformat()),
+    ).fetchall()
+    connection.close()
+    days = int(row[0] or 0) if row else 0
+    return PassportHealthHistory(
+        available=days > 0,
+        calendar_days=days,
+        hrv_days=int(row[1] or 0) if row else 0,
+        resting_hr_days=int(row[2] or 0) if row else 0,
+        sleep_days=int(row[3] or 0) if row else 0,
+        first_date=str(row[4]) if row and row[4] else None,
+        latest_date=str(row[5]) if row and row[5] else None,
+        sources=tuple(str(item[0]) for item in source_rows if item[0]),
+    )
+
+
+def _share_profile() -> PassportShareProfile:
+    """Describe the safe public subset; never publish it automatically."""
+    return PassportShareProfile(
+        enabled=False,
+        included=(
+            "Runner identity and category",
+            "Factual 5K, 10K and half-marathon PBs",
+            "Age-graded performance",
+            "Aerobic direction and evidence confidence",
+        ),
+        excluded=(
+            "Date of birth and account details",
+            "HRV, resting heart rate and sleep history",
+            "Recovery check-ins, notes and nutrition preferences",
+            "Training-zone boundaries unless the athlete explicitly includes them",
+        ),
+        status="Private · sharing off",
+        explanation=(
+            "This is a preview of the athlete-approved public subset. No link is "
+            "created and no data is published until sharing is explicitly enabled."
+        ),
+    )
 
 
 def _anchors(progress: ProgressSummary, thresholds: dict) -> tuple[PassportAnchor, ...]:
@@ -239,6 +340,11 @@ def build_passport_detail(
         None,
     )
     threshold_distances = _threshold_work_distances(athlete_id)
+    health = build_recovery_health_signal(athlete_id, today=effective_date)
+    health_history = _health_history(
+        athlete_id,
+        reference_date=effective_date,
+    )
     threshold_evidence = PassportThresholdEvidence(
         decoded_workout_count=(
             threshold_pattern.trusted_session_count if threshold_pattern else 0
@@ -299,4 +405,7 @@ def build_passport_detail(
         ),
         progress=progress,
         threshold_source=str(thresholds.get("source") or "Not set"),
+        health=health,
+        health_history=health_history,
+        share_profile=_share_profile(),
     )
