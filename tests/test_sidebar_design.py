@@ -3,9 +3,13 @@ from pathlib import Path
 from ui.sidebar import (
     ALL_NAVIGATION,
     MANAGEMENT_NAVIGATION,
+    NAVIGATION_LABELS,
     PRIMARY_NAVIGATION,
+    athlete_image_data_uri,
     brand_logo_data_uri,
+    build_sidebar_account_html,
     build_sidebar_brand_html,
+    navigation_label,
 )
 
 
@@ -75,3 +79,47 @@ def test_sidebar_toggle_keeps_explicit_contrast_in_dark_browser_chrome():
     assert '[data-testid="stSelectbox"] [data-baseweb="select"] div' in theme
     assert "opacity: 1 !important" in theme
     assert "fill: #536576 !important" in theme
+
+
+def test_premium_labels_rename_coach_pages_without_changing_route_order():
+    source = (ROOT / "ui" / "sidebar.py").read_text(encoding="utf-8")
+
+    assert PRIMARY_NAVIGATION[:4] == ["Home", "Coaching Team", "Next Run", "Journal"]
+    assert navigation_label("Home") == "Lead Coach"
+    assert navigation_label("Next Run") == "Training Coach"
+    assert navigation_label("Activities") == "Workout Coach"
+    assert navigation_label("Progress") == "Progress Coach"
+    assert navigation_label("Race Predictor") == "Race Coach"
+    assert navigation_label("Goals") == "Goal Coach"
+    assert navigation_label("Fuel Planner") == "Nutrition Coach"
+    assert navigation_label("Passport") == "Athlete Passport"
+    assert navigation_label("Learning") == "Learning Coach"
+    assert set(NAVIGATION_LABELS) == set(ALL_NAVIGATION)
+    assert "format_func=navigation_label" in source
+
+
+def test_premium_navigation_uses_line_icons_sections_and_athlete_footer():
+    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+    richard = build_sidebar_account_html("Richard Burke")
+    unknown = build_sidebar_account_html("Test Runner")
+
+    assert theme.count("--pp-nav-icon:url") == len(ALL_NAVIGATION)
+    assert "-webkit-mask-image: var(--pp-nav-icon)" in theme
+    assert 'content: "Performance"' in theme
+    assert 'content: "Plan & profile"' in theme
+    assert 'content: "Manage"' in theme
+    assert "pp-sidebar-account" in richard
+    assert "Richard Burke" in richard
+    assert "data:image/jpeg;base64," in richard
+    assert athlete_image_data_uri("Richard Burke").startswith("data:image/jpeg;base64,")
+    assert "TR" in unknown
+
+
+def test_premium_navigation_and_dark_coaching_cards_resist_safari_auto_darkening():
+    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+
+    assert "-webkit-text-fill-color: #526679 !important" in theme
+    assert ".lc-identity-copy h1,.lc-identity-copy h2" in theme
+    assert ".learning-daily h1,.learning-daily h2" in theme
+    assert "-webkit-text-fill-color:#FFFFFF!important" in theme
+    assert "-webkit-text-fill-color:#D5E1E8!important" in theme

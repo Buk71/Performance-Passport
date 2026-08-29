@@ -181,16 +181,18 @@ def inject_global_theme():
         }}
 
         [data-testid="stSidebar"] {{
+            width: 18.35rem !important;
+            min-width: 18.35rem !important;
             background:
-                radial-gradient(circle at 18% 8%, rgba(240,90,40,.055), transparent 24%),
-                radial-gradient(ellipse at 80% 88%, rgba(62,142,114,.055), transparent 30%),
+                radial-gradient(circle at 13% 7%, rgba(240,90,40,.075), transparent 22%),
+                radial-gradient(ellipse at 88% 91%, rgba(62,142,114,.07), transparent 30%),
                 var(--pp-sidebar);
             border-right: 1px solid rgba(16, 38, 61, 0.08);
-            box-shadow: 8px 0 30px rgba(16, 38, 61, 0.025);
+            box-shadow: 10px 0 34px rgba(16, 38, 61, 0.035);
         }}
 
         [data-testid="stSidebarContent"] {{
-            padding: 1rem 0.82rem 1.1rem;
+            padding: 1.12rem 1rem 1.15rem;
         }}
 
         [data-testid="stSidebar"] .stRadio > label {{
@@ -202,18 +204,17 @@ def inject_global_theme():
         }}
 
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {{
-            gap: 0.12rem;
+            gap: 0.11rem;
         }}
 
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] {{
             position: relative;
             width: 100%;
-            min-height: 2.32rem;
-            padding: 0.48rem 0.62rem;
+            min-height: 2.42rem;
+            padding: 0.51rem 0.66rem;
             background: transparent;
             border: 1px solid transparent;
-            border-left: 3px solid transparent;
-            border-radius: 10px;
+            border-radius: 11px;
             transition:
                 background-color 150ms ease,
                 border-color 150ms ease,
@@ -224,37 +225,46 @@ def inject_global_theme():
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p {{
             display: flex;
             align-items: center;
-            gap: 0.62rem;
-            color: #536576 !important;
-            font-size: 0.83rem;
-            font-weight: 610;
+            gap: 0.7rem;
+            margin: 0 !important;
+            color: #526679 !important;
+            -webkit-text-fill-color: #526679 !important;
+            font-size: 0.855rem;
+            font-weight: 620;
             line-height: 1.15;
         }}
 
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p::before {{
             content: "";
-            width: 7px;
-            height: 7px;
-            flex: 0 0 7px;
-            background: #AAB5BE;
-            border: 2px solid var(--pp-sidebar);
-            border-radius: 999px;
-            box-shadow: 0 0 0 1px #AAB5BE;
+            width: 1.02rem;
+            height: 1.02rem;
+            flex: 0 0 1.02rem;
+            background: #8091A0;
+            -webkit-mask-image: var(--pp-nav-icon);
+            mask-image: var(--pp-nav-icon);
+            -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+            -webkit-mask-position: center;
+            mask-position: center;
+            -webkit-mask-size: contain;
+            mask-size: contain;
         }}
 
         [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"]:hover {{
-            background: rgba(255, 255, 255, 0.66);
+            background: rgba(255, 255, 255, 0.72);
             border-color: rgba(16, 38, 61, 0.07);
-            transform: translateX(1px);
+            transform: translateX(2px);
         }}
 
         [data-testid="stSidebar"]
         .stRadio
         label:has(input[type="radio"]:checked) {{
-            background: rgba(255, 255, 255, 0.92) !important;
-            border-color: rgba(16, 38, 61, 0.08) !important;
+            background: #F8F5EF !important;
+            border-color: rgba(16, 38, 61, 0.075) !important;
             border-left-color: var(--pp-accent) !important;
-            box-shadow: 0 5px 14px rgba(16, 38, 61, 0.07) !important;
+            box-shadow:
+                inset 3px 0 0 var(--pp-accent),
+                0 5px 15px rgba(16, 38, 61, 0.065) !important;
         }}
 
         [data-testid="stSidebar"]
@@ -262,7 +272,8 @@ def inject_global_theme():
         label:has(input[type="radio"]:checked)
         p {{
             color: #10263D !important;
-            font-weight: 760;
+            -webkit-text-fill-color: #10263D !important;
+            font-weight: 770;
         }}
 
         [data-testid="stSidebar"]
@@ -270,7 +281,6 @@ def inject_global_theme():
         label:has(input[type="radio"]:checked)
         p::before {{
             background: var(--pp-accent);
-            box-shadow: 0 0 0 2px rgba(240, 90, 40, 0.20);
         }}
 
         [data-testid="stSidebar"]
@@ -283,7 +293,54 @@ def inject_global_theme():
         [data-testid="stSidebar"] .stRadio label:nth-of-type(5),
         [data-testid="stSidebar"] .stRadio label:nth-of-type(9),
         [data-testid="stSidebar"] .stRadio label:nth-of-type(15) {{
-            margin-top: 1.42rem;
+            margin-top: 1.72rem;
+        }}
+
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(5)::before,
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(9)::before,
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(15)::before {{
+            position: absolute;
+            left: 0.5rem;
+            top: -1.27rem;
+            color: #8A969F;
+            -webkit-text-fill-color: #8A969F;
+            font-size: 0.56rem;
+            font-weight: 850;
+            letter-spacing: 0.145em;
+            line-height: 1;
+            text-transform: uppercase;
+        }}
+
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(5)::before {{ content: "Performance"; }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(9)::before {{ content: "Plan & profile"; }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(15)::before {{ content: "Manage"; }}
+
+        /* Clean outline icon masks. The radio values remain plain-text route
+           names for keyboard access, testing and durable same-app links. */
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(1) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9 20v-6h6v6'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(2) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5M3 20v-2a5 5 0 0 1 10 0v2m2-7a4 4 0 0 1 6 3.5V19'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(3) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='m13 2-8 12h7l-1 8 8-12h-7l1-8Z'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(4) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm0 12.5a3 3 0 0 1 3-3h11M9 8h6'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(5) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h4l2-6 4 12 2-6h6'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(6) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4 18 10 12l4 4 6-9m-5 0h5v5'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(7) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M5 21V4m0 1h12l-2 4 2 4H5'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(8) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' d='M8 3h8l1 5 4 3-3 4 .5 6L12 18l-6.5 3L6 15l-3-4 4-3 1-5Zm1.5 8.5 1.6 1.6 3.6-3.6'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(9) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><circle cx='12' cy='12' r='3' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='m17.5 6.5 3-3'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(10) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='5' width='18' height='16' rx='2' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M7 3v4m10-4v4M3 10h18M8 14h3m2 0h3m-8 3h3'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(11) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M12 7v10M7 12h10'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(12) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h4l2-5 4 10 2-5h6M7 4.5A5 5 0 0 1 12 7a5 5 0 0 1 5-2.5'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(13) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='3' width='16' height='18' rx='2' fill='none' stroke='black' stroke-width='2'/><circle cx='9' cy='9' r='2' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M13 8h4m-4 4h4M7 16h10'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(14) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M9 18h6m-5 3h4m4-11a6 6 0 1 0-12 0c0 2.4 1.2 3.8 2.5 5 .8.7 1.2 1.3 1.3 2h4.4c.1-.7.5-1.3 1.3-2 1.3-1.2 2.5-2.6 2.5-5Z'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(15) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='9' cy='8' r='3' fill='none' stroke='black' stroke-width='2'/><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M3 20v-2a6 6 0 0 1 12 0v2m3-8v6m-3-3h6'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(16) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M12 3v12m-5-5 5 5 5-5M5 20h14'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(17) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M12 8v4m0 4h.01'/></svg>"); }}
+        [data-testid="stSidebar"] .stRadio label:nth-of-type(18) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='3' fill='none' stroke='black' stroke-width='2'/><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4'/></svg>"); }}
+
+        @media (max-width: 760px) {{
+            [data-testid="stSidebar"] {{
+                width: min(18.35rem, 88vw) !important;
+                min-width: min(18.35rem, 88vw) !important;
+            }}
         }}
 
         .stApp,
@@ -449,34 +506,40 @@ def inject_global_theme():
             overflow: hidden;
             display: flex;
             align-items: center;
-            gap: 0.62rem;
-            margin: 0.08rem 0 1.05rem;
-            padding: 0.62rem 0.64rem;
-            background: rgba(255, 255, 255, 0.72);
+            gap: 0.7rem;
+            min-height: 5.1rem;
+            margin: 0.08rem 0 1.08rem;
+            padding: 0.74rem 0.72rem;
+            background:
+                linear-gradient(115deg, rgba(255,255,255,.88), rgba(255,255,255,.66)),
+                var(--pp-paper);
             border: 1px solid rgba(16, 38, 61, 0.08);
-            border-radius: 17px;
-            box-shadow: 0 8px 22px rgba(16, 38, 61, 0.055);
+            border-radius: 19px;
+            box-shadow: 0 10px 24px rgba(16, 38, 61, 0.06);
         }}
 
         .pp-brand::after {{
             content: "";
             position: absolute;
-            right: -26px;
-            bottom: -36px;
-            width: 96px;
-            height: 72px;
+            right: -31px;
+            bottom: -42px;
+            width: 122px;
+            height: 92px;
             border: 1px solid rgba(240, 90, 40, 0.10);
             border-radius: 50%;
             transform: rotate(-18deg);
+            box-shadow:
+                0 0 0 14px rgba(240,90,40,.025),
+                0 0 0 30px rgba(16,38,61,.018);
             pointer-events: none;
         }}
 
         .pp-sidebar-logo-wrap {{
             display: grid;
             place-items: center;
-            width: 4.25rem;
-            height: 3.2rem;
-            flex: 0 0 4.25rem;
+            width: 4.45rem;
+            height: 3.45rem;
+            flex: 0 0 4.45rem;
         }}
 
         .pp-sidebar-logo {{
@@ -501,8 +564,9 @@ def inject_global_theme():
 
         .pp-brand-title {{
             color: #10263D !important;
-            font-size: 0.92rem;
-            font-weight: 790;
+            -webkit-text-fill-color: #10263D !important;
+            font-size: 0.95rem;
+            font-weight: 800;
             line-height: 1.08;
             letter-spacing: -0.025em;
         }}
@@ -515,43 +579,89 @@ def inject_global_theme():
         }}
 
         .pp-sidebar-section {{
-            margin: 0.1rem 0 0.34rem;
+            margin: 0.1rem 0 0.38rem;
             padding: 0 0.52rem;
             color: #87939E;
+            -webkit-text-fill-color: #87939E;
             font-size: 0.59rem;
             font-weight: 800;
             letter-spacing: 0.12em;
             text-transform: uppercase;
         }}
 
-        .pp-sidebar-footer {{
+        .pp-sidebar-account {{
             position: relative;
-            margin-top: 0.9rem;
-            padding: 0.72rem 0.78rem;
-            background: rgba(16, 38, 61, 0.035);
+            display: grid;
+            grid-template-columns: auto minmax(0,1fr) auto;
+            align-items: center;
+            gap: 0.68rem;
+            margin-top: 1rem;
+            padding: 0.72rem;
+            background: rgba(255,255,255,.62);
             border: 1px solid rgba(16, 38, 61, 0.07);
-            border-radius: 12px;
+            border-radius: 15px;
         }}
 
-        .pp-sidebar-footer-label {{
-            color: var(--pp-text-muted);
-            font-size: 0.64rem;
-            font-weight: 720;
-            letter-spacing: 0.07em;
+        .pp-sidebar-avatar {{
+            display: grid;
+            place-items: center;
+            width: 2.35rem;
+            height: 2.35rem;
+            overflow: hidden;
+            color: #FFFFFF;
+            -webkit-text-fill-color: #FFFFFF;
+            background: #10263D;
+            border: 2px solid rgba(255,255,255,.82);
+            border-radius: 999px;
+            box-shadow: 0 0 0 1px rgba(16,38,61,.12);
+            font-size: .68rem;
+            font-weight: 850;
+        }}
+
+        .pp-sidebar-avatar img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }}
+
+        .pp-sidebar-account-copy {{ min-width: 0; }}
+        .pp-sidebar-account-copy strong {{
+            display: block;
+            overflow: hidden;
+            color: #10263D !important;
+            -webkit-text-fill-color: #10263D !important;
+            font-size: .79rem;
+            font-weight: 780;
+            line-height: 1.1;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .pp-sidebar-account-copy span {{
+            display: block;
+            margin-top: .24rem;
+            color: #84919C !important;
+            -webkit-text-fill-color: #84919C !important;
+            font-size: .55rem;
+            font-weight: 800;
+            letter-spacing: .1em;
             text-transform: uppercase;
         }}
-
-        .pp-sidebar-footer-title {{
-            margin-top: 0.25rem;
-            color: var(--pp-text);
-            font-size: 0.84rem;
-            font-weight: 680;
+        .pp-sidebar-live {{
+            width: .48rem;
+            height: .48rem;
+            background: #3E9E79;
+            border: 2px solid #E8F4EF;
+            border-radius: 999px;
+            box-shadow: 0 0 0 1px rgba(62,142,114,.18);
         }}
-
-        .pp-sidebar-footer-meta {{
-            margin-top: 0.12rem;
-            color: var(--pp-text-secondary);
-            font-size: 0.7rem;
+        .pp-sidebar-release {{
+            margin-top: .42rem;
+            padding: 0 .72rem;
+            color: #939DA5 !important;
+            -webkit-text-fill-color: #939DA5 !important;
+            font-size: .53rem;
+            font-weight: 680;
+            letter-spacing: .035em;
         }}
 
         .pp-page-header {{
@@ -941,8 +1051,50 @@ def inject_global_theme():
         .pp-v21-pill{{display:inline-flex;margin-top:.75rem;padding:.35rem .58rem;color:var(--pp-green);background:var(--pp-green-soft);border-radius:999px;font-size:.7rem;font-weight:760}}
         .pp-v21-pathmark{{width:43px;height:43px;flex:0 0 43px}}
         .pp-v21-motto{{margin-top:.16rem;color:var(--pp-text-secondary);font-size:.66rem;font-weight:560}}
-        @media(max-width:900px){{[data-testid="stMainBlockContainer"]{{padding:3.9rem 1rem 5.8rem!important}}.pp-v21-week{{grid-template-columns:repeat(7,minmax(78px,1fr));overflow-x:auto;padding-bottom:.25rem;scrollbar-width:none}}.pp-v21-week::-webkit-scrollbar{{display:none}}.pp-v21-grid{{grid-template-columns:1fr}}
-        @media(max-width:640px){{.pp-v21-title{{font-size:2.15rem}}.pp-v21-card{{padding:1.05rem;border-radius:18px}}.pp-v21-pred-value{{font-size:1.55rem}}.pp-v21-pred-label{{font-size:.55rem}}
+
+        /* Safari may apply automatic dark-page text treatment even though the
+           product surface is deliberately light.  Preserve contrast inside
+           every premium navy coaching panel, including athlete names. */
+        .lc-passport-identity h1,.lc-passport-identity h2,
+        .lc-identity-copy h1,.lc-identity-copy h2,
+        .lc-coach-briefing h1,.lc-coach-briefing h2,
+        .lc-daily h1,.lc-daily h2,
+        .tc-hero h1,.tc-hero h2,.tc-next-key h2,
+        .tc-history h1,.tc-history h2,.tc-history h3,
+        .gc-hero h1,.gc-hero h2,
+        .wc-hero h1,.wc-hero h2,.wc-prediction h2,
+        .rc-hero h1,.rc-hero h2,.rc-boundary h2,
+        .race-coach-hero h1,.race-coach-hero h2,
+        .nc-briefing h1,.nc-briefing h2,
+        .learning-daily h1,.learning-daily h2,
+        .passport-photo-copy strong,.passport-hero-confidence h2,
+        .ct-hero h1,.ct-hero h2,.progress-coach-direction h2 {{
+            color:#FFFFFF!important;
+            -webkit-text-fill-color:#FFFFFF!important;
+        }}
+        .lc-coach-briefing p,.lc-daily p,
+        .tc-hero p,.tc-next-key p,.tc-history p,
+        .gc-hero p,.wc-hero p,.wc-prediction p,
+        .rc-hero p,.rc-boundary p,
+        .race-coach-hero p,.nc-briefing p,
+        .learning-daily p,.passport-hero-confidence p,
+        .ct-hero p,.progress-coach-direction p {{
+            color:#D5E1E8!important;
+            -webkit-text-fill-color:#D5E1E8!important;
+        }}
+
+        @media(max-width:900px){{
+            [data-testid="stMainBlockContainer"]{{padding:3.9rem 1rem 5.8rem!important}}
+            .pp-v21-week{{grid-template-columns:repeat(7,minmax(78px,1fr));overflow-x:auto;padding-bottom:.25rem;scrollbar-width:none}}
+            .pp-v21-week::-webkit-scrollbar{{display:none}}
+            .pp-v21-grid{{grid-template-columns:1fr}}
+        }}
+        @media(max-width:640px){{
+            .pp-v21-title{{font-size:2.15rem}}
+            .pp-v21-card{{padding:1.05rem;border-radius:18px}}
+            .pp-v21-pred-value{{font-size:1.55rem}}
+            .pp-v21-pred-label{{font-size:.55rem}}
+        }}
 </style>
         """,
         unsafe_allow_html=True,
