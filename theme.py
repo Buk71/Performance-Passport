@@ -181,165 +181,67 @@ def inject_global_theme():
         }}
 
         [data-testid="stSidebar"] {{
-            width: 18.35rem !important;
-            min-width: 18.35rem !important;
+            width: 20.4rem !important;
+            min-width: 20.4rem !important;
             background:
-                radial-gradient(circle at 13% 7%, rgba(240,90,40,.075), transparent 22%),
-                radial-gradient(ellipse at 88% 91%, rgba(62,142,114,.07), transparent 30%),
+                radial-gradient(circle at 13% 6%, rgba(240,90,40,.09), transparent 22%),
+                radial-gradient(ellipse at 92% 90%, rgba(62,142,114,.07), transparent 30%),
                 var(--pp-sidebar);
             border-right: 1px solid rgba(16, 38, 61, 0.08);
-            box-shadow: 10px 0 34px rgba(16, 38, 61, 0.035);
+            box-shadow: 12px 0 38px rgba(16, 38, 61, 0.045);
         }}
 
         [data-testid="stSidebarContent"] {{
-            padding: 1.12rem 1rem 1.15rem;
+            padding: 1.05rem 0.92rem 1.25rem;
         }}
 
-        [data-testid="stSidebar"] .stRadio > label {{
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
+        /* Keep the Streamlit radio only as a state/test contract. The visible
+           menu is authored HTML, while native Streamlit buttons provide the
+           click target so navigation stays inside the current session. */
+        [data-testid="stSidebar"] .stRadio {{ display: none !important; }}
+
+        .pp-nav-group-intro {{ display:block; margin:.95rem 0 .58rem; padding-top:.95rem; border-top:1px solid rgba(16,38,61,.075); }}
+        .pp-nav-group-intro.is-first {{ margin-top:.82rem; padding-top:0; border-top:0; }}
+        .pp-nav-group-heading {{ margin:0 0 .18rem .2rem; color:#10263D !important; -webkit-text-fill-color:#10263D !important; font-size:.72rem; font-weight:850; line-height:1.1; letter-spacing:.075em; text-transform:uppercase; }}
+        .pp-nav-group-description {{ margin:0 0 .58rem .2rem; color:#7A8995 !important; -webkit-text-fill-color:#7A8995 !important; font-size:.63rem; font-weight:540; line-height:1.34; }}
+        .pp-nav-card-list {{ display:grid; gap:.36rem; }}
+        .pp-nav-card {{ display:grid; grid-template-columns:1.35rem minmax(0,1fr) .8rem; align-items:center; gap:.58rem; min-height:3.9rem; padding:.63rem .68rem; color:#20384D !important; -webkit-text-fill-color:#20384D !important; background:rgba(255,255,255,.40); border:1px solid rgba(16,38,61,.06); border-radius:13px; box-shadow:0 1px 0 rgba(255,255,255,.62) inset; text-decoration:none !important; transition:transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease; }}
+        [class*="st-key-pp_nav_"]:has([data-testid="stButton"] button:hover) .pp-nav-card {{ color:#10263D !important; -webkit-text-fill-color:#10263D !important; background:rgba(255,255,255,.88); border-color:rgba(16,38,61,.11); box-shadow:0 7px 18px rgba(16,38,61,.065); transform:translateX(2px); text-decoration:none !important; }}
+        .pp-nav-card.is-active {{ color:#10263D !important; -webkit-text-fill-color:#10263D !important; background:linear-gradient(100deg, rgba(240,90,40,.10), rgba(255,255,255,.97) 48%); border-color:rgba(240,90,40,.25); box-shadow:inset 3px 0 0 var(--pp-accent), 0 7px 18px rgba(16,38,61,.075); }}
+        .pp-nav-card-icon {{ display:grid; place-items:center; width:1.25rem; height:1.25rem; color:#718495 !important; -webkit-text-fill-color:initial !important; }}
+        .pp-nav-card-icon svg {{ width:1.12rem; height:1.12rem; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }}
+        .pp-nav-card.is-active .pp-nav-card-icon {{ color:var(--pp-accent) !important; }}
+        .pp-nav-card-copy {{ display:block; min-width:0; }}
+        .pp-nav-card-copy strong {{ display:block; margin:0; color:#20384D !important; -webkit-text-fill-color:#20384D !important; font-size:.82rem; font-weight:800; line-height:1.13; letter-spacing:-.008em; }}
+        .pp-nav-card.is-active .pp-nav-card-copy strong {{ color:#10263D !important; -webkit-text-fill-color:#10263D !important; }}
+        .pp-nav-card-copy > span {{ display:block; margin-top:.2rem; color:#73828E !important; -webkit-text-fill-color:#73828E !important; font-size:.64rem; font-weight:520; line-height:1.28; }}
+        .pp-nav-card-arrow {{ color:#A0ABB4 !important; -webkit-text-fill-color:#A0ABB4 !important; font-size:1.05rem; font-weight:500; line-height:1; opacity:.55; }}
+        .pp-nav-card.is-active .pp-nav-card-arrow {{ color:var(--pp-accent) !important; -webkit-text-fill-color:var(--pp-accent) !important; opacity:.9; }}
+
+        /* Native click layer: the authored card owns the layout height.
+           Streamlit wraps every button in an stElementContainer; that wrapper
+           must also be taken out of normal flow, otherwise it creates a phantom
+           button-height gap underneath the visible card and shifts the hit area. */
+        [class*="st-key-pp_nav_"] {{ position:relative; margin:0 0 .36rem !important; }}
+        [class*="st-key-pp_nav_"] [data-testid="stVerticalBlock"] {{ gap:0 !important; }}
+        [class*="st-key-pp_nav_"] [data-testid="stElementContainer"]:has([data-testid="stButton"]) {{
+            position:absolute !important;
+            inset:0 !important;
+            z-index:5 !important;
+            width:100% !important;
+            height:100% !important;
+            margin:0 !important;
         }}
+        [class*="st-key-pp_nav_"] [data-testid="stButton"] {{ position:absolute !important; inset:0 !important; width:100% !important; height:100% !important; margin:0 !important; }}
+        [class*="st-key-pp_nav_"] [data-testid="stButton"] button {{ width:100% !important; height:100% !important; min-height:100% !important; padding:0 !important; border:0 !important; border-radius:13px !important; background:transparent !important; box-shadow:none !important; opacity:0 !important; cursor:pointer !important; }}
+        [class*="st-key-pp_nav_"]:has([data-testid="stButton"] button:focus-visible) .pp-nav-card {{ outline:3px solid rgba(240,90,40,.30); outline-offset:2px; }}
+        [class*="st-key-pp_nav_"]:has([data-testid="stButton"] button:active) .pp-nav-card {{ transform:translateX(1px) scale(.995); }}
 
-        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {{
-            gap: 0.11rem;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] {{
-            position: relative;
-            width: 100%;
-            min-height: 2.42rem;
-            padding: 0.51rem 0.66rem;
-            background: transparent;
-            border: 1px solid transparent;
-            border-radius: 11px;
-            transition:
-                background-color 150ms ease,
-                border-color 150ms ease,
-                box-shadow 150ms ease,
-                transform 150ms ease;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p {{
-            display: flex;
-            align-items: center;
-            gap: 0.7rem;
-            margin: 0 !important;
-            color: #526679 !important;
-            -webkit-text-fill-color: #526679 !important;
-            font-size: 0.855rem;
-            font-weight: 620;
-            line-height: 1.15;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] p::before {{
-            content: "";
-            width: 1.02rem;
-            height: 1.02rem;
-            flex: 0 0 1.02rem;
-            background: #8091A0;
-            -webkit-mask-image: var(--pp-nav-icon);
-            mask-image: var(--pp-nav-icon);
-            -webkit-mask-repeat: no-repeat;
-            mask-repeat: no-repeat;
-            -webkit-mask-position: center;
-            mask-position: center;
-            -webkit-mask-size: contain;
-            mask-size: contain;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label[data-baseweb="radio"]:hover {{
-            background: rgba(255, 255, 255, 0.72);
-            border-color: rgba(16, 38, 61, 0.07);
-            transform: translateX(2px);
-        }}
-
-        [data-testid="stSidebar"]
-        .stRadio
-        label:has(input[type="radio"]:checked) {{
-            background: #F8F5EF !important;
-            border-color: rgba(16, 38, 61, 0.075) !important;
-            border-left-color: var(--pp-accent) !important;
-            box-shadow:
-                inset 3px 0 0 var(--pp-accent),
-                0 5px 15px rgba(16, 38, 61, 0.065) !important;
-        }}
-
-        [data-testid="stSidebar"]
-        .stRadio
-        label:has(input[type="radio"]:checked)
-        p {{
-            color: #10263D !important;
-            -webkit-text-fill-color: #10263D !important;
-            font-weight: 770;
-        }}
-
-        [data-testid="stSidebar"]
-        .stRadio
-        label:has(input[type="radio"]:checked)
-        p::before {{
-            background: var(--pp-accent);
-        }}
-
-        [data-testid="stSidebar"]
-        .stRadio
-        label[data-baseweb="radio"]
-        > div:first-child {{
-            display: none !important;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(5),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(9),
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(15) {{
-            margin-top: 1.72rem;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(5)::before,
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(9)::before,
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(15)::before {{
-            position: absolute;
-            left: 0.5rem;
-            top: -1.27rem;
-            color: #8A969F;
-            -webkit-text-fill-color: #8A969F;
-            font-size: 0.56rem;
-            font-weight: 850;
-            letter-spacing: 0.145em;
-            line-height: 1;
-            text-transform: uppercase;
-        }}
-
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(5)::before {{ content: "Performance"; }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(9)::before {{ content: "Plan & profile"; }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(15)::before {{ content: "Manage"; }}
-
-        /* Clean outline icon masks. The radio values remain plain-text route
-           names for keyboard access, testing and durable same-app links. */
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(1) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9 20v-6h6v6'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(2) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5M3 20v-2a5 5 0 0 1 10 0v2m2-7a4 4 0 0 1 6 3.5V19'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(3) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='m13 2-8 12h7l-1 8 8-12h-7l1-8Z'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(4) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm0 12.5a3 3 0 0 1 3-3h11M9 8h6'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(5) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h4l2-6 4 12 2-6h6'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(6) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4 18 10 12l4 4 6-9m-5 0h5v5'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(7) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M5 21V4m0 1h12l-2 4 2 4H5'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(8) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' d='M8 3h8l1 5 4 3-3 4 .5 6L12 18l-6.5 3L6 15l-3-4 4-3 1-5Zm1.5 8.5 1.6 1.6 3.6-3.6'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(9) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><circle cx='12' cy='12' r='3' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='m17.5 6.5 3-3'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(10) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='5' width='18' height='16' rx='2' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M7 3v4m10-4v4M3 10h18M8 14h3m2 0h3m-8 3h3'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(11) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M12 7v10M7 12h10'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(12) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h4l2-5 4 10 2-5h6M7 4.5A5 5 0 0 1 12 7a5 5 0 0 1 5-2.5'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(13) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='3' width='16' height='18' rx='2' fill='none' stroke='black' stroke-width='2'/><circle cx='9' cy='9' r='2' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M13 8h4m-4 4h4M7 16h10'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(14) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M9 18h6m-5 3h4m4-11a6 6 0 1 0-12 0c0 2.4 1.2 3.8 2.5 5 .8.7 1.2 1.3 1.3 2h4.4c.1-.7.5-1.3 1.3-2 1.3-1.2 2.5-2.6 2.5-5Z'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(15) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='9' cy='8' r='3' fill='none' stroke='black' stroke-width='2'/><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M3 20v-2a6 6 0 0 1 12 0v2m3-8v6m-3-3h6'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(16) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M12 3v12m-5-5 5 5 5-5M5 20h14'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(17) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='black' stroke-width='2'/><path stroke='black' stroke-width='2' stroke-linecap='round' d='M12 8v4m0 4h.01'/></svg>"); }}
-        [data-testid="stSidebar"] .stRadio label:nth-of-type(18) {{ --pp-nav-icon:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='3' fill='none' stroke='black' stroke-width='2'/><path fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4'/></svg>"); }}
 
         @media (max-width: 760px) {{
             [data-testid="stSidebar"] {{
-                width: min(18.35rem, 88vw) !important;
-                min-width: min(18.35rem, 88vw) !important;
+                width: min(20.4rem, 92vw) !important;
+                min-width: min(20.4rem, 92vw) !important;
             }}
         }}
 
@@ -508,7 +410,7 @@ def inject_global_theme():
             align-items: center;
             gap: 0.7rem;
             min-height: 5.1rem;
-            margin: 0.08rem 0 1.08rem;
+            margin: 0.08rem 0 0.72rem;
             padding: 0.74rem 0.72rem;
             background:
                 linear-gradient(115deg, rgba(255,255,255,.88), rgba(255,255,255,.66)),
@@ -595,8 +497,8 @@ def inject_global_theme():
             grid-template-columns: auto minmax(0,1fr) auto;
             align-items: center;
             gap: 0.68rem;
-            margin-top: 1rem;
-            padding: 0.72rem;
+            margin-top: 0;
+            padding: 0.72rem 0.78rem;
             background: rgba(255,255,255,.62);
             border: 1px solid rgba(16, 38, 61, 0.07);
             border-radius: 15px;
@@ -630,8 +532,8 @@ def inject_global_theme():
             overflow: hidden;
             color: #10263D !important;
             -webkit-text-fill-color: #10263D !important;
-            font-size: .79rem;
-            font-weight: 780;
+            font-size: .88rem;
+            font-weight: 820;
             line-height: 1.1;
             text-overflow: ellipsis;
             white-space: nowrap;

@@ -3,10 +3,14 @@ from pathlib import Path
 from ui.sidebar import (
     ALL_NAVIGATION,
     MANAGEMENT_NAVIGATION,
+    NAVIGATION_DESCRIPTIONS,
     NAVIGATION_LABELS,
+    NAVIGATION_SECTIONS,
     PRIMARY_NAVIGATION,
     athlete_image_data_uri,
     brand_logo_data_uri,
+    build_navigation_html,
+    render_navigation_cards,
     build_sidebar_account_html,
     build_sidebar_brand_html,
     navigation_label,
@@ -28,64 +32,42 @@ def test_sidebar_uses_the_real_pathmark_asset_not_the_temporary_svg():
     assert '<svg class="pp-v21-pathmark"' not in source
 
 
-def test_navigation_has_one_coherent_route_and_no_visible_none_option():
+def test_navigation_routes_are_stable_but_grouped_for_humans():
     source = (ROOT / "ui" / "sidebar.py").read_text(encoding="utf-8")
 
     assert ALL_NAVIGATION == [*PRIMARY_NAVIGATION, *MANAGEMENT_NAVIGATION]
     assert source.count("st.sidebar.radio(") == 1
-    assert '["None", *MANAGEMENT_NAVIGATION]' not in source
-    assert PRIMARY_NAVIGATION[:4] == [
-        "Home",
-        "Coaching Team",
-        "Next Run",
-        "Journal",
+    assert PRIMARY_NAVIGATION[:4] == ["Home", "Passport", "Journal", "Hall of Fame"]
+    assert PRIMARY_NAVIGATION[4:11] == [
+        "Coaching Team", "Next Run", "Activities", "Progress",
+        "Race Predictor", "Recovery Coach", "Learning",
     ]
-    assert PRIMARY_NAVIGATION[4:8] == [
-        "Activities",
-        "Progress",
-        "Race Predictor",
-        "Hall of Fame",
-    ]
-    assert "Fuel Planner" in PRIMARY_NAVIGATION
-    assert "Recovery Coach" in PRIMARY_NAVIGATION
+    assert PRIMARY_NAVIGATION[11:] == ["Goals", "Training Blocks", "Fuel Planner"]
+    assert MANAGEMENT_NAVIGATION == ["Athletes", "Import", "Diagnostics", "Settings"]
 
 
-def test_sidebar_visual_system_has_spacing_route_markers_and_focusable_selection():
-    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
-
-    assert "label:nth-of-type(5)" in theme
-    assert "label:nth-of-type(9)" in theme
-    assert "label:nth-of-type(15)" in theme
-    assert 'content: "Analyse"' not in theme
-    assert "p::before" in theme
-    assert 'label:has(input[type="radio"]:checked)' in theme
-    assert "border-left-color: var(--pp-accent)" in theme
-    assert ".pp-sidebar-logo" in theme
+def test_navigation_sections_match_the_agreed_product_structure():
+    assert list(NAVIGATION_SECTIONS) == ["Overview", "Running Team", "Training Set Up", "Admin"]
+    assert NAVIGATION_SECTIONS["Overview"]["routes"] == PRIMARY_NAVIGATION[:4]
+    assert NAVIGATION_SECTIONS["Running Team"]["routes"] == PRIMARY_NAVIGATION[4:11]
+    assert NAVIGATION_SECTIONS["Training Set Up"]["routes"] == PRIMARY_NAVIGATION[11:]
+    assert NAVIGATION_SECTIONS["Admin"]["routes"] == MANAGEMENT_NAVIGATION
+    assert "different job" in NAVIGATION_SECTIONS["Running Team"]["description"]
 
 
-def test_sidebar_toggle_keeps_explicit_contrast_in_dark_browser_chrome():
-    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
-
-    assert '[data-testid="stSidebarCollapseButton"] button' in theme
-    assert '[data-testid="stSidebarCollapsedControl"] button' in theme
-    assert "@media (prefers-color-scheme: dark)" in theme
-    assert "background: #F7F3EC !important" in theme
-    assert "background: #F05A28 !important" in theme
-    assert "fill: currentColor !important" in theme
-    assert "color-scheme: light !important" in theme
-    assert '[data-baseweb="select"] span' in theme
-    assert "-webkit-text-fill-color: #10263D !important" in theme
-    assert '[role="option"][aria-selected="true"]' in theme
-    assert '[data-testid="stSelectbox"] [data-baseweb="select"] div' in theme
-    assert "opacity: 1 !important" in theme
-    assert "fill: #536576 !important" in theme
+def test_every_navigation_destination_explains_why_to_click_it():
+    assert set(NAVIGATION_DESCRIPTIONS) == set(ALL_NAVIGATION)
+    assert all(len(text) >= 24 for text in NAVIGATION_DESCRIPTIONS.values())
+    assert "training load" in NAVIGATION_DESCRIPTIONS["Next Run"]
+    assert "latest run" in NAVIGATION_DESCRIPTIONS["Activities"]
+    assert NAVIGATION_DESCRIPTIONS["Next Run"] != NAVIGATION_DESCRIPTIONS["Activities"]
 
 
-def test_premium_labels_rename_coach_pages_without_changing_route_order():
+def test_premium_labels_keep_coach_names_clear_without_changing_routes():
     source = (ROOT / "ui" / "sidebar.py").read_text(encoding="utf-8")
 
-    assert PRIMARY_NAVIGATION[:4] == ["Home", "Coaching Team", "Next Run", "Journal"]
     assert navigation_label("Home") == "Lead Coach"
+    assert navigation_label("Coaching Team") == "Coaching Summary"
     assert navigation_label("Next Run") == "Training Coach"
     assert navigation_label("Activities") == "Workout Coach"
     assert navigation_label("Progress") == "Progress Coach"
@@ -98,27 +80,79 @@ def test_premium_labels_rename_coach_pages_without_changing_route_order():
     assert "format_func=navigation_label" in source
 
 
-def test_premium_navigation_uses_line_icons_sections_and_athlete_footer():
+def test_visible_navigation_is_authored_cards_not_fragile_radio_pseudo_content():
     theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+    markup = build_navigation_html("Activities")
+
+    actual_cards = (
+        markup.count('<div class="pp-nav-card">')
+        + markup.count('<div class="pp-nav-card is-active">')
+    )
+    assert actual_cards == len(ALL_NAVIGATION)
+    assert markup.count('class="pp-nav-group"') == 4
+    assert "Overview" in markup
+    assert "Running Team" in markup
+    assert "Training Set Up" in markup
+    assert "Admin" in markup
+    assert "Workout Coach" in markup
+    assert "Review your latest run and its training impact." in markup
+    assert 'pp-nav-card is-active' in markup
+    assert '?pp_nav=' not in markup
+    assert '.pp-nav-card-copy > span' in theme
+    assert '[data-testid="stSidebar"] .stRadio {{ display: none !important; }}' in theme
+    assert "p::after" not in theme
+    assert "--pp-nav-description:" not in theme
+
+
+
+def test_navigation_clicks_use_native_streamlit_buttons_and_preserve_session_state():
+    source = (ROOT / "ui" / "sidebar.py").read_text(encoding="utf-8")
+    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+
+    assert "st.button(" in source
+    assert "st.session_state[\"primary_navigation\"] = route" in source
+    assert "on_click=_select_navigation" in source
+    assert "st.rerun()" not in source
+    assert "href=" not in build_navigation_html("Home")
+    assert "target=\"_self\"" not in source
+    assert "st.query_params.get(\"pp_nav\")" not in source
+    assert '[class*="st-key-pp_nav_"] [data-testid="stButton"]' in theme
+    assert '[data-testid="stElementContainer"]:has([data-testid="stButton"])' in theme
+    assert "position:absolute !important" in theme
+    assert "opacity:0 !important" in theme
+
+
+def test_current_athlete_identity_is_only_rendered_when_a_real_name_exists():
+    source = (ROOT / "ui" / "sidebar.py").read_text(encoding="utf-8")
     richard = build_sidebar_account_html("Richard Burke")
     unknown = build_sidebar_account_html("Test Runner")
 
-    assert theme.count("--pp-nav-icon:url") == len(ALL_NAVIGATION)
-    assert "-webkit-mask-image: var(--pp-nav-icon)" in theme
-    assert 'content: "Performance"' in theme
-    assert 'content: "Plan & profile"' in theme
-    assert 'content: "Manage"' in theme
+    assert 'if athlete_name:' in source
     assert "pp-sidebar-account" in richard
     assert "Richard Burke" in richard
+    assert "Current athlete" in richard
     assert "data:image/jpeg;base64," in richard
     assert athlete_image_data_uri("Richard Burke").startswith("data:image/jpeg;base64,")
     assert "TR" in unknown
 
 
-def test_premium_navigation_and_dark_coaching_cards_resist_safari_auto_darkening():
+def test_sidebar_toggle_and_text_keep_explicit_contrast_in_dark_browser_chrome():
     theme = (ROOT / "theme.py").read_text(encoding="utf-8")
 
-    assert "-webkit-text-fill-color: #526679 !important" in theme
+    assert '[data-testid="stSidebarCollapseButton"] button' in theme
+    assert '[data-testid="stSidebarCollapsedControl"] button' in theme
+    assert "@media (prefers-color-scheme: dark)" in theme
+    assert "background: #F7F3EC !important" in theme
+    assert "background: #F05A28 !important" in theme
+    assert "fill: currentColor !important" in theme
+    assert "color-scheme: light !important" in theme
+    assert "-webkit-text-fill-color:#20384D !important" in theme or "-webkit-text-fill-color: #20384D !important" in theme
+    assert "-webkit-text-fill-color:#73828E !important" in theme or "-webkit-text-fill-color: #73828E !important" in theme
+
+
+def test_dark_coaching_cards_still_resist_safari_auto_darkening():
+    theme = (ROOT / "theme.py").read_text(encoding="utf-8")
+
     assert ".lc-identity-copy h1,.lc-identity-copy h2" in theme
     assert ".learning-daily h1,.learning-daily h2" in theme
     assert "-webkit-text-fill-color:#FFFFFF!important" in theme
