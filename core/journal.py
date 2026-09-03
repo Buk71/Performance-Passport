@@ -38,6 +38,8 @@ from core.performance_recognition import (
     build_recognition_index,
     recognition_key,
 )
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.training_blocks import (
     TrainingBlock,
     block_progress,
@@ -419,7 +421,7 @@ def _what_changed(
     return tuple(items[:4])
 
 
-def build_latest_journal_entry(
+def _build_latest_journal_entry_uncached(
     athlete_id: int,
 ) -> JournalEntry | None:
     runs = _run_profiles(athlete_id)
@@ -520,4 +522,26 @@ def build_latest_journal_entry(
         recognition_rank=recognition.rank,
         recognition_total=recognition.total,
         recognition_12m_rank=recognition.rank_12m,
+    )
+
+
+def build_latest_journal_entry(
+    athlete_id: int,
+) -> JournalEntry | None:
+    """Build or reuse the latest athlete journal synthesis.
+
+    Journal depends on current training state and the latest activity, so the
+    training-specific dependency version is a safe fit. A new run, goal/block
+    change, recovery/check-in change or interpretation override invalidates it.
+    """
+    source_version = tuple(get_training_intelligence_version(int(athlete_id)))
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        "journal.latest_entry.v1",
+        source_version=source_version,
+        horizon="recent",
+        builder=lambda: _build_latest_journal_entry_uncached(int(athlete_id)),
+        source_version_provider=lambda: tuple(
+            get_training_intelligence_version(int(athlete_id))
+        ),
     )

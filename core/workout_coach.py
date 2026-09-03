@@ -18,6 +18,8 @@ from dataclasses import dataclass
 import datetime
 
 from core.activity_review import ActivityReview, build_activity_review
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.database import get_connection, get_effective_athlete_thresholds
 from core.next_run import build_next_run_recommendation
 from core.operational_block import build_operational_block_week
@@ -447,7 +449,7 @@ def _next_direction(
     )
 
 
-def build_workout_coach_review(
+def _build_workout_coach_review_uncached(
     athlete_id: int,
     activity_id: int,
     *,
@@ -470,5 +472,42 @@ def build_workout_coach_review(
         correction_recommended=(
             review.classification_confidence < 0.70
             or review.session_type == "unknown"
+        ),
+    )
+
+
+def build_workout_coach_review(
+    athlete_id: int,
+    activity_id: int,
+    *,
+    today: datetime.date | None = None,
+) -> WorkoutCoachReview | None:
+    """Build or reuse the complete Workout Coach review.
+
+    The complete object includes the activity review, plan comparison,
+    heart-rate context, prediction contribution and next coaching direction.
+    The selected activity and calendar date are both part of the materialised
+    key because next-direction guidance is intentionally date-sensitive.
+    """
+    athlete_id = int(athlete_id)
+    activity_id = int(activity_id)
+    effective_today = today or datetime.date.today()
+    source_version = tuple(get_training_intelligence_version(athlete_id))
+    key = (
+        f"workout.coach_review.v1.{activity_id}."
+        f"{effective_today.isoformat()}"
+    )
+    return get_or_build_typed_intelligence(
+        athlete_id,
+        key,
+        source_version=source_version,
+        horizon="recent",
+        builder=lambda: _build_workout_coach_review_uncached(
+            athlete_id,
+            activity_id,
+            today=effective_today,
+        ),
+        source_version_provider=lambda: tuple(
+            get_training_intelligence_version(athlete_id)
         ),
     )

@@ -20,6 +20,8 @@ import datetime
 import json
 import math
 
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import RunProfile
 from core.database import (
@@ -488,7 +490,7 @@ def _coaching_text(
     )
 
 
-def build_activity_review(
+def _build_activity_review_uncached(
     athlete_id: int,
     activity_id: int,
 ) -> ActivityReview | None:
@@ -696,4 +698,32 @@ def build_activity_review(
         coaching_detail=coaching_detail,
         coaching_benefit=coaching_benefit,
         limitations=tuple(dict.fromkeys(limitations)),
+    )
+
+
+def build_activity_review(
+    athlete_id: int,
+    activity_id: int,
+):
+    """Build or reuse the coaching review for one activity.
+
+    Activity reviews are stored independently by activity id. Relevant athlete
+    evidence changes invalidate them via the training-specific dependency
+    version; repeat navigation to the same run reuses the typed intelligence.
+    """
+    athlete_id = int(athlete_id)
+    activity_id = int(activity_id)
+    source_version = tuple(get_training_intelligence_version(athlete_id))
+    return get_or_build_typed_intelligence(
+        athlete_id,
+        f"workout.activity_review.v1.{activity_id}",
+        source_version=source_version,
+        horizon="recent",
+        builder=lambda: _build_activity_review_uncached(
+            athlete_id,
+            activity_id,
+        ),
+        source_version_provider=lambda: tuple(
+            get_training_intelligence_version(athlete_id)
+        ),
     )

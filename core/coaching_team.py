@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.coach_brain import CoachBrain
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.database import get_connection
 from core.evidence import EvidenceBundle, EvidenceItem, EvidenceStatus
 from core.home_predictions import HomePredictions, build_goal_predictions, load_run_profiles
@@ -412,7 +414,7 @@ def _environment_profile(predictions: HomePredictions) -> CoachProfile:
     )
 
 
-def build_coaching_team_detail(athlete_id: int) -> CoachingTeamDetail | None:
+def _build_coaching_team_detail_uncached(athlete_id: int) -> CoachingTeamDetail | None:
     """Build one athlete's team without creating any new race prediction."""
     athlete_name = _athlete_name(athlete_id)
     if athlete_name is None:
@@ -455,5 +457,25 @@ def build_coaching_team_detail(athlete_id: int) -> CoachingTeamDetail | None:
             "Race, Workout and Threshold are the only direct goal-time opinions in the current consensus.",
             "Supporting coaches explain progress and conditions; they are not counted as additional prediction votes.",
             "Confidence describes evidence strength, not certainty that a race result will occur.",
+        ),
+    )
+
+
+def build_coaching_team_detail(athlete_id: int) -> CoachingTeamDetail | None:
+    """Build or reuse the current Coaching Summary.
+
+    This synthesis depends on race evidence, progress and the athlete's active
+    goal/training context. The training-specific source version safely captures
+    those inputs while excluding derived coach-output tables.
+    """
+    source_version = tuple(get_training_intelligence_version(int(athlete_id)))
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        "coaching.team_detail.v1",
+        source_version=source_version,
+        horizon="current",
+        builder=lambda: _build_coaching_team_detail_uncached(int(athlete_id)),
+        source_version_provider=lambda: tuple(
+            get_training_intelligence_version(int(athlete_id))
         ),
     )
