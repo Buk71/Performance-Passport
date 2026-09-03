@@ -130,3 +130,60 @@ def get_race_intelligence_version(athlete_id: int) -> tuple[Any, ...]:
     finally:
         connection.close()
     return tuple(row or ())
+
+
+def get_training_intelligence_version(athlete_id: int) -> tuple[Any, ...]:
+    """Return source evidence that can genuinely change Training Coach output.
+
+    Training Coach depends on current athlete/training state, so this includes
+    activities, health/readiness evidence, goals and saved training-block state.
+    It deliberately excludes derived/operational output tables such as
+    workout_library and nutrition selections so normal coach calculation does
+    not invalidate the intelligence it has just produced.
+    """
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                (SELECT
+                    COALESCE(first_name, '') || '|' ||
+                    COALESCE(last_name, '') || '|' ||
+                    COALESCE(date_of_birth, '') || '|' ||
+                    COALESCE(sex, '') || '|' ||
+                    COALESCE(CAST(height_cm AS TEXT), '') || '|' ||
+                    COALESCE(CAST(weight_kg AS TEXT), '') || '|' ||
+                    COALESCE(CAST(resting_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(max_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(lt1_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(lt2_hr AS TEXT), '') || '|' ||
+                    COALESCE(notes, '')
+                    FROM athletes WHERE id = ?),
+                (SELECT COUNT(*) FROM activities WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(id), 0) FROM activities WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(activity_date), '') FROM activities WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_health_daily WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_health_daily WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM goals WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM goals WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM training_blocks WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM training_blocks WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM training_block_designs WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM training_block_designs WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM block_review_actions WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(id), 0) FROM block_review_actions WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_recovery_checkins WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_recovery_checkins WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_activity_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_activity_overrides WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_personal_best_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_personal_best_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_threshold_overrides WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_sport_mappings WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_sport_mappings WHERE athlete_id = ?)
+            """,
+            (int(athlete_id),) * 23,
+        ).fetchone()
+    finally:
+        connection.close()
+    return tuple(row or ())

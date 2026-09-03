@@ -13,6 +13,8 @@ import datetime
 from core.adaptive_coach_live import LiveCoachDecision, build_live_coach_decision
 from core.fuel_planner import fuel_guidance_for_demand, training_demand
 from core.session_designer import DesignedSession, build_designed_session
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,7 @@ def _adjustments() -> tuple[TrainingAdjustment, ...]:
     )
 
 
-def build_training_coach_detail(
+def _build_training_coach_detail_uncached(
     athlete_id: int,
     *,
     today: datetime.date | None = None,
@@ -146,4 +148,33 @@ def build_training_coach_detail(
         fuel_during=during,
         fuel_after=after,
         adjustments=_adjustments(),
+    )
+
+
+def build_training_coach_detail(
+    athlete_id: int,
+    *,
+    today: datetime.date | None = None,
+) -> TrainingCoachDetail | None:
+    """Build or reuse today's Training Coach intelligence.
+
+    The calendar date is part of the key because "today", operational-week
+    placement and next-session timing are intentionally day-sensitive.
+    """
+    effective_today = today or datetime.date.today()
+    source_version = tuple(get_training_intelligence_version(int(athlete_id)))
+    key = f"training.coach_detail.v1.{effective_today.isoformat()}"
+
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        key,
+        source_version=source_version,
+        horizon="recent",
+        builder=lambda: _build_training_coach_detail_uncached(
+            int(athlete_id),
+            today=effective_today,
+        ),
+        source_version_provider=lambda: tuple(
+            get_training_intelligence_version(int(athlete_id))
+        ),
     )
