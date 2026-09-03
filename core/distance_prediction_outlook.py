@@ -18,6 +18,8 @@ from core.endurance_transfer import (
     load_endurance_profile,
 )
 from core.home_predictions import HomePredictions
+from core.cache_version import get_race_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 
 
 DISTANCE_DEFINITIONS = (
@@ -57,7 +59,7 @@ class DistancePredictionOutlook:
         return sum(anchor.available for anchor in self.anchors)
 
 
-def _build_distance_anchor(
+def _build_distance_anchor_uncached(
     athlete_id: int,
     definition: tuple[str, str, float],
 ) -> DistancePredictionAnchor:
@@ -89,12 +91,68 @@ def _build_distance_anchor(
     )
 
 
+def _build_distance_anchor(
+    athlete_id: int,
+    definition: tuple[str, str, float],
+) -> DistancePredictionAnchor:
+    """Build one standard-distance anchor once per athlete source version."""
+    key, _label, _distance_km = definition
+    source_version = tuple(get_race_intelligence_version(int(athlete_id)))
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        f"race.distance_anchor.v1.{key}",
+        source_version=source_version,
+        horizon="current",
+        builder=lambda: _build_distance_anchor_uncached(
+            int(athlete_id),
+            definition,
+        ),
+        source_version_provider=lambda: tuple(
+            get_race_intelligence_version(int(athlete_id))
+        ),
+    )
+
+
 def build_distance_prediction_outlook(
     athlete_id: int,
     *,
     active_predictions: HomePredictions | None = None,
 ) -> DistancePredictionOutlook:
     """Build four independent real-evidence predictions for one athlete."""
+    source_version = tuple(get_race_intelligence_version(int(athlete_id)))
+    active_signature = (
+        "none"
+        if active_predictions is None
+        else (
+            f"{active_predictions.distance_label}|"
+            f"{active_predictions.central_seconds}|"
+            f"{active_predictions.confidence}|"
+            f"{active_predictions.evidence_source_count}"
+        )
+    )
+    final_key = f"race.distance_outlook.v1.{active_signature}"
+
+    cached = get_or_build_typed_intelligence(
+        int(athlete_id),
+        final_key,
+        source_version=source_version,
+        horizon="current",
+        builder=lambda: _build_distance_prediction_outlook_uncached(
+            int(athlete_id),
+            active_predictions=active_predictions,
+        ),
+        source_version_provider=lambda: tuple(
+            get_race_intelligence_version(int(athlete_id))
+        ),
+    )
+    return cached
+
+
+def _build_distance_prediction_outlook_uncached(
+    athlete_id: int,
+    *,
+    active_predictions: HomePredictions | None = None,
+) -> DistancePredictionOutlook:
     anchors_by_key: dict[str, DistancePredictionAnchor] = {}
     missing_definitions = []
 

@@ -20,6 +20,8 @@ from core.distance_prediction_outlook import (
 )
 from core.evidence import EvidenceBundle, EvidenceItem
 from core.home_predictions import HomePredictions, build_goal_predictions
+from core.cache_version import get_race_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence, stable_key_fragment
 
 
 MODEL_VERSION = 1
@@ -228,7 +230,7 @@ def _evidence_views(
     return tuple(views)
 
 
-def build_race_coach_detail(
+def _build_race_coach_detail_uncached(
     athlete_id: int,
     goal: dict[str, Any],
 ) -> RaceCoachDetail:
@@ -282,6 +284,28 @@ def build_race_coach_detail(
         evidence=_evidence_views(bundle, raw_predictions),
         latest_evidence_date=str(latest_date)[:10] if latest_date else None,
         alignment_note=alignment_note,
+    )
+
+
+def build_race_coach_detail(
+    athlete_id: int,
+    goal: dict[str, Any],
+) -> RaceCoachDetail:
+    """Build or reuse the selected-distance Race Coach intelligence."""
+    source_version = tuple(get_race_intelligence_version(int(athlete_id)))
+    goal_key = stable_key_fragment(goal or {})
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        f"race.coach_detail.v1.{goal_key}",
+        source_version=source_version,
+        horizon="current",
+        builder=lambda: _build_race_coach_detail_uncached(
+            int(athlete_id),
+            goal,
+        ),
+        source_version_provider=lambda: tuple(
+            get_race_intelligence_version(int(athlete_id))
+        ),
     )
 
 

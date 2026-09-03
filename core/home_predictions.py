@@ -24,6 +24,8 @@ from core.environment_profile import build_personal_environment_profile
 from core.evidence_engine import build_athlete_evidence_profile
 from core.evidence import EvidenceBundle
 from core.performance_dna import build_performance_dna
+from core.cache_version import get_race_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence, stable_key_fragment
 
 
 SYSTEM_LABELS = {
@@ -299,7 +301,7 @@ def load_run_profiles(athlete_id: int) -> list[RunProfile]:
     return profiles
 
 
-def build_goal_predictions(
+def _build_goal_predictions_uncached(
     athlete_id: int,
     goal: dict | None,
     *,
@@ -446,8 +448,41 @@ def build_goal_predictions(
     )
 
 
+def build_goal_predictions(
+    athlete_id: int,
+    goal: dict | None,
+    *,
+    evidence: EvidenceBundle | None = None,
+    runs: list[RunProfile] | None = None,
+) -> HomePredictions:
+    """Build or reuse one goal prediction.
+
+    Prepared evidence/runs are still honoured on a cache miss. The persistent
+    artifact is keyed by athlete source version + the explicit goal, so normal
+    navigation and app restarts do not rebuild the same race intelligence.
+    """
+    source_version = tuple(get_race_intelligence_version(int(athlete_id)))
+    goal_key = stable_key_fragment(goal or {})
+    key = f"race.goal_predictions.v1.{goal_key}"
+    return get_or_build_typed_intelligence(
+        int(athlete_id),
+        key,
+        source_version=source_version,
+        horizon="current",
+        builder=lambda: _build_goal_predictions_uncached(
+            int(athlete_id),
+            goal,
+            evidence=evidence,
+            runs=runs,
+        ),
+        source_version_provider=lambda: tuple(
+            get_race_intelligence_version(int(athlete_id))
+        ),
+    )
+
+
 def build_home_predictions(athlete_id: int) -> HomePredictions:
-    """Build the active-goal prediction using the existing real engines."""
+    """Build the active-goal prediction using reusable race intelligence."""
     brain = CoachBrain(athlete_id)
     goal = brain.get_goal()
     return build_goal_predictions(athlete_id, goal)

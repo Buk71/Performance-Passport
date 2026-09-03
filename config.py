@@ -1,5 +1,5 @@
 APP_NAME = "Performance Passport"
 APP_SUBTITLE = "Personal Running Intelligence"
 
-VERSION = "0.62.6"
-VERSION_NAME = "Premium Navigation Hitbox Fix"
+VERSION = "0.64.4"
+VERSION_NAME = "Dependency-Specific Intelligence Versions"

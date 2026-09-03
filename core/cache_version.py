@@ -72,3 +72,61 @@ def get_athlete_cache_version(athlete_id: int) -> tuple[Any, ...]:
     finally:
         connection.close()
     return tuple(row or ())
+
+
+def get_race_intelligence_version(athlete_id: int) -> tuple[Any, ...]:
+    """Return only source evidence that can change race intelligence.
+
+    This intentionally excludes derived/operational tables such as
+    workout_library, nutrition selections, recovery check-ins and other coach
+    outputs. Those tables may update while a coach is calculating and must not
+    invalidate race capability that was just materialised.
+
+    Included dependencies:
+    - athlete physiological/profile fields used by race engines;
+    - imported activity history;
+    - activity interpretation overrides;
+    - official/manual PB overrides;
+    - threshold overrides;
+    - sport mappings that affect activity interpretation.
+
+    The explicit selected goal is embedded in each materialised key, so goals
+    do not need to be part of this source version.
+    """
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                (SELECT
+                    COALESCE(first_name, '') || '|' ||
+                    COALESCE(last_name, '') || '|' ||
+                    COALESCE(date_of_birth, '') || '|' ||
+                    COALESCE(sex, '') || '|' ||
+                    COALESCE(CAST(height_cm AS TEXT), '') || '|' ||
+                    COALESCE(CAST(weight_kg AS TEXT), '') || '|' ||
+                    COALESCE(CAST(resting_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(max_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(lt1_hr AS TEXT), '') || '|' ||
+                    COALESCE(CAST(lt2_hr AS TEXT), '') || '|' ||
+                    COALESCE(notes, '')
+                    FROM athletes WHERE id = ?),
+                (SELECT COUNT(*) FROM activities WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(id), 0) FROM activities WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(activity_date), '') FROM activities WHERE athlete_id = ?),
+                (SELECT COALESCE(SUM(CASE WHEN source = 'garmin_fit'
+                    OR original_file LIKE 'uploads/garmin/%' THEN 1 ELSE 0 END), 0)
+                    FROM activities WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_activity_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_activity_overrides WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_personal_best_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_personal_best_overrides WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_threshold_overrides WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_sport_mappings WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_sport_mappings WHERE athlete_id = ?)
+            """,
+            (int(athlete_id),) * 12,
+        ).fetchone()
+    finally:
+        connection.close()
+    return tuple(row or ())

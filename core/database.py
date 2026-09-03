@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 
 def get_connection():
@@ -1627,6 +1627,36 @@ def migrate_to_schema_v15(cursor):
     set_schema_version(cursor, 15)
 
 
+def create_athlete_intelligence_table(cursor):
+    """Persist reusable athlete intelligence independently of UI page caches."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_intelligence (
+            athlete_id INTEGER NOT NULL,
+            intelligence_key TEXT NOT NULL,
+            horizon TEXT NOT NULL DEFAULT 'current',
+            source_version_json TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (athlete_id, intelligence_key),
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_athlete_intelligence_horizon
+        ON athlete_intelligence (athlete_id, horizon)
+        """
+    )
+
+
+def migrate_to_schema_v16(cursor):
+    """Add the v0.64 materialised athlete-intelligence store."""
+    create_athlete_intelligence_table(cursor)
+    set_schema_version(cursor, 16)
+
+
 @lru_cache(maxsize=128)
 def get_activity_overrides(athlete_id):
     conn = get_connection()
@@ -1817,6 +1847,10 @@ def initialise_database():
         migrate_to_schema_v15(cursor)
         schema_version = 15
 
+    if schema_version < 16:
+        migrate_to_schema_v16(cursor)
+        schema_version = 16
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
@@ -1829,6 +1863,7 @@ def initialise_database():
     create_athlete_evidence_overrides_tables(cursor)
     create_recovery_checkins_table(cursor)
     create_athlete_health_daily_table(cursor)
+    create_athlete_intelligence_table(cursor)
 
     backfill_missing_athlete_ids(cursor)
 
