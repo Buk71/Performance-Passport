@@ -15,7 +15,7 @@ import re
 from functools import lru_cache
 
 from core.adaptive_progression import evaluate_progression
-from core.adaptive_weekly_plan import build_adaptive_weekly_plan
+from core.adaptive_weekly_plan import AdaptiveWeeklyPlan, build_adaptive_weekly_plan
 from core.coach_validation_suite import build_validation_suite
 
 
@@ -117,9 +117,14 @@ def build_adaptive_coach_proposal(
     *,
     today: datetime.date | None = None,
     existing_label: str | None = None,
+    prepared_plan: AdaptiveWeeklyPlan | None = None,
 ) -> AdaptiveCoachProposal | None:
     today = today or datetime.date.today()
-    plan = build_adaptive_weekly_plan(athlete_id, today=today)
+    plan = (
+        prepared_plan
+        if prepared_plan is not None
+        else build_adaptive_weekly_plan(athlete_id, today=today)
+    )
 
     if not plan.available or not plan.weeks:
         return None

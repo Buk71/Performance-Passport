@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import datetime
+from functools import lru_cache
 import json
 import math
 import statistics
 from collections import Counter
 from typing import Any
 
+from core.cache_version import get_training_intelligence_version
 from core.database import get_athlete_sport_roles, get_connection
 from core.race_detection import (
     score_athlete_relative_race_effort,
@@ -590,7 +592,7 @@ def _signature_lifts(
     return tuple(results[:10])
 
 
-def build_performance_backtracking_profile(
+def _build_performance_backtracking_profile_uncached(
     athlete_id: int,
 ) -> PerformanceBacktrackingProfile:
     anchors = build_performance_anchors(
@@ -721,4 +723,67 @@ def build_performance_backtracking_profile(
             "Strong-performance windows can still overlap when races are close together, so evidence is not fully independent.",
             "v0.18.4 remains observation-only and does not alter session recommendations.",
         ),
+    )
+
+
+def _backtracking_source_version(
+    athlete_id: int,
+) -> tuple:
+    """Version backtracking from true athlete sources plus workout-library state.
+
+    The training intelligence version catches activity/profile/goal/block changes.
+    Workout-library state is included because backtracking reads phase_json and
+    execution scores from that derived table.
+    """
+    training_version = tuple(
+        get_training_intelligence_version(int(athlete_id))
+    )
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*),
+                MAX(updated_at)
+            FROM workout_library
+            WHERE athlete_id = ?
+            """,
+            (int(athlete_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    workout_count = int(row[0] or 0) if row else 0
+    workout_updated_at = (
+        str(row[1]) if row and row[1] is not None else None
+    )
+
+    return (
+        *training_version,
+        workout_count,
+        workout_updated_at,
+    )
+
+
+@lru_cache(maxsize=64)
+def _build_performance_backtracking_profile_cached(
+    athlete_id: int,
+    source_version: tuple,
+) -> PerformanceBacktrackingProfile:
+    # source_version is intentionally part of the cache key.
+    _ = source_version
+    return _build_performance_backtracking_profile_uncached(
+        int(athlete_id)
+    )
+
+
+def build_performance_backtracking_profile(
+    athlete_id: int,
+) -> PerformanceBacktrackingProfile:
+    """Build or reuse the athlete's observational preparation profile."""
+    athlete_id = int(athlete_id)
+    return _build_performance_backtracking_profile_cached(
+        athlete_id,
+        _backtracking_source_version(athlete_id),
     )

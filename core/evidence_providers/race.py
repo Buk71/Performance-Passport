@@ -25,6 +25,7 @@ import math
 import statistics
 from dataclasses import dataclass
 
+from core.significant_evidence import load_significant_pb_index, refresh_significant_pb_index
 from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import (
     humidity_adjustment_seconds_per_km,
@@ -819,6 +820,52 @@ class RaceEvidenceProvider(EvidenceProvider):
     key = "recent_race"
     title = "Race Coach"
 
+    def __init__(
+        self,
+        *,
+        history_days: int | None = 365,
+        preserved_activity_ids: tuple[int, ...] | None = None,
+    ):
+        """Use current-year raw evidence plus preserved verified PB activities.
+
+        Production default is now 365 days. Explicit history_days=None remains
+        available for full-history validation and diagnostics.
+
+        When preserved_activity_ids is omitted, verified PB activity IDs are
+        loaded automatically from the significant-evidence index and refreshed
+        only when the stored index is stale/missing.
+        """
+        self.history_days = (
+            int(history_days) if history_days is not None else None
+        )
+        self.preserved_activity_ids = (
+            None
+            if preserved_activity_ids is None
+            else tuple(
+                sorted({
+                    int(value)
+                    for value in preserved_activity_ids
+                    if int(value) > 0
+                })
+            )
+        )
+
+    def _effective_preserved_activity_ids(self, athlete_id: int) -> tuple[int, ...]:
+        if self.preserved_activity_ids is not None:
+            return self.preserved_activity_ids
+
+        index = load_significant_pb_index(int(athlete_id))
+        if index is None:
+            index = refresh_significant_pb_index(int(athlete_id))
+
+        return tuple(
+            sorted({
+                int(value["activity_id"])
+                for value in index.values()
+                if value.get("activity_id") is not None
+            })
+        )
+
     def build(self, context: EvidenceContext) -> EvidenceItem:
         candidates, latest_date = self._load_candidates(context.athlete_id)
 
@@ -1125,6 +1172,34 @@ class RaceEvidenceProvider(EvidenceProvider):
 
         placeholders = ",".join("?" for _ in running_sport_ids)
 
+        horizon_clause = ""
+        horizon_params: tuple = ()
+        if self.history_days is not None:
+            preserved_activity_ids = self._effective_preserved_activity_ids(
+                athlete_id
+            )
+            if preserved_activity_ids:
+                preserved_placeholders = ",".join(
+                    "?" for _ in preserved_activity_ids
+                )
+                horizon_clause = (
+                    " AND (date(a.activity_date) >= date(?, '-' || ? || ' days')"
+                    f" OR a.id IN ({preserved_placeholders}))"
+                )
+                horizon_params = (
+                    latest_date.isoformat() if latest_date else datetime.date.today().isoformat(),
+                    int(self.history_days),
+                    *preserved_activity_ids,
+                )
+            else:
+                horizon_clause = (
+                    " AND date(a.activity_date) >= date(?, '-' || ? || ' days')"
+                )
+                horizon_params = (
+                    latest_date.isoformat() if latest_date else datetime.date.today().isoformat(),
+                    int(self.history_days),
+                )
+
         cursor.execute(
             f"""
             SELECT
@@ -1152,9 +1227,10 @@ class RaceEvidenceProvider(EvidenceProvider):
               AND a.activity_date IS NOT NULL
               AND a.distance_m IS NOT NULL
               AND COALESCE(a.elapsed_time_s, a.moving_time_s) IS NOT NULL
+              {horizon_clause}
             ORDER BY a.activity_datetime DESC
             """,
-            (athlete_id, *running_sport_ids),
+            (athlete_id, *running_sport_ids, *horizon_params),
         )
 
         candidates = []

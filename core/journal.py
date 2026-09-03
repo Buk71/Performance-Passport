@@ -21,6 +21,8 @@ from dataclasses import dataclass
 import datetime
 
 from core.capability import build_capability
+from core.cache_version import get_training_intelligence_version
+from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.coach_brain import CoachBrain
 from core.coach_consensus import build_coach_consensus
 from core.coaching import RunProfile
@@ -38,8 +40,6 @@ from core.performance_recognition import (
     build_recognition_index,
     recognition_key,
 )
-from core.cache_version import get_training_intelligence_version
-from core.materialized_intelligence import get_or_build_typed_intelligence
 from core.training_blocks import (
     TrainingBlock,
     block_progress,
@@ -182,7 +182,7 @@ def _build_decision_context(
 
     brain = CoachBrain(athlete_id)
     evidence_bundle = brain.build_evidence()
-    prediction = brain.goal_prediction()
+    prediction = brain.goal_prediction(evidence=evidence_bundle)
     goal = get_active_goal(athlete_id)
 
     easy_result = build_easy_run_coach(
@@ -528,12 +528,7 @@ def _build_latest_journal_entry_uncached(
 def build_latest_journal_entry(
     athlete_id: int,
 ) -> JournalEntry | None:
-    """Build or reuse the latest athlete journal synthesis.
-
-    Journal depends on current training state and the latest activity, so the
-    training-specific dependency version is a safe fit. A new run, goal/block
-    change, recovery/check-in change or interpretation override invalidates it.
-    """
+    """Build or reuse the latest athlete journal synthesis."""
     source_version = tuple(get_training_intelligence_version(int(athlete_id)))
     return get_or_build_typed_intelligence(
         int(athlete_id),

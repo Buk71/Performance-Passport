@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import datetime
 
-from core.adaptive_weekly_plan import build_adaptive_weekly_plan
-from core.live_integration import build_adaptive_coach_proposal
+from core.adaptive_weekly_plan import AdaptiveWeeklyPlan, build_adaptive_weekly_plan
+from core.live_integration import AdaptiveCoachProposal, build_adaptive_coach_proposal
 from core.next_run import NextRunRecommendation, build_next_run_recommendation
 
 
@@ -106,6 +106,8 @@ def build_coaching_arbitration(
     *,
     today: datetime.date | None = None,
     existing_recommendation: NextRunRecommendation | None = None,
+    prepared_plan: AdaptiveWeeklyPlan | None = None,
+    prepared_proposal: AdaptiveCoachProposal | None = None,
 ) -> ArbitrationDecision | None:
     today = today or datetime.date.today()
 
@@ -123,15 +125,24 @@ def build_coaching_arbitration(
     )
     existing_family = _normalise_family(existing_label)
 
-    plan = build_adaptive_weekly_plan(
-        athlete_id,
-        today=today,
+    plan = (
+        prepared_plan
+        if prepared_plan is not None
+        else build_adaptive_weekly_plan(
+            athlete_id,
+            today=today,
+        )
     )
 
-    proposal = build_adaptive_coach_proposal(
-        athlete_id,
-        today=today,
-        existing_label=existing_label,
+    proposal = (
+        prepared_proposal
+        if prepared_proposal is not None
+        else build_adaptive_coach_proposal(
+            athlete_id,
+            today=today,
+            existing_label=existing_label,
+            prepared_plan=plan,
+        )
     )
 
     if proposal is None:

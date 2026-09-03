@@ -43,10 +43,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import datetime
+from functools import lru_cache
 import math
 from typing import Any, Iterable
 
 from core.activity_reliability import has_reliable_distance_and_pace
+from core.cache_version import get_training_intelligence_version
 from core.race_detection import score_athlete_relative_race_effort
 from core.coaching import (
     RunProfile,
@@ -341,6 +343,34 @@ def _category(
 def _activity_context_lookup(
     athlete_id: int,
 ) -> dict[str, _ActivityContext]:
+    """Return activity/session context, reusing it while source data is unchanged.
+
+    Recognition can be requested multiple times inside one Live Coach build
+    (Journal plus Operational Block). Session classification and raw activity
+    reliability are independent of recognition reference_date, so this context
+    is safe to share.
+
+    The cache key includes the training intelligence source version, so a new
+    activity, threshold/override change or other relevant source update causes
+    a fresh lookup automatically.
+    """
+    source_version = tuple(
+        get_training_intelligence_version(int(athlete_id))
+    )
+    return _activity_context_lookup_cached(
+        int(athlete_id),
+        source_version,
+    )
+
+
+@lru_cache(maxsize=64)
+def _activity_context_lookup_cached(
+    athlete_id: int,
+    source_version: tuple,
+) -> dict[str, _ActivityContext]:
+    # source_version is intentionally part of the cache key.
+    # The lookup itself only needs athlete_id.
+    _ = source_version
     thresholds = get_effective_athlete_thresholds(athlete_id)
     conn = get_connection()
     cursor = conn.cursor()

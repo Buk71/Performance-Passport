@@ -1467,6 +1467,22 @@ class WorkoutEvidenceProvider(EvidenceProvider):
     key = "workout"
     title = "Workout Coach"
 
+    def __init__(self, history_days: int | None = RECENT_WINDOW_DAYS):
+        """Limit expensive raw workout evidence to the current evidence horizon.
+
+        Production defaults to the validated 365-day horizon. Passing
+        history_days=None explicitly preserves the legacy full-history path
+        for diagnostics and parity checks.
+        """
+        self.history_days = (
+            int(history_days)
+            if history_days is not None
+            else None
+        )
+
+        if self.history_days is not None and self.history_days <= 0:
+            raise ValueError("history_days must be positive or None")
+
     def build(self, context: EvidenceContext) -> EvidenceItem:
         conn = get_connection()
         cursor = conn.cursor()
@@ -1499,6 +1515,38 @@ class WorkoutEvidenceProvider(EvidenceProvider):
 
         placeholders = ",".join("?" for _ in running_ids)
 
+        history_cutoff = None
+        if self.history_days is not None:
+            cursor.execute(
+                f"""
+                SELECT MAX(substr(a.activity_date, 1, 10))
+                FROM activities a
+                WHERE a.athlete_id = ?
+                  AND CAST(a.sport_id AS TEXT) IN ({placeholders})
+                  AND a.raw_json IS NOT NULL
+                """,
+                (context.athlete_id, *running_ids),
+            )
+            latest_date_raw = cursor.fetchone()[0]
+            latest_date = _as_date(latest_date_raw)
+            if latest_date is not None:
+                history_cutoff = (
+                    latest_date
+                    - datetime.timedelta(days=self.history_days)
+                ).isoformat()
+
+        history_filter_sql = (
+            " AND substr(a.activity_date, 1, 10) >= ?"
+            if history_cutoff is not None
+            else ""
+        )
+        query_params = [
+            context.athlete_id,
+            *running_ids,
+        ]
+        if history_cutoff is not None:
+            query_params.append(history_cutoff)
+
         cursor.execute(
             f"""
             SELECT
@@ -1526,9 +1574,10 @@ class WorkoutEvidenceProvider(EvidenceProvider):
             WHERE a.athlete_id = ?
               AND CAST(a.sport_id AS TEXT) IN ({placeholders})
               AND a.raw_json IS NOT NULL
+              {history_filter_sql}
             ORDER BY a.activity_datetime DESC
             """,
-            (context.athlete_id, *running_ids),
+            tuple(query_params),
         )
 
         rows = [
@@ -2230,6 +2279,11 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "latest_not_representative": not latest_is_representative,
                 "representative_warning": warning,
                 "recognised_workout_count": len(candidates),
+                "history_horizon": {
+                    "history_days": self.history_days,
+                    "cutoff_date": history_cutoff,
+                    "raw_rows_loaded": len(rows),
+                },
                 "workout_library": {
                     "records_written": library_records_written,
                     "write_errors": library_write_errors,

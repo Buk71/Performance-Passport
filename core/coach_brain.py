@@ -174,16 +174,23 @@ class CoachBrain:
     def goal_prediction(
         self,
         additional_evidence: tuple[EvidenceItem, ...] = (),
+        *,
+        evidence: EvidenceBundle | None = None,
     ) -> GoalPrediction:
-        evidence = self.build_evidence()
+        """Build a goal prediction, optionally reusing prepared evidence."""
+        prepared_evidence = (
+            evidence
+            if evidence is not None
+            else self.build_evidence()
+        )
 
         for item in additional_evidence:
-            evidence = evidence.with_item(item)
+            prepared_evidence = prepared_evidence.with_item(item)
 
         return self.prediction_engine.predict_goal(
             athlete_id=self.athlete_id,
             goal=self.get_goal(),
-            evidence=evidence,
+            evidence=prepared_evidence,
         )
 
     def morning_brief(

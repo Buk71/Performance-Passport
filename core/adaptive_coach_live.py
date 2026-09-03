@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 import datetime
 
 from core.coaching_arbitration import build_coaching_arbitration
+from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.live_integration import build_adaptive_coach_proposal
 from core.next_run import build_next_run_recommendation
 from core.operational_block import OperationalWeek, build_operational_block_week
@@ -198,16 +199,24 @@ def build_live_coach_decision(
         or established.session_family
     )
 
+    adaptive_plan = build_adaptive_weekly_plan(
+        athlete_id,
+        today=today,
+    )
+
     proposal = build_adaptive_coach_proposal(
         athlete_id,
         today=today,
         existing_label=established_label,
+        prepared_plan=adaptive_plan,
     )
 
     arbitration = build_coaching_arbitration(
         athlete_id,
         today=today,
         existing_recommendation=established,
+        prepared_plan=adaptive_plan,
+        prepared_proposal=proposal,
     )
 
     if arbitration is None or not arbitration.ready_for_live:
