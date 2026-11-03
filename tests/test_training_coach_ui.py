@@ -134,6 +134,7 @@ def test_training_coach_composes_existing_services_without_new_decision_formula(
 
     monkeypatch.setattr("core.training_coach.build_live_coach_decision", fake_live)
     monkeypatch.setattr("core.training_coach.build_designed_session", fake_session)
+    monkeypatch.setattr("core.training_coach.get_active_runner_journey", lambda athlete_id: None)
 
     detail = build_training_coach_detail(3)
 

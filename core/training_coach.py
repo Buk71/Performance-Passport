@@ -11,6 +11,12 @@ from dataclasses import dataclass
 import datetime
 
 from core.adaptive_coach_live import LiveCoachDecision, build_live_coach_decision
+from core.beginner_sessions import BeginnerSessionPrescription, build_couch_to_5k_session
+from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+from core.runner_journey import (
+    COUCH_TO_5K, FIVE_TO_TEN_K, get_active_runner_journey,
+    get_journey_current_week, get_five_to_ten_k_current_level,
+)
 from core.fuel_planner import fuel_guidance_for_demand, training_demand
 from core.session_designer import DesignedSession, build_designed_session
 from core.cache_version import get_training_intelligence_version
@@ -35,7 +41,18 @@ class TrainingCoachDetail:
     fuel_during: str
     fuel_after: str
     adjustments: tuple[TrainingAdjustment, ...]
-    model_version: int = 1
+    beginner_session: BeginnerSessionPrescription | None = None
+    beginner_week_number: int | None = None
+    five_to_ten_level: int | None = None
+    journey_session_day: str | None = None
+    journey_session_role: str | None = None
+    journey_session_title: str | None = None
+    journey_session_detail: str | None = None
+    journey_session_counts_for_progression: bool | None = None
+    journey_level_title: str | None = None
+    journey_level_emphasis: str | None = None
+    journey_long_run_km: float | None = None
+    model_version: int = 3
 
 
 def _designer_family(decision: LiveCoachDecision) -> str | None:
@@ -111,6 +128,54 @@ def _build_training_coach_detail_uncached(
     if decision is None:
         return None
 
+    journey = get_active_runner_journey(athlete_id)
+    if journey is not None and journey.journey_type == FIVE_TO_TEN_K:
+        level = get_five_to_ten_k_current_level(journey)
+        plan = build_five_to_ten_k_plan(
+            athlete_id=athlete_id,
+            sessions_per_week=journey.sessions_per_week,
+            entry_stage=journey.entry_stage,
+            current_level=level,
+            reference_date=today or datetime.date.today(),
+        )
+        current = plan.levels[level - 1]
+        names = ("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+        effective_today = today or datetime.date.today()
+        next_session = min(
+            current.sessions,
+            key=lambda item: (names.index(item.day) - effective_today.weekday()) % 7,
+        )
+        demand = (
+            "Long" if next_session.role == "Long easy"
+            else "Quality" if "Quality" in next_session.role
+            else "Easy"
+        )
+        focus, before, during, after = fuel_guidance_for_demand(demand)
+        return TrainingCoachDetail(
+            athlete_id=athlete_id, decision=decision, session=None,
+            fuel_demand=demand, fuel_focus=focus, fuel_before=before,
+            fuel_during=during, fuel_after=after, adjustments=_adjustments(),
+            five_to_ten_level=level,
+            journey_session_day=next_session.day,
+            journey_session_role=next_session.role,
+            journey_session_title=next_session.title,
+            journey_session_detail=next_session.detail,
+            journey_session_counts_for_progression=next_session.counts_for_progression,
+            journey_level_title=current.title,
+            journey_level_emphasis=current.emphasis,
+            journey_long_run_km=current.long_run_km,
+        )
+
+    if journey is not None and journey.journey_type == COUCH_TO_5K:
+        focus, before, during, after = fuel_guidance_for_demand("Easy")
+        return TrainingCoachDetail(
+            athlete_id=athlete_id, decision=decision, session=None,
+            fuel_demand="Easy", fuel_focus=focus, fuel_before=before,
+            fuel_during=during, fuel_after=after, adjustments=_adjustments(),
+            beginner_session=build_couch_to_5k_session(journey.current_stage),
+            beginner_week_number=get_journey_current_week(journey),
+        )
+
     family = _designer_family(decision)
     main_set = (
         (decision.key_prescription,)
@@ -163,7 +228,7 @@ def build_training_coach_detail(
     """
     effective_today = today or datetime.date.today()
     source_version = tuple(get_training_intelligence_version(int(athlete_id)))
-    key = f"training.coach_detail.v1.{effective_today.isoformat()}"
+    key = f"training.coach_detail.v3.{effective_today.isoformat()}"
 
     return get_or_build_typed_intelligence(
         int(athlete_id),

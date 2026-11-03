@@ -1,5 +1,6 @@
 import datetime
 import html
+import json
 import textwrap
 
 import streamlit as st
@@ -96,12 +97,52 @@ def _meaningful_title(title, category, activity_date):
 
 
 def _equipment_text(value):
-    if not value:
+    """Return only human-readable equipment labels."""
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        if items and all(len(item) <= 80 for item in items):
+            return ", ".join(items)
         return None
 
     text = str(value).strip()
-
     if not text:
+        return None
+
+    lowered = text.lower()
+    metadata_markers = (
+        "device_index",
+        "garmin_product",
+        "serial_number",
+        "source_type",
+        "software_version",
+        "ant_network",
+        "manufacturer",
+        "battery_status",
+    )
+    if any(marker in lowered for marker in metadata_markers):
+        return None
+
+    if text[:1] in {"{", "["}:
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        if (
+            isinstance(parsed, list)
+            and parsed
+            and all(
+                isinstance(item, str) and 0 < len(item.strip()) <= 80
+                for item in parsed
+            )
+        ):
+            return ", ".join(item.strip() for item in parsed)
+        return None
+
+    if len(text) > 160 or "\\n" in text or "\\r" in text:
         return None
 
     return text
@@ -218,9 +259,10 @@ def show_hall_of_fame_page():
                 award.environment_note,
             ]
 
-            if award.equipment_ids:
+            equipment_text = _equipment_text(award.equipment_ids)
+            if equipment_text:
                 memory_parts.append(
-                    f"Shoes/equipment: {_equipment_text(award.equipment_ids)}"
+                    f"Shoes/equipment: {equipment_text}"
                 )
 
             st.caption(
@@ -251,10 +293,9 @@ def show_hall_of_fame_page():
                     )
                 if award.route_name:
                     st.write(f"• Route/location: {award.route_name}")
-                if award.equipment_ids:
+                if equipment_text:
                     st.write(
-                        f"• Shoes/equipment: "
-                        f"{_equipment_text(award.equipment_ids)}"
+                        f"• Shoes/equipment: {equipment_text}"
                     )
 
             st.divider()

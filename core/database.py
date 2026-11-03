@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 
 
 def get_connection():
@@ -1657,6 +1657,86 @@ def migrate_to_schema_v16(cursor):
     set_schema_version(cursor, 16)
 
 
+def create_runner_journey_tables(cursor):
+    """Persist athlete journeys separately from race goals and block designs."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_runner_journeys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            journey_type TEXT NOT NULL CHECK (
+                journey_type IN ('couch_to_5k', '5k_to_10k')
+            ),
+            status TEXT NOT NULL DEFAULT 'Active' CHECK (
+                status IN ('Active', 'Paused', 'Complete', 'Archived')
+            ),
+            goal_id INTEGER,
+            entry_stage TEXT NOT NULL,
+            current_stage TEXT NOT NULL,
+            sessions_per_week INTEGER NOT NULL DEFAULT 3 CHECK (
+                sessions_per_week BETWEEN 2 AND 7
+            ),
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            baseline_json TEXT NOT NULL DEFAULT '{}',
+            preferences_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(goal_id) REFERENCES goals(id)
+                ON DELETE SET NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_runner_journeys_athlete_status
+        ON athlete_runner_journeys (athlete_id, status, updated_at DESC)
+        """
+    )
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_runner_journeys_one_active
+        ON athlete_runner_journeys (athlete_id)
+        WHERE status = 'Active'
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runner_journey_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            journey_id INTEGER NOT NULL,
+            athlete_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            stage_before TEXT,
+            stage_after TEXT,
+            decision TEXT,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            reason TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(journey_id) REFERENCES athlete_runner_journeys(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY(athlete_id) REFERENCES athletes(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_runner_journey_events_lookup
+        ON runner_journey_events (journey_id, created_at, id)
+        """
+    )
+
+
+def migrate_to_schema_v17(cursor):
+    """Add auditable Runner Journey state for beginner pathways."""
+    create_runner_journey_tables(cursor)
+    set_schema_version(cursor, 17)
+
+
 @lru_cache(maxsize=128)
 def get_activity_overrides(athlete_id):
     conn = get_connection()
@@ -1851,6 +1931,10 @@ def initialise_database():
         migrate_to_schema_v16(cursor)
         schema_version = 16
 
+    if schema_version < 17:
+        migrate_to_schema_v17(cursor)
+        schema_version = 17
+
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)
@@ -1864,6 +1948,7 @@ def initialise_database():
     create_recovery_checkins_table(cursor)
     create_athlete_health_daily_table(cursor)
     create_athlete_intelligence_table(cursor)
+    create_runner_journey_tables(cursor)
 
     backfill_missing_athlete_ids(cursor)
 

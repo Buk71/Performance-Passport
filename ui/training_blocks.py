@@ -11,6 +11,18 @@ from core.cache_version import (
     NAVIGATION_CACHE_TTL_SECONDS,
     get_athlete_cache_version,
 )
+from core.beginner_training_plan import build_couch_to_5k_plan
+from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+from core.runner_journey import (
+    COUCH_TO_5K,
+    FIVE_TO_TEN_K,
+    get_five_to_ten_k_current_level,
+    set_active_five_to_ten_k_level,
+    archive_active_runner_journey,
+    get_active_runner_journey,
+    get_journey_current_week,
+    set_active_journey_week,
+)
 from core.training_block_designer import (
     WEEKDAYS,
     TrainingBlockDesign,
@@ -46,7 +58,7 @@ from ui.training_block_navigation import (
 )
 
 
-TRAINING_BLOCK_CACHE_SCHEMA = 1
+TRAINING_BLOCK_CACHE_SCHEMA = 2
 OPERATIONAL_BLOCK_CACHE_SCHEMA = 2
 
 
@@ -95,6 +107,470 @@ def _goal_distance(distance_m: float | None) -> str:
     if distance_m is None:
         return "Distance not set"
     return f"{distance_m / 1000.0:g}K · {distance_m / 1609.344:.1f} mi"
+
+
+
+def _beginner_stage_label(stage: str) -> str:
+    return {
+        "walking_foundation": "Walking foundation",
+        "run_walk_short": "Short run / walk",
+        "run_walk_build": "Build the running blocks",
+        "run_blocks_5": "5-minute running blocks",
+        "run_blocks_8": "8-minute running blocks",
+        "run_blocks_10": "10-minute running blocks",
+        "continuous_15": "15-minute continuous run",
+        "continuous_20": "20-minute continuous run",
+        "continuous_25": "25-minute continuous run",
+        "continuous_30": "30-minute continuous run",
+        "5k_ready": "5K ready",
+    }.get(stage, stage)
+
+
+def build_beginner_plan_overview_html(plan, journey) -> str:
+    return f"""
+    <main class="btb-shell">
+      <section class="btb-hero">
+        <div>
+          <div class="btb-eyebrow">COUCH → 5K TRAINING PLAN</div>
+          <h1>{_escape(plan.headline)}</h1>
+          <p>{_escape(plan.timeline_note)}</p>
+        </div>
+        <aside>
+          <small>CURRENT LEVEL</small>
+          <strong>{plan.current_week} of 12</strong>
+          <span>{_escape(_beginner_stage_label(journey.current_stage))}</span>
+          <i>{journey.sessions_per_week} training days / week</i>
+        </aside>
+      </section>
+      <section class="btb-summary">
+        <div><small>ENTRY POINT</small><strong>Level {plan.entry_week}</strong><p>Chosen from the athlete's starting assessment.</p></div>
+        <div><small>PLAN SHAPE</small><strong>12 visible levels</strong><p>Progress early, repeat or step back without losing the full journey.</p></div>
+        <div><small>PRIMARY MEASURE</small><strong>Time running</strong><p>No pace, threshold or mileage target is required.</p></div>
+        <div><small>GRADUATION</small><strong>Complete 5K</strong><p>Consolidate continuous running before the final level.</p></div>
+      </section>
+    </main>
+    <style>
+      .btb-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:12px;margin:10px 0 14px}}
+      .btb-shell *{{box-sizing:border-box}} .btb-hero,.btb-summary{{background:#fff;border:1px solid #DED8CE;border-radius:18px;box-shadow:0 8px 24px rgba(16,38,61,.05)}}
+      .btb-hero{{padding:28px 30px;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:26px;align-items:center;background:linear-gradient(135deg,#fff,#F2FAF5)}}
+      .btb-eyebrow,.btb-summary small,.btb-hero aside small{{font-size:11px;letter-spacing:.14em;font-weight:850;color:#3E8E72}}
+      .btb-hero h1{{font-size:36px;line-height:1.03;margin:7px 0;color:#10263D;letter-spacing:-.04em}}
+      .btb-hero p{{font-size:14px;line-height:1.5;color:#68798A;margin:0;max-width:760px}}
+      .btb-hero aside{{background:#102E49;color:#fff;border-radius:15px;padding:18px;display:grid;gap:5px}}
+      .btb-hero aside small{{color:#9FC4B4}} .btb-hero aside strong{{font-size:27px}} .btb-hero aside span{{font-size:14px;font-weight:800}} .btb-hero aside i{{font-size:11px;color:#D7E3E9;font-style:normal}}
+      .btb-summary{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}}
+      .btb-summary>div{{padding:16px 18px;border-right:1px solid #E7E0D5}} .btb-summary>div:last-child{{border-right:0}}
+      .btb-summary strong{{display:block;font-size:21px;margin:6px 0 3px}} .btb-summary p{{font-size:11px;line-height:1.45;color:#718091;margin:0}}
+      @container(max-width:780px){{.btb-hero{{grid-template-columns:1fr}}.btb-summary{{grid-template-columns:1fr 1fr}}}}
+      @container(max-width:520px){{.btb-hero{{padding:21px}}.btb-hero h1{{font-size:29px}}.btb-summary{{grid-template-columns:1fr}}.btb-summary>div{{border-right:0;border-bottom:1px solid #E7E0D5}}}}
+    </style>
+    """
+
+
+def build_beginner_week_timeline_html(
+    plan,
+    *,
+    selected_week_number: int,
+) -> str:
+    cards = []
+    for week in plan.weeks:
+        selected = week.week_number == selected_week_number
+        current = week.week_number == plan.current_week
+        status_class = (
+            "is-current" if current
+            else "is-skipped" if week.status == "Skipped by entry assessment"
+            else "is-past" if week.week_number < plan.current_week
+            else ""
+        )
+        week_url = _escape(
+            training_block_week_url(plan.athlete_id, week.week_number)
+        )
+        cards.append(
+            f"""
+            <a class="btb-week-link {'is-selected' if selected else ''} {status_class}"
+               href="{week_url}" target="_self"
+               aria-label="View Couch to 5K level {week.week_number}"
+               {'aria-current="true"' if selected else ''}>
+              <article class="btb-week">
+                <div class="btb-week-top">
+                  <span>LEVEL {week.week_number}</span>
+                  <i>{_escape(week.status.upper())}</i>
+                </div>
+                <strong>{_escape(week.title)}</strong>
+                <p>{_escape(week.emphasis)}</p>
+                <small>{len(week.sessions)} training day{'s' if len(week.sessions) != 1 else ''}</small>
+                <b>VIEW WEEK →</b>
+              </article>
+            </a>
+            """
+        )
+    return f"""
+    <section class="btb-timeline-shell">
+      <div class="btb-timeline-heading">
+        <div><small>FULL PLAN</small><h2>All 12 progression levels</h2></div>
+        <span>CURRENT LEVEL IS HIGHLIGHTED<b>CLICK ANY LEVEL TO PREVIEW IT</b></span>
+      </div>
+      <div class="btb-timeline">{''.join(cards)}</div>
+    </section>
+    <style>
+      .btb-timeline-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:18px;padding:22px 24px;color:#10263D;font-family:Inter,system-ui,sans-serif;margin-top:14px}}
+      .btb-timeline-heading{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}}
+      .btb-timeline-heading small{{font-size:11px;letter-spacing:.16em;font-weight:850;color:#718091}} .btb-timeline-heading h2{{font-size:23px;margin:4px 0}}
+      .btb-timeline-heading>span{{font-size:11px;font-weight:850;letter-spacing:.08em;color:#3E8E72;text-align:right}} .btb-timeline-heading>span>b{{display:block;font-size:10px;color:#718091;margin-top:5px}}
+      .btb-timeline{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}}
+      .btb-week-link{{display:block;color:inherit;text-decoration:none;border-radius:13px;min-width:0}}
+      .btb-week{{height:100%;background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:15px;min-height:160px;transition:.15s ease}}
+      .btb-week-link:hover .btb-week{{transform:translateY(-1px);border-color:#A8B5BE}} .btb-week-link.is-selected .btb-week{{box-shadow:0 0 0 2px #10263D inset;background:#fff}}
+      .btb-week-link.is-current .btb-week{{border:2px solid #3E8E72;background:#EDF7F1}} .btb-week-link.is-current.is-selected .btb-week{{box-shadow:0 0 0 2px #10263D inset}}
+      .btb-week-link.is-skipped .btb-week{{opacity:.55}} .btb-week-link.is-past .btb-week{{background:#F2F4F2}}
+      .btb-week-top{{display:flex;justify-content:space-between;gap:6px}} .btb-week-top span,.btb-week-top i{{font-size:9px;font-style:normal;font-weight:850;letter-spacing:.08em;color:#718091}}
+      .btb-week-link.is-current .btb-week-top i{{color:#3E8E72}} .btb-week>strong{{display:block;font-size:17px;line-height:1.25;margin:9px 0 7px}}
+      .btb-week p{{font-size:11px;line-height:1.45;color:#68798A;margin:0 0 8px}} .btb-week small{{font-size:10px;color:#718091}} .btb-week b{{display:block;font-size:9px;letter-spacing:.08em;color:#3E8E72;margin-top:10px}}
+      @container(max-width:850px){{.btb-timeline{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
+      @container(max-width:520px){{.btb-timeline{{grid-template-columns:1fr}}.btb-timeline-heading{{flex-direction:column}}}}
+    </style>
+    """
+
+
+def build_beginner_week_detail_html(week) -> str:
+    sessions = "".join(
+        f"""
+        <article class="btb-session {'is-support' if not day.counts_for_progression else ''}">
+          <small>{_escape(day.day.upper())} · {_escape(day.role.upper())}</small>
+          <strong>{_escape(day.title)}</strong>
+          <p>{_escape(day.detail)}</p>
+          <span>{'COUNTS FOR PROGRESSION' if day.counts_for_progression else 'SUPPORT SESSION'}</span>
+        </article>
+        """
+        for day in week.sessions
+    )
+    success = "".join(
+        f"<li>{_escape(item)}</li>"
+        for item in week.standard_session.success_criteria
+    )
+    return f"""
+    <section class="btb-detail" id="training-week-detail">
+      <div class="btb-detail-head">
+        <div><small>LEVEL {week.week_number} · {_escape(week.status.upper())}</small><h3>{_escape(week.title)}</h3><p>{_escape(week.emphasis)}</p></div>
+        <span>{_escape(_beginner_stage_label(week.stage))}</span>
+      </div>
+      <div class="btb-sessions">{sessions}</div>
+      <div class="btb-success">
+        <div><small>READY TO MOVE ON WHEN</small><ul>{success}</ul></div>
+        <aside><small>PROGRESSION RULE</small><p>{_escape(week.progression_rule)}</p></aside>
+      </div>
+    </section>
+    <style>
+      .btb-detail{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:17px;padding:20px;color:#10263D;font-family:Inter,system-ui,sans-serif;margin-top:10px}}
+      .btb-detail-head{{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}} .btb-detail-head small,.btb-success small,.btb-session small{{font-size:10px;letter-spacing:.11em;font-weight:850;color:#718091}}
+      .btb-detail-head h3{{font-size:24px;margin:4px 0}} .btb-detail-head p{{font-size:13px;color:#68798A;margin:0}} .btb-detail-head>span{{font-size:11px;font-weight:850;color:#3E8E72;background:#E8F5EE;padding:7px 10px;border-radius:999px}}
+      .btb-sessions{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:16px}} .btb-session{{background:#F7F3EC;border:1px solid #E6DFD4;border-top:3px solid #3E8E72;border-radius:12px;padding:14px;min-width:0}}
+      .btb-session.is-support{{border-top-color:#9AA7B0}} .btb-session strong{{display:block;font-size:15px;line-height:1.3;margin:7px 0}} .btb-session p{{font-size:11px;line-height:1.45;color:#68798A;margin:0}} .btb-session span{{display:block;font-size:9px;font-weight:850;letter-spacing:.075em;color:#3E8E72;margin-top:9px}}
+      .btb-session.is-support span{{color:#718091}} .btb-success{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}} .btb-success>div,.btb-success>aside{{border:1px solid #E6DFD4;border-radius:12px;padding:14px}}
+      .btb-success ul{{margin:7px 0 0;padding-left:18px}} .btb-success li,.btb-success p{{font-size:11px;line-height:1.5;color:#68798A}} .btb-success p{{margin:7px 0 0}}
+      @container(max-width:800px){{.btb-sessions{{grid-template-columns:repeat(2,minmax(0,1fr))}}}} @container(max-width:520px){{.btb-detail-head{{flex-direction:column}}.btb-sessions,.btb-success{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def _render_beginner_level_controls(athlete_id: int, journey, plan) -> None:
+    current = plan.current_week
+    st.markdown("### Adapt this level")
+    st.caption(
+        "The whole 12-level plan stays visible. These controls only change "
+        "which level is current and record the decision in the journey history."
+    )
+
+    back_col, repeat_col, forward_col = st.columns(3)
+    with back_col:
+        step_back = st.button(
+            "← Step back one level",
+            disabled=current <= plan.entry_week,
+            use_container_width=True,
+            key=f"c25k_step_back_{athlete_id}_{current}",
+        )
+    with repeat_col:
+        repeat = st.button(
+            "Repeat this level",
+            use_container_width=True,
+            key=f"c25k_repeat_{athlete_id}_{current}",
+        )
+    with forward_col:
+        progress = st.button(
+            "Progress to next level →",
+            type="primary",
+            disabled=current >= 12,
+            use_container_width=True,
+            key=f"c25k_progress_{athlete_id}_{current}",
+        )
+
+    if step_back:
+        updated = set_active_journey_week(
+            athlete_id,
+            current - 1,
+            decision="step_back",
+            reason="Athlete chose to step back one Couch → 5K plan level.",
+        )
+        st.cache_data.clear()
+        st.session_state[f"tb_selected_week_{athlete_id}"] = get_journey_current_week(updated)
+        st.success("Moved back one level. The full plan is unchanged.")
+        st.rerun()
+
+    if repeat:
+        updated = set_active_journey_week(
+            athlete_id,
+            current,
+            decision="repeat",
+            reason="Athlete chose to repeat the current Couch → 5K plan level.",
+        )
+        st.cache_data.clear()
+        st.session_state[f"tb_selected_week_{athlete_id}"] = get_journey_current_week(updated)
+        st.success("Current level marked to repeat.")
+        st.rerun()
+
+    if progress:
+        updated = set_active_journey_week(
+            athlete_id,
+            current + 1,
+            decision="progress_early",
+            reason="Athlete chose to progress early to the next Couch → 5K plan level.",
+        )
+        st.cache_data.clear()
+        st.session_state[f"tb_selected_week_{athlete_id}"] = get_journey_current_week(updated)
+        st.success("Moved to the next level. Future levels remain visible.")
+        st.rerun()
+
+
+
+def _render_beginner_plan_lifecycle(athlete_id: int, journey) -> None:
+    with st.expander("Plan options"):
+        st.caption(
+            "Removing this plan archives the Couch → 5K journey rather than "
+            "deleting its history. It will stop appearing as the active "
+            "Training Block immediately."
+        )
+        st.info(
+            "The linked 5K goal is kept. You can keep using it, change it, "
+            "or remove it separately in Goal Coach."
+        )
+
+        confirm = st.checkbox(
+            "I understand this will remove the active Couch → 5K plan",
+            key=f"c25k_archive_confirm_{athlete_id}_{journey.id}",
+        )
+        if st.button(
+            "Remove Couch → 5K plan",
+            disabled=not confirm,
+            use_container_width=True,
+            key=f"c25k_archive_{athlete_id}_{journey.id}",
+        ):
+            archive_active_runner_journey(
+                athlete_id,
+                reason="Athlete removed the Couch → 5K plan from Training Blocks.",
+            )
+            st.cache_data.clear()
+            st.session_state.pop(f"tb_selected_week_{athlete_id}", None)
+            st.success(
+                "Couch → 5K plan removed. Its journey history has been archived."
+            )
+            st.rerun()
+
+
+def _show_beginner_training_plan(athlete_id: int, journey) -> None:
+    current_week = get_journey_current_week(journey)
+    plan = build_couch_to_5k_plan(
+        athlete_id=athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_week=current_week,
+        reference_date=datetime.date.today(),
+    )
+
+    selected = st.session_state.get(
+        f"tb_selected_week_{athlete_id}",
+        current_week,
+    )
+    try:
+        selected = int(selected)
+    except (TypeError, ValueError):
+        selected = current_week
+    if selected < 1 or selected > 12:
+        selected = current_week
+
+    st.html(build_beginner_plan_overview_html(plan, journey))
+    st.html(
+        build_beginner_week_timeline_html(
+            plan,
+            selected_week_number=selected,
+        )
+    )
+    st.html(build_beginner_week_detail_html(plan.weeks[selected - 1]))
+    _render_beginner_level_controls(athlete_id, journey, plan)
+    _render_beginner_plan_lifecycle(athlete_id, journey)
+    st.caption(
+        "For Couch → 5K, these 12 levels are the Training Block. "
+        "They are not fixed calendar weeks: progressing early or repeating "
+        "changes the current level without hiding the rest of the plan."
+    )
+
+
+
+def build_five_to_ten_k_overview_html(plan) -> str:
+    return f"""
+    <main class="ftk-shell">
+      <section class="ftk-hero">
+        <div><small>5K → 10K TRAINING PLAN</small><h1>{_escape(plan.headline)}</h1><p>{_escape(plan.timeline_note)}</p></div>
+        <aside><small>CURRENT LEVEL</small><strong>{plan.current_level} of 10</strong><span>{plan.sessions_per_week} running days / week</span></aside>
+      </section>
+      <section class="ftk-summary">
+        <article><small>ENTRY POINT</small><strong>Level {plan.entry_level}</strong><p>Set from demonstrated recent running.</p></article>
+        <article><small>LONG RUN</small><strong>{plan.levels[plan.current_level-1].long_run_km:g}K</strong><p>Comfortable, completion-led progression.</p></article>
+        <article><small>QUALITY</small><strong>Gradual</strong><p>Strides first; controlled quality only later.</p></article>
+        <article><small>GOAL</small><strong>Complete 10K</strong><p>Durability first, pace second.</p></article>
+      </section>
+    </main>
+    <style>
+      .ftk-shell{{container-type:inline-size;color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:12px;margin:10px 0 14px}}
+      .ftk-shell *{{box-sizing:border-box}} .ftk-hero,.ftk-summary{{background:#fff;border:1px solid #DED8CE;border-radius:18px;box-shadow:0 8px 24px rgba(16,38,61,.05)}}
+      .ftk-hero{{padding:28px 30px;display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:26px;background:linear-gradient(135deg,#fff,#F4F8FB);align-items:center}}
+      .ftk-hero small,.ftk-summary small{{font-size:11px;letter-spacing:.14em;font-weight:850;color:#3E8E72}} .ftk-hero h1{{font-size:36px;margin:7px 0;letter-spacing:-.04em}} .ftk-hero p{{font-size:14px;line-height:1.5;color:#68798A}}
+      .ftk-hero aside{{background:#102E49;color:#fff;border-radius:15px;padding:18px;display:grid;gap:5px}} .ftk-hero aside small{{color:#9FC4B4}} .ftk-hero aside strong{{font-size:27px}} .ftk-hero aside span{{font-size:12px;color:#D7E3E9}}
+      .ftk-summary{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden}} .ftk-summary article{{padding:16px 18px;border-right:1px solid #E7E0D5}} .ftk-summary article:last-child{{border-right:0}}
+      .ftk-summary strong{{display:block;font-size:21px;margin:6px 0 3px}} .ftk-summary p{{font-size:11px;line-height:1.45;color:#718091;margin:0}}
+      @container(max-width:780px){{.ftk-hero{{grid-template-columns:1fr}}.ftk-summary{{grid-template-columns:1fr 1fr}}}} @container(max-width:520px){{.ftk-summary{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def build_five_to_ten_k_timeline_html(plan, *, selected_level: int) -> str:
+    cards = []
+    for level in plan.levels:
+        selected = level.level_number == selected_level
+        current = level.level_number == plan.current_level
+        state = (
+            "is-current" if current else
+            "is-skipped" if level.status == "Skipped by entry assessment" else
+            "is-past" if level.level_number < plan.current_level else ""
+        )
+        cards.append(
+            f"""
+            <article class="ftk-card {'is-selected' if selected else ''} {state}">
+              <div><span>LEVEL {level.level_number}</span><i>{_escape(level.status.upper())}</i></div>
+              <strong>{_escape(level.title)}</strong>
+              <p>{_escape(level.emphasis)}</p>
+              <small>Long run {level.long_run_km:g}K · {len(level.sessions)} running days</small>
+            </article>
+            """
+        )
+    return f"""
+    <section class="ftk-timeline-shell">
+      <div class="ftk-heading"><div><small>FULL PLAN</small><h2>10 adaptive progression levels</h2></div><span>FULL JOURNEY VISIBLE FROM DAY ONE</span></div>
+      <div class="ftk-timeline">{''.join(cards)}</div>
+    </section>
+    <style>
+      .ftk-timeline-shell{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:18px;padding:22px 24px;color:#10263D;font-family:Inter,system-ui,sans-serif}}
+      .ftk-heading{{display:flex;justify-content:space-between;gap:16px;margin-bottom:14px}} .ftk-heading small{{font-size:11px;letter-spacing:.14em;font-weight:850;color:#718091}} .ftk-heading h2{{font-size:23px;margin:4px 0}} .ftk-heading>span{{font-size:10px;font-weight:850;color:#3E8E72}}
+      .ftk-timeline{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}} .ftk-card{{background:#F7F3EC;border:1px solid #E7E0D5;border-radius:13px;padding:15px;min-height:155px}} .ftk-card.is-current{{border:2px solid #3E8E72;background:#EDF7F1}} .ftk-card.is-skipped{{opacity:.5}} .ftk-card.is-past{{background:#F1F4F3}}
+      .ftk-card>div{{display:flex;justify-content:space-between;gap:5px}} .ftk-card span,.ftk-card i{{font-size:9px;font-style:normal;font-weight:850;color:#718091}} .ftk-card strong{{display:block;font-size:16px;line-height:1.25;margin:9px 0 7px}} .ftk-card p{{font-size:11px;color:#68798A;line-height:1.45}} .ftk-card small{{font-size:10px;color:#718091}}
+      @container(max-width:900px){{.ftk-timeline{{grid-template-columns:repeat(2,minmax(0,1fr))}}}} @container(max-width:520px){{.ftk-timeline{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def build_five_to_ten_k_level_detail_html(level) -> str:
+    sessions = "".join(
+        f"""
+        <article class="ftk-day">
+          <small>{_escape(day.day.upper())} · {_escape(day.role.upper())}</small>
+          <strong>{_escape(day.title)}</strong>
+          <p>{_escape(day.detail)}</p>
+          <span>{'COUNTS FOR PROGRESSION' if day.counts_for_progression else 'OPTIONAL SUPPORT'}</span>
+        </article>
+        """ for day in level.sessions
+    )
+    return f"""
+    <section class="ftk-detail">
+      <div><small>LEVEL {level.level_number}</small><h3>{_escape(level.title)}</h3><p>{_escape(level.emphasis)}</p></div>
+      <div class="ftk-days">{sessions}</div>
+      <p class="ftk-rule">{_escape(level.progression_rule)}</p>
+    </section>
+    <style>
+      .ftk-detail{{container-type:inline-size;background:#fff;border:1px solid #DED8CE;border-radius:17px;padding:20px;color:#10263D;font-family:Inter,system-ui,sans-serif;margin-top:10px}}
+      .ftk-detail small{{font-size:10px;letter-spacing:.11em;font-weight:850;color:#718091}} .ftk-detail h3{{font-size:24px;margin:4px 0}} .ftk-detail>div>p,.ftk-rule{{font-size:12px;color:#68798A;line-height:1.5}}
+      .ftk-days{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:16px}} .ftk-day{{background:#F7F3EC;border:1px solid #E6DFD4;border-top:3px solid #3E8E72;border-radius:12px;padding:14px}} .ftk-day strong{{display:block;font-size:15px;margin:7px 0}} .ftk-day span{{display:block;font-size:9px;font-weight:850;color:#3E8E72;margin-top:9px}}
+      .ftk-rule{{background:#F7F3EC;border-radius:11px;padding:12px;margin:12px 0 0}} @container(max-width:800px){{.ftk-days{{grid-template-columns:repeat(2,minmax(0,1fr))}}}} @container(max-width:520px){{.ftk-days{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def _render_five_to_ten_k_controls(athlete_id: int, journey, plan) -> None:
+    current = plan.current_level
+    st.markdown("### Adapt this level")
+    st.caption("The full 10-level plan remains visible whichever option you choose.")
+
+    back_col, repeat_col, forward_col = st.columns(3)
+    with back_col:
+        back = st.button(
+            "← Step back one level",
+            disabled=current <= plan.entry_level,
+            use_container_width=True,
+            key=f"5to10_back_{athlete_id}_{current}",
+        )
+    with repeat_col:
+        repeat = st.button(
+            "Repeat this level",
+            use_container_width=True,
+            key=f"5to10_repeat_{athlete_id}_{current}",
+        )
+    with forward_col:
+        forward = st.button(
+            "Progress to next level →",
+            type="primary",
+            disabled=current >= 10,
+            use_container_width=True,
+            key=f"5to10_forward_{athlete_id}_{current}",
+        )
+
+    if back:
+        set_active_five_to_ten_k_level(
+            athlete_id, current - 1, decision="step_back",
+            reason="Athlete chose to step back one 5K → 10K plan level."
+        )
+        st.cache_data.clear()
+        st.rerun()
+    if repeat:
+        set_active_five_to_ten_k_level(
+            athlete_id, current, decision="repeat",
+            reason="Athlete chose to repeat the current 5K → 10K plan level."
+        )
+        st.cache_data.clear()
+        st.rerun()
+    if forward:
+        set_active_five_to_ten_k_level(
+            athlete_id, current + 1, decision="progress_early",
+            reason="Athlete chose to progress early in the 5K → 10K plan."
+        )
+        st.cache_data.clear()
+        st.rerun()
+
+
+def _show_five_to_ten_k_plan(athlete_id: int, journey) -> None:
+    current = get_five_to_ten_k_current_level(journey)
+    plan = build_five_to_ten_k_plan(
+        athlete_id=athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_level=current,
+        reference_date=datetime.date.today(),
+    )
+    st.html(build_five_to_ten_k_overview_html(plan))
+    st.html(build_five_to_ten_k_timeline_html(plan, selected_level=current))
+    st.html(build_five_to_ten_k_level_detail_html(plan.levels[current - 1]))
+    _render_five_to_ten_k_controls(athlete_id, journey, plan)
+    st.caption(
+        "5K → 10K gradually introduces normal runner training concepts while "
+        "keeping durability and controlled completion ahead of pace."
+    )
 
 
 def build_training_block_overview_html(
@@ -579,6 +1055,15 @@ def show_training_blocks_page():
     if athlete_id is None:
         st.info("Add an athlete before designing a Training Block.")
         return
+
+    journey = get_active_runner_journey(athlete_id)
+    if journey is not None and journey.journey_type == COUCH_TO_5K:
+        _show_beginner_training_plan(athlete_id, journey)
+        return
+    if journey is not None and journey.journey_type == FIVE_TO_TEN_K:
+        _show_five_to_ten_k_plan(athlete_id, journey)
+        return
+
     data_version = get_athlete_cache_version(athlete_id)
     history, hierarchy = _cached_foundation(
         athlete_id,

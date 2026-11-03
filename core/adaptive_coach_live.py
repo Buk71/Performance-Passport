@@ -7,6 +7,16 @@ from core.coaching_arbitration import build_coaching_arbitration
 from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.live_integration import build_adaptive_coach_proposal
 from core.next_run import build_next_run_recommendation
+from core.beginner_training_plan import build_couch_to_5k_plan
+from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+from core.runner_journey import (
+    COUCH_TO_5K,
+    FIVE_TO_TEN_K,
+    RunnerJourney,
+    get_active_runner_journey,
+    get_journey_current_week,
+    get_five_to_ten_k_current_level,
+)
 from core.operational_block import OperationalWeek, build_operational_block_week
 
 
@@ -176,12 +186,137 @@ def _apply_operational(
 
 
 
+
+def _beginner_day_timing(day_name: str, today: datetime.date) -> str:
+    names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    target = names.index(day_name)
+    offset = (target - today.weekday()) % 7
+    if offset == 0:
+        return "Today"
+    if offset == 1:
+        return "Tomorrow"
+    return day_name
+
+
+def _beginner_live_decision(
+    journey: RunnerJourney,
+    *,
+    today: datetime.date,
+) -> LiveCoachDecision:
+    current_week = get_journey_current_week(journey)
+    plan = build_couch_to_5k_plan(
+        athlete_id=journey.athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_week=current_week,
+        reference_date=today,
+    )
+    week = plan.weeks[current_week - 1]
+    candidates = tuple(day for day in week.sessions if day.counts_for_progression) or week.sessions
+    names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    next_day = min(candidates, key=lambda day: (names.index(day.day) - today.weekday()) % 7)
+    return LiveCoachDecision(
+        athlete_id=journey.athlete_id,
+        immediate_label=next_day.title,
+        immediate_timing=_beginner_day_timing(next_day.day, today),
+        immediate_detail=next_day.detail,
+        key_family="beginner",
+        key_label=next_day.title,
+        key_prescription=week.standard_session.title,
+        key_day=next_day.day,
+        confidence=0.90,
+        confidence_label="Plan-led",
+        headline=(f"Level {current_week} of 12: {week.title}. "
+                  "Complete the planned running comfortably; speed does not matter."),
+        why=(week.emphasis,
+             "This session comes directly from the active Couch → 5K plan.",
+             "Progression is based on controlled completion, not pace."),
+        safety_notes=(
+            "Keep every running section controlled; pace is not a target.",
+            "If pain changes your movement or worsens while running, stop the session.",
+        ),
+        readiness_required=False,
+        source="Couch → 5K Runner Journey",
+        operational_week_number=current_week,
+        operational_status="Current level",
+        operational_completed_miles=None,
+        operational_planned_miles=None,
+    )
+
+
+def _five_to_ten_live_decision(
+    journey: RunnerJourney,
+    *,
+    today: datetime.date,
+) -> LiveCoachDecision:
+    current_level = get_five_to_ten_k_current_level(journey)
+    plan = build_five_to_ten_k_plan(
+        athlete_id=journey.athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_level=current_level,
+        reference_date=today,
+    )
+    current = plan.levels[current_level - 1]
+    names = ("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+    next_day = min(
+        current.sessions,
+        key=lambda item: (names.index(item.day) - today.weekday()) % 7,
+    )
+
+    role = next_day.role.lower()
+    family = (
+        "endurance" if "long" in role
+        else "recovery" if "recovery" in role
+        else "threshold" if "quality" in role
+        else "easy"
+    )
+    return LiveCoachDecision(
+        athlete_id=journey.athlete_id,
+        immediate_label=next_day.title,
+        immediate_timing=_beginner_day_timing(next_day.day, today),
+        immediate_detail=next_day.detail,
+        key_family=family,
+        key_label=next_day.title,
+        key_prescription=next_day.detail,
+        key_day=next_day.day,
+        confidence=0.90,
+        confidence_label="Plan-led",
+        headline=(
+            f"Level {current_level} of 10: {current.title}. "
+            f"{current.emphasis}."
+        ),
+        why=(
+            current.emphasis,
+            "This session comes directly from the active 5K → 10K journey.",
+            "Durability and controlled completion come before pace.",
+        ),
+        safety_notes=(
+            "Keep easy running genuinely conversational.",
+            "Controlled quality should finish with something left, not as a race.",
+            "If pain changes your movement or worsens while running, stop.",
+        ),
+        readiness_required=family in {"threshold", "endurance"},
+        source="5K → 10K Runner Journey",
+        operational_week_number=current_level,
+        operational_status="Current level",
+        operational_completed_miles=None,
+        operational_planned_miles=None,
+    )
+
+
 def build_live_coach_decision(
     athlete_id: int,
     *,
     today: datetime.date | None = None,
 ) -> LiveCoachDecision | None:
     today = today or datetime.date.today()
+
+    journey = get_active_runner_journey(athlete_id)
+    if journey is not None and journey.journey_type == COUCH_TO_5K:
+        return _beginner_live_decision(journey, today=today)
+    if journey is not None and journey.journey_type == FIVE_TO_TEN_K:
+        return _five_to_ten_live_decision(journey, today=today)
 
     established = build_next_run_recommendation(
         athlete_id,

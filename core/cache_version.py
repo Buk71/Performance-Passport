@@ -50,6 +50,8 @@ def get_athlete_cache_version(athlete_id: int) -> tuple[Any, ...]:
                 (SELECT COALESCE(MAX(updated_at), '') FROM training_blocks WHERE athlete_id = ?),
                 (SELECT COUNT(*) FROM training_block_designs WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(updated_at), '') FROM training_block_designs WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_runner_journeys WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_runner_journeys WHERE athlete_id = ?),
                 (SELECT COUNT(*) FROM block_review_actions WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(id), 0) FROM block_review_actions WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(updated_at), '') FROM athlete_nutrition_profiles WHERE athlete_id = ?),
@@ -67,7 +69,7 @@ def get_athlete_cache_version(athlete_id: int) -> tuple[Any, ...]:
                 (SELECT COUNT(*) FROM workout_library WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(updated_at), '') FROM workout_library WHERE athlete_id = ?)
             """,
-            (int(athlete_id),) * 29,
+            (int(athlete_id),) * 31,
         ).fetchone()
     finally:
         connection.close()
@@ -170,6 +172,8 @@ def get_training_intelligence_version(athlete_id: int) -> tuple[Any, ...]:
                 (SELECT COALESCE(MAX(updated_at), '') FROM training_blocks WHERE athlete_id = ?),
                 (SELECT COUNT(*) FROM training_block_designs WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(updated_at), '') FROM training_block_designs WHERE athlete_id = ?),
+                (SELECT COUNT(*) FROM athlete_runner_journeys WHERE athlete_id = ?),
+                (SELECT COALESCE(MAX(updated_at), '') FROM athlete_runner_journeys WHERE athlete_id = ?),
                 (SELECT COUNT(*) FROM block_review_actions WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(id), 0) FROM block_review_actions WHERE athlete_id = ?),
                 (SELECT COUNT(*) FROM athlete_recovery_checkins WHERE athlete_id = ?),
@@ -182,7 +186,7 @@ def get_training_intelligence_version(athlete_id: int) -> tuple[Any, ...]:
                 (SELECT COUNT(*) FROM athlete_sport_mappings WHERE athlete_id = ?),
                 (SELECT COALESCE(MAX(updated_at), '') FROM athlete_sport_mappings WHERE athlete_id = ?)
             """,
-            (int(athlete_id),) * 23,
+            (int(athlete_id),) * 25,
         ).fetchone()
     finally:
         connection.close()

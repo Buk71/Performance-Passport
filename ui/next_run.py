@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 
 import streamlit as st
 
@@ -11,6 +12,15 @@ from core.cache_version import (
     get_athlete_cache_version,
 )
 from core.training_coach import TrainingCoachDetail, build_training_coach_detail
+from core.beginner_activity_evidence import find_latest_beginner_activity_evidence
+from core.five_to_ten_k_activity_evidence import find_latest_five_to_ten_k_activity_evidence
+from core.runner_journey import (
+    JourneyProgressEvidence,
+    apply_couch_to_5k_evidence,
+    preview_couch_to_5k_progress,
+    preview_five_to_ten_k_progress,
+    apply_five_to_ten_k_evidence,
+)
 from ui.athlete_selection import (
     SESSION_ID_KEY,
     SESSION_NAME_KEY,
@@ -24,7 +34,7 @@ from ui.training_coach_navigation import (
 )
 
 
-TRAINING_COACH_CACHE_SCHEMA = 1
+TRAINING_COACH_CACHE_SCHEMA = 2
 MILES_PER_KM = 0.621371192237334
 
 
@@ -150,11 +160,285 @@ def _session_markup(detail: TrainingCoachDetail) -> str:
     """
 
 
+
+def _duration_text(seconds: int) -> str:
+    total_seconds = int(seconds)
+    minutes = total_seconds // 60
+    seconds_left = total_seconds % 60
+    return f"{minutes}:{seconds_left:02d}" if seconds_left else f"{minutes} min"
+
+
+
+def _block_type_value(block) -> str:
+    """Return a normalised block-type value from enum or restored JSON string."""
+    value = getattr(block, "block_type", "")
+    enum_value = getattr(value, "value", value)
+    return str(enum_value or "").strip().lower()
+
+
+def _beginner_block_sequence(session) -> tuple[str, ...]:
+    blocks = session.blocks
+    work = next((x for x in blocks if _block_type_value(x) == "work"), None)
+    recovery = next((x for x in blocks if _block_type_value(x) == "recovery"), None)
+    warm = next((x for x in blocks if _block_type_value(x) == "warmup"), None)
+    cool = next((x for x in blocks if _block_type_value(x) == "cooldown"), None)
+    continuous = next((x for x in blocks if _block_type_value(x) == "continuous"), None)
+    sequence = []
+    if warm:
+        sequence.append(f"{_duration_text(warm.duration_s)} {warm.label}")
+    if session.stage == "5k_ready":
+        sequence.append("Complete 5K at easy / controlled effort")
+    elif work and recovery:
+        paired = min(max(work.repeat_count - 1, 0), recovery.repeat_count)
+        if paired:
+            sequence.append(
+                f"{paired} × ({_duration_text(work.duration_s)} {work.label.lower()} + "
+                f"{_duration_text(recovery.duration_s)} {recovery.label.lower()})"
+            )
+        sequence.append(f"{_duration_text(work.duration_s)} {work.label.lower()}")
+    elif continuous:
+        sequence.append(f"{_duration_text(continuous.duration_s)} {continuous.label}")
+    if cool:
+        sequence.append(f"{_duration_text(cool.duration_s)} {cool.label}")
+    return tuple(sequence)
+
+
+def build_beginner_training_coach_html(athlete_name_value: str, detail: TrainingCoachDetail) -> str:
+    session = detail.beginner_session
+    if session is None:
+        return ""
+    decision = detail.decision
+    level = detail.beginner_week_number or decision.operational_week_number or 1
+    sequence = "".join(
+        f'<article class="btc-step"><b>{i:02d}</b><strong>{_safe(step)}</strong></article>'
+        for i, step in enumerate(_beginner_block_sequence(session), 1)
+    )
+    success = _list(session.success_criteria)
+    after = _list(session.collect_after)
+    style = """
+      <style>
+        .btc { color:#10263D; font-family:Inter,system-ui,sans-serif; display:grid; gap:14px; }
+        .btc * { box-sizing:border-box; }
+        .btc-hero,.btc-card,.btc-grid>article { background:#fff; border:1px solid #DED8CE; border-radius:22px; box-shadow:0 12px 30px rgba(16,38,61,.06); }
+        .btc-hero { padding:34px; display:grid; grid-template-columns:minmax(0,1fr) 310px; gap:28px; background:radial-gradient(circle at 100% 0,rgba(62,142,114,.14),transparent 38%),#fff; }
+        .btc small { font-size:11px; letter-spacing:.14em; font-weight:900; color:#718091; }
+        .btc-hero span { display:block; margin-top:15px; color:#3E8E72; font-size:12px; font-weight:900; letter-spacing:.12em; }
+        .btc-hero h1 { font-size:48px; margin:7px 0 10px; letter-spacing:-.04em; }
+        .btc-hero p,.btc-grid p,.btc-feedback p,.btc-fuel p { color:#617482; line-height:1.5; font-size:13px; }
+        .btc-hero aside { background:#102E49; color:#fff; border-radius:17px; padding:21px; }
+        .btc-hero aside small { color:#9FC4B4; }
+        .btc-hero aside h2 { font-size:25px; }
+        .btc-hero aside p { color:#DCE6EB; }
+        .btc-tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+        .btc-tags b { font-size:10px; background:#E8F5EE; color:#28755B; padding:8px 10px; border-radius:999px; }
+        .btc-card,.btc-grid>article { padding:25px; }
+        .btc-card h2,.btc-grid h2 { font-size:26px; margin:5px 0 12px; }
+        .btc-steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+        .btc-step { background:#F7F3EC; border:1px solid #E7E0D5; border-radius:14px; padding:16px; display:flex; gap:10px; }
+        .btc-step b { color:#F05A28; font-size:11px; }
+        .btc-step strong { font-size:14px; line-height:1.4; }
+        .btc-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+        .btc-grid ul,.btc-feedback ul { color:#536878; line-height:1.65; font-size:13px; }
+        .btc-feedback { display:grid; grid-template-columns:1.1fr .9fr; gap:22px; border-top:3px solid #F05A28; }
+        .btc-fuel { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+        .btc-fuel article { background:#F8F5EF; border-radius:13px; padding:15px; }
+        .btc-fuel b { font-size:11px; color:#F05A28; }
+      </style>
+    """
+    return f"""
+    <main class="btc" id="training-coach">
+      <section class="btc-hero">
+        <div><small>TRAINING COACH · {_safe(athlete_name_value)}</small><span>COUCH → 5K · LEVEL {level} OF 12</span><h1>{_safe(session.title)}</h1><p>{_safe(decision.headline)}</p><div class="btc-tags"><b>{_safe(decision.immediate_timing)}</b><b>PLAN-LED</b><b>NO PACE TARGET</b></div></div>
+        <aside><small>THE JOB TODAY</small><h2>Complete, don’t compete.</h2><p>{_safe(session.pace_guidance)}</p></aside>
+      </section>
+      <section class="btc-card"><small>TODAY'S SESSION</small><h2>Exactly what to do</h2><div class="btc-steps">{sequence}</div></section>
+      <section class="btc-grid"><article><small>SUCCESS LOOKS LIKE</small><h2>Finish controlled.</h2><ul>{success}</ul></article><article><small>WHY THIS SESSION</small><h2>{_safe(decision.why[0])}</h2><p>{_safe(session.progression_note)}</p></article></section>
+      <section class="btc-card btc-feedback"><div><small>AFTER THE SESSION</small><h2>Your feedback decides what happens next.</h2><p>Performance Passport will use completion, difficulty, pain and your longest running block to recommend whether to progress, repeat, hold or step back.</p></div><ul>{after}</ul></section>
+      <section class="btc-card"><small>NUTRITION COACH · EASY DEMAND</small><h2>Keep fuelling uncomplicated.</h2><div class="btc-fuel"><article><b>Before</b><p>{_safe(detail.fuel_before)}</p></article><article><b>During</b><p>{_safe(detail.fuel_during)}</p></article><article><b>After</b><p>{_safe(detail.fuel_after)}</p></article></div></section>
+      {style}
+    </main>
+    """
+
+
+def build_five_to_ten_training_coach_html(
+    athlete_name_value: str,
+    detail: TrainingCoachDetail,
+) -> str:
+    decision = detail.decision
+    level = detail.five_to_ten_level or 1
+    role = _safe(detail.journey_session_role or "Run")
+    return f"""
+    <main class="fttc">
+      <section class="fttc-hero">
+        <div>
+          <small>TRAINING COACH · {_safe(athlete_name_value)}</small>
+          <span>5K → 10K · LEVEL {level} OF 10</span>
+          <h1>{_safe(detail.journey_session_title or decision.immediate_label)}</h1>
+          <p>{_safe(detail.journey_session_detail or decision.immediate_detail)}</p>
+          <div class="fttc-tags"><b>{_safe(decision.immediate_timing)}</b><b>{role}</b><b>PLAN-LED</b></div>
+        </div>
+        <aside>
+          <small>CURRENT FOCUS</small>
+          <h2>{_safe(detail.journey_level_title or "Build toward 10K")}</h2>
+          <p>{_safe(detail.journey_level_emphasis or decision.headline)}</p>
+          <strong>Long run: {(detail.journey_long_run_km or 0):g} km</strong>
+        </aside>
+      </section>
+      <section class="fttc-grid">
+        <article><small>THE JOB TODAY</small><h2>Controlled completion.</h2><p>{_safe(detail.journey_session_detail or "")}</p></article>
+        <article><small>WHY THIS RUN</small><h2>{_safe(detail.journey_level_emphasis or "")}</h2><p>Build durability first. Pace is secondary unless the plan explicitly calls for controlled quality.</p></article>
+      </section>
+      <section class="fttc-card"><small>AFTER THE SESSION</small><h2>Your feedback decides what happens next.</h2><p>Performance Passport combines completion, difficulty, pain and imported activity evidence. It previews Progress, Repeat, Hold, Step Back or Graduate before changing the journey.</p></section>
+      <section class="fttc-card"><small>NUTRITION COACH · {_safe(detail.fuel_demand.upper())} DEMAND</small><div class="fttc-fuel"><article><b>Before</b><p>{_safe(detail.fuel_before)}</p></article><article><b>During</b><p>{_safe(detail.fuel_during)}</p></article><article><b>After</b><p>{_safe(detail.fuel_after)}</p></article></div></section>
+    </main>
+    <style>
+      .fttc{{color:#10263D;font-family:Inter,system-ui,sans-serif;display:grid;gap:14px}} .fttc *{{box-sizing:border-box}}
+      .fttc-hero,.fttc-card,.fttc-grid>article{{background:#fff;border:1px solid #DED8CE;border-radius:22px;box-shadow:0 12px 30px rgba(16,38,61,.06)}}
+      .fttc-hero{{padding:34px;display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:28px;background:radial-gradient(circle at 100% 0,rgba(62,142,114,.14),transparent 38%),#fff}}
+      .fttc small{{font-size:11px;letter-spacing:.14em;font-weight:900;color:#718091}} .fttc-hero span{{display:block;margin-top:15px;color:#3E8E72;font-size:12px;font-weight:900;letter-spacing:.12em}}
+      .fttc-hero h1{{font-size:48px;margin:7px 0 10px;letter-spacing:-.04em}} .fttc-hero p,.fttc-grid p,.fttc-card p{{color:#617482;line-height:1.5;font-size:13px}}
+      .fttc-hero aside{{background:#102E49;color:#fff;border-radius:17px;padding:21px}} .fttc-hero aside small{{color:#9FC4B4}} .fttc-hero aside h2{{font-size:25px}} .fttc-hero aside p{{color:#DCE6EB}} .fttc-hero aside strong{{color:#9FC4B4}}
+      .fttc-tags{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}} .fttc-tags b{{font-size:10px;background:#E8F5EE;color:#28755B;padding:8px 10px;border-radius:999px}}
+      .fttc-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}} .fttc-grid>article,.fttc-card{{padding:25px}} .fttc-grid h2,.fttc-card h2{{font-size:26px;margin:5px 0 12px}}
+      .fttc-fuel{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}} .fttc-fuel article{{background:#F8F5EF;border-radius:13px;padding:15px}} .fttc-fuel b{{font-size:11px;color:#F05A28}}
+      @media(max-width:760px){{.fttc-hero,.fttc-grid{{grid-template-columns:1fr}}.fttc-fuel{{grid-template-columns:1fr}}}}
+    </style>
+    """
+
+
+def _render_five_to_ten_progress_recommendation(
+    athlete_id: int,
+    decision,
+    evidence,
+) -> None:
+    labels = {
+        "progress": "Progress",
+        "repeat": "Repeat",
+        "hold": "Hold",
+        "regress": "Step Back",
+        "graduate": "Graduate",
+    }
+    st.markdown(f"### Recommendation: {labels.get(decision.decision, decision.decision.title())}")
+    st.info(decision.reason)
+    if decision.week_before is not None:
+        st.caption(
+            f"Level {decision.week_before} → "
+            f"{'Complete' if decision.graduate else f'Level {decision.week_after}'}"
+        )
+    confirm = st.button(
+        "Confirm this recommendation",
+        type="primary",
+        use_container_width=True,
+        key=f"5to10_confirm_{athlete_id}_{decision.decision}_{decision.week_after}",
+    )
+    if confirm:
+        apply_five_to_ten_k_evidence(athlete_id, evidence)
+        st.session_state.pop(f"5to10_review_preview_{athlete_id}", None)
+        st.cache_data.clear()
+        st.rerun()
+
+
+def _planned_distance_from_detail(detail: TrainingCoachDetail) -> float | None:
+    title = str(detail.journey_session_title or "")
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*K\b", title, flags=re.I)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _render_five_to_ten_session_checkin(
+    athlete_id: int,
+    detail: TrainingCoachDetail,
+) -> None:
+    if detail.five_to_ten_level is None:
+        return
+    state_key = f"5to10_review_preview_{athlete_id}"
+    activity = find_latest_five_to_ten_k_activity_evidence(
+        athlete_id,
+        planned_distance_km=_planned_distance_from_detail(detail),
+    )
+
+    st.markdown("### How did it go?")
+    st.caption(
+        "Performance Passport previews the coaching decision first. "
+        "Nothing changes until you confirm it."
+    )
+    use_activity = False
+    if activity is not None:
+        st.success(
+            f"Imported run found: {activity.title} · {activity.activity_date} · "
+            f"{activity.distance_km:.2f} km · {round(activity.moving_time_s/60)} min"
+        )
+        st.caption(activity.match_reason)
+        use_activity = st.checkbox(
+            "Use this imported run as objective evidence",
+            value=True,
+            key=f"5to10_use_activity_{athlete_id}_{activity.activity_id}",
+        )
+
+    suggested_completed = (
+        bool(activity.likely_completed_as_planned)
+        if activity is not None and use_activity else True
+    )
+
+    with st.form(
+        f"5to10_checkin_{athlete_id}_{detail.five_to_ten_level}",
+        clear_on_submit=False,
+    ):
+        completed = st.radio(
+            "Did you complete the session as planned?",
+            ("Yes","No"),
+            index=0 if suggested_completed else 1,
+            horizontal=True,
+            key=f"5to10_completed_{athlete_id}",
+        )
+        difficulty = st.select_slider(
+            "How difficult did it feel?",
+            options=("Comfortable","Moderate","Hard","Very hard"),
+            value="Comfortable",
+            key=f"5to10_difficulty_{athlete_id}",
+        )
+        pain = st.radio(
+            "Any pain or concerning physical symptoms?",
+            ("No","Yes"), horizontal=True,
+            key=f"5to10_pain_{athlete_id}",
+        )
+        submitted = st.form_submit_button(
+            "Review this session", type="primary", use_container_width=True
+        )
+
+    if submitted:
+        linked = activity if activity is not None and use_activity else None
+        evidence = JourneyProgressEvidence(
+            completed_as_planned=completed == "Yes",
+            perceived_difficulty=difficulty,
+            pain_or_concerning_symptoms=pain == "Yes",
+            activity_id=linked.activity_id if linked else None,
+            activity_date=linked.activity_date if linked else None,
+            activity_distance_km=linked.distance_km if linked else None,
+            activity_moving_time_s=linked.moving_time_s if linked else None,
+        )
+        decision, prepared = preview_five_to_ten_k_progress(athlete_id, evidence)
+        st.session_state[state_key] = (decision, prepared)
+
+    preview = st.session_state.get(state_key)
+    if preview is not None:
+        decision, evidence = preview
+        _render_five_to_ten_progress_recommendation(
+            athlete_id, decision, evidence
+        )
+
+
 def build_training_coach_html(
     athlete_name_value: str,
     detail: TrainingCoachDetail,
 ) -> str:
     """Return the complete Training Coach markup for one real athlete."""
+    if detail.beginner_session is not None:
+        return build_beginner_training_coach_html(athlete_name_value, detail)
+    if detail.five_to_ten_level is not None:
+        return build_five_to_ten_training_coach_html(athlete_name_value, detail)
+
     decision = detail.decision
     progress = ""
     if decision.operational_week_number is not None:
@@ -321,6 +605,206 @@ def build_training_coach_html(
     """
 
 
+
+def _beginner_decision_label(decision: str) -> tuple[str, str]:
+    labels = {
+        "progress": ("Ready to progress", "Move to the next level"),
+        "repeat": ("Repeat this level", "Give this level another go"),
+        "regress": ("Step back one level", "Reduce the challenge"),
+        "hold": ("Hold this level", "Stay here for now"),
+        "graduate": ("5K journey complete", "Graduate Couch → 5K"),
+    }
+    return labels.get(decision, ("Review this level", "Apply recommendation"))
+
+
+def _render_beginner_progress_recommendation(
+    athlete_id: int,
+    detail: TrainingCoachDetail,
+    decision,
+    evidence: JourneyProgressEvidence,
+) -> None:
+    title, action = _beginner_decision_label(decision.decision)
+    before = decision.week_before or detail.beginner_week_number or 1
+    after = decision.week_after or before
+
+    movement = (
+        f"Level {before} → Level {after}"
+        if after != before
+        else f"Remain on Level {before}"
+    )
+    success_count = evidence.sessions_completed_since_decision
+
+    st.markdown(f"### {title}")
+    st.caption(movement)
+    st.info(decision.reason)
+
+    if decision.decision == "hold" and success_count == 1:
+        st.caption(
+            "That is one controlled successful session at this level. "
+            "A second controlled success can support progression."
+        )
+    if decision.decision == "graduate":
+        st.success(
+            "This recommendation completes the active Couch → 5K Runner Journey."
+        )
+
+    st.caption(
+        "Nothing changes until you confirm the coach recommendation."
+    )
+    apply_col, keep_col = st.columns([1.35, 1])
+    with apply_col:
+        apply_now = st.button(
+            action,
+            type="primary",
+            use_container_width=True,
+            key=f"c25k_apply_review_{athlete_id}_{before}_{decision.decision}",
+        )
+    with keep_col:
+        keep = st.button(
+            "Not now",
+            use_container_width=True,
+            key=f"c25k_keep_review_{athlete_id}_{before}_{decision.decision}",
+        )
+
+    state_key = f"c25k_review_preview_{athlete_id}"
+    if keep:
+        st.session_state.pop(state_key, None)
+        st.rerun()
+
+    if apply_now:
+        applied = apply_couch_to_5k_evidence(athlete_id, evidence)
+        st.session_state.pop(state_key, None)
+        st.cache_data.clear()
+        applied_title, _ = _beginner_decision_label(applied.decision)
+        st.success(f"{applied_title}. {applied.reason}")
+        st.rerun()
+
+
+def _render_beginner_session_checkin(
+    athlete_id: int,
+    detail: TrainingCoachDetail,
+) -> None:
+    if detail.beginner_session is None:
+        return
+
+    state_key = f"c25k_review_preview_{athlete_id}"
+    activity = find_latest_beginner_activity_evidence(
+        athlete_id,
+        planned_duration_s=detail.beginner_session.total_duration_s,
+    )
+
+    st.markdown("### How did it go?")
+    st.caption(
+        "A short check-in lets Performance Passport recommend whether to "
+        "progress, repeat, hold or step back. The plan never changes without "
+        "your confirmation."
+    )
+
+    use_activity = False
+    if activity is not None:
+        st.success(
+            f"Imported activity found: {activity.title} · "
+            f"{activity.activity_date} · {activity.distance_km:.2f} km · "
+            f"{round(activity.moving_time_s / 60.0)} min"
+        )
+        st.caption(activity.match_reason)
+        use_activity = st.checkbox(
+            "Use this imported activity to pre-fill objective evidence",
+            value=True,
+            key=f"c25k_use_activity_{athlete_id}_{activity.activity_id}",
+            help=(
+                "Performance Passport can suggest completion and 5K evidence "
+                "from the recorded activity. You still confirm the answers."
+            ),
+        )
+
+    suggested_completed = (
+        bool(activity.likely_completed_as_planned)
+        if activity is not None and use_activity
+        else True
+    )
+    suggested_5k = (
+        bool(activity.completed_5k)
+        if activity is not None and use_activity
+        else False
+    )
+
+    with st.form(
+        f"c25k_session_checkin_{athlete_id}_{detail.beginner_week_number}",
+        clear_on_submit=False,
+    ):
+        completed = st.radio(
+            "Did you complete the session as planned?",
+            ("Yes", "No"),
+            index=0 if suggested_completed else 1,
+            horizontal=True,
+            key=f"c25k_completed_{athlete_id}",
+        )
+        difficulty = st.select_slider(
+            "How difficult did it feel?",
+            options=("Comfortable", "Moderate", "Hard", "Very hard"),
+            value="Comfortable",
+            key=f"c25k_difficulty_{athlete_id}",
+        )
+        pain = st.radio(
+            "Any pain or concerning physical symptoms?",
+            ("No", "Yes"),
+            horizontal=True,
+            key=f"c25k_pain_{athlete_id}",
+        )
+        continuous = st.number_input(
+            "Longest continuous running block (minutes)",
+            min_value=0.0,
+            max_value=180.0,
+            value=0.0,
+            step=1.0,
+            key=f"c25k_continuous_{athlete_id}",
+            help=(
+                "This remains athlete-confirmed. A normal activity summary "
+                "cannot reliably distinguish every run/walk interval."
+            ),
+        )
+        completed_5k = st.checkbox(
+            "I completed a full 5K in this session",
+            value=suggested_5k,
+            key=f"c25k_completed_5k_{athlete_id}",
+        )
+        submitted = st.form_submit_button(
+            "Review this session",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if submitted:
+        linked = activity if activity is not None and use_activity else None
+        evidence = JourneyProgressEvidence(
+            completed_as_planned=completed == "Yes",
+            perceived_difficulty=difficulty,
+            pain_or_concerning_symptoms=pain == "Yes",
+            continuous_run_minutes=float(continuous) if continuous > 0 else None,
+            completed_5k=bool(completed_5k),
+            activity_id=linked.activity_id if linked else None,
+            activity_date=linked.activity_date if linked else None,
+            activity_distance_km=linked.distance_km if linked else None,
+            activity_moving_time_s=linked.moving_time_s if linked else None,
+        )
+        decision, prepared = preview_couch_to_5k_progress(
+            athlete_id,
+            evidence,
+        )
+        st.session_state[state_key] = (decision, prepared)
+
+    preview = st.session_state.get(state_key)
+    if preview is not None:
+        decision, evidence = preview
+        _render_beginner_progress_recommendation(
+            athlete_id,
+            detail,
+            decision,
+            evidence,
+        )
+
+
 def show_next_run_page() -> None:
     """Render the full Training Coach journey for the selected athlete."""
     st.markdown(
@@ -358,3 +842,7 @@ def show_next_run_page() -> None:
             detail,
         )
     )
+    if detail.beginner_session is not None:
+        _render_beginner_session_checkin(athlete_id, detail)
+    elif detail.five_to_ten_level is not None:
+        _render_five_to_ten_session_checkin(athlete_id, detail)

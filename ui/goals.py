@@ -12,6 +12,15 @@ from core.cache_version import (
     get_athlete_cache_version,
 )
 from core.database import save_goal
+from core.beginner_sessions import build_couch_to_5k_session
+from core.five_to_ten_k_assessment import build_five_to_ten_k_assessment
+from core.runner_journey import (
+    CouchTo5KAssessment,
+    FiveToTenKAssessment,
+    start_five_to_ten_k_journey,
+    get_active_runner_journey,
+    start_couch_to_5k_journey,
+)
 from core.goal_coach import GoalCoachDetail, build_goal_coach_detail
 from core.goals import (
     GOAL_ROLES,
@@ -38,7 +47,7 @@ DISTANCE_METRES = {
     "Half Marathon": 21097.5,
     "Marathon": 42195.0,
 }
-GOAL_COACH_CACHE_SCHEMA = 1
+GOAL_COACH_CACHE_SCHEMA = 3
 
 
 def _safe(value) -> str:
@@ -510,6 +519,145 @@ def _render_primary_block(primary: GoalHierarchyItem, athlete_id: int) -> None:
         st.rerun()
 
 
+
+_STAGE_LABELS = {
+    "walking_foundation": "Walking foundation",
+    "run_walk_short": "Short run / walk",
+    "run_walk_build": "Build the running blocks",
+    "run_blocks_5": "5-minute running blocks",
+    "run_blocks_8": "8-minute running blocks",
+    "run_blocks_10": "10-minute running blocks",
+    "continuous_15": "15-minute continuous run",
+    "continuous_20": "20-minute continuous run",
+    "continuous_25": "25-minute continuous run",
+    "continuous_30": "30-minute continuous run",
+    "5k_ready": "5K ready",
+}
+
+def _minutes_text(seconds: int | float) -> str:
+    minutes = int(round(float(seconds) / 60.0))
+    return f"{minutes} min"
+
+def _runner_journey_html(journey, session) -> str:
+    stage = _STAGE_LABELS.get(journey.current_stage, journey.current_stage)
+    blocks = []
+    for block in session.blocks:
+        repeats = f" × {block.repeat_count}" if block.repeat_count > 1 else ""
+        blocks.append(
+            "<div class='rj-block'>"
+            f"<span>{_safe(block.label)}</span>"
+            f"<strong>{_safe(_minutes_text(block.duration_s))}{_safe(repeats)}</strong>"
+            f"<small>{_safe(block.effort)}</small>"
+            "</div>"
+        )
+    success = "".join(f"<li>{_safe(item)}</li>" for item in session.success_criteria)
+    return f"""
+    <section class="rj-shell">
+        <div class="rj-top">
+            <div>
+                <div class="rj-eyebrow">RUNNER JOURNEY · COUCH → 5K</div>
+                <h2>{_safe(stage)}</h2>
+                <p>Your pathway progresses from what you complete, not simply because another week has passed.</p>
+            </div>
+            <div class="rj-stage">
+                <span>CURRENT SESSION</span>
+                <strong>{_safe(session.title)}</strong>
+                <small>{_safe(_minutes_text(session.total_duration_s))} planned time</small>
+            </div>
+        </div>
+        <div class="rj-blocks">{''.join(blocks)}</div>
+        <div class="rj-bottom">
+            <div><span class="rj-label">EFFORT GUIDE</span><p>{_safe(session.pace_guidance)}</p></div>
+            <div><span class="rj-label">A GOOD SESSION MEANS</span><ul>{success}</ul></div>
+        </div>
+    </section>
+    <style>
+        .rj-shell {{ margin:16px 0 8px; padding:24px; border:1px solid #dce8e1; border-radius:22px; background:linear-gradient(145deg,#f4fbf7,#fff); box-shadow:0 12px 30px rgba(16,38,61,.06); color:#10263d; }}
+        .rj-top {{ display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; align-items:start; }}
+        .rj-eyebrow,.rj-label {{ color:#238a52; font-size:10px; font-weight:850; letter-spacing:.13em; }}
+        .rj-top h2 {{ margin:6px 0 7px; color:#10263d!important; font-size:31px; letter-spacing:-.035em; }}
+        .rj-top p {{ margin:0; color:#617482; font-size:13px; line-height:1.45; }}
+        .rj-stage {{ padding:15px; border-radius:15px; background:#0a2a43; color:#fff; }}
+        .rj-stage span,.rj-stage small,.rj-stage strong {{ display:block; }}
+        .rj-stage span {{ color:#93cdb5; font-size:9px; font-weight:850; letter-spacing:.11em; }}
+        .rj-stage strong {{ margin-top:6px; font-size:18px; }}
+        .rj-stage small {{ margin-top:5px; color:#cad9e2; font-size:11px; }}
+        .rj-blocks {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-top:18px; }}
+        .rj-block {{ padding:13px; border:1px solid #dfe6e1; border-radius:13px; background:#fff; }}
+        .rj-block span,.rj-block strong,.rj-block small {{ display:block; }}
+        .rj-block span {{ color:#71808d; font-size:10px; font-weight:800; }}
+        .rj-block strong {{ margin-top:4px; font-size:18px; }}
+        .rj-block small {{ margin-top:3px; color:#7f8c95; font-size:10px; }}
+        .rj-bottom {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:13px; }}
+        .rj-bottom>div {{ padding:14px 15px; border-radius:13px; background:#fff; border:1px solid #e5ddd2; }}
+        .rj-bottom p,.rj-bottom li {{ color:#617482; font-size:11px; line-height:1.45; }}
+        .rj-bottom p {{ margin:5px 0 0; }} .rj-bottom ul {{ margin:5px 0 0; padding-left:18px; }}
+        @media(max-width:760px) {{ .rj-top,.rj-bottom {{ grid-template-columns:1fr; }} }}
+    </style>
+    """
+
+def _render_runner_journey(athlete_id: int, hierarchy) -> None:
+    journey = get_active_runner_journey(athlete_id)
+    if journey is None:
+        return
+
+    if journey.journey_type == "5k_to_10k":
+        from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+        from core.runner_journey import get_five_to_ten_k_current_level
+
+        current_level = get_five_to_ten_k_current_level(journey)
+        plan = build_five_to_ten_k_plan(
+            athlete_id=athlete_id,
+            sessions_per_week=journey.sessions_per_week,
+            entry_stage=journey.entry_stage,
+            current_level=current_level,
+            reference_date=datetime.date.today(),
+        )
+        current = plan.levels[current_level - 1]
+
+        st.markdown("### Active 5K → 10K journey")
+        st.caption(
+            f"Level {current_level} of 10 · {current.title} · "
+            f"{journey.sessions_per_week} running days per week"
+        )
+
+        cols = st.columns(3)
+        cols[0].metric("Current long run", f"{current.long_run_km:g} km")
+        cols[1].metric("Current focus", current.emphasis)
+        cols[2].metric("Journey status", journey.status)
+
+        st.info(
+            "This journey is now driving your 5K → 10K plan. "
+            "Open Training Blocks to see the full 10-level progression."
+        )
+        return
+
+    if journey.journey_type != COUCH_TO_5K:
+        st.warning(
+            f"Active runner journey type '{journey.journey_type}' is not yet "
+            "supported in Goal Coach."
+        )
+        return
+
+    session = build_couch_to_5k_session(journey.current_stage)
+    current_week = get_journey_current_week(journey)
+
+    st.markdown("### Active Couch → 5K journey")
+    st.caption(
+        f"Level {current_week} of 12 · {session.title} · "
+        f"{journey.sessions_per_week} training days per week"
+    )
+
+    cols = st.columns(3)
+    cols[0].metric("Current stage", journey.current_stage.replace("_", " ").title())
+    cols[1].metric("Next session", session.title)
+    cols[2].metric("Journey status", journey.status)
+
+    st.info(
+        "This journey is driving your beginner training plan. "
+        "Open Training Blocks to see the full 12-level progression."
+    )
+
 def _new_goal_form(athlete_id: int) -> None:
     with st.expander("Add a goal"):
         st.caption("Primary drives coaching, Secondary supports the current journey, and Future remains parked.")
@@ -555,6 +703,97 @@ def _goal_navigation(athlete_id: int) -> None:
             st.rerun()
 
 
+
+def _render_five_to_ten_k_onboarding(athlete_id: int, hierarchy) -> None:
+    if get_active_runner_journey(athlete_id) is not None:
+        return
+
+    st.markdown("### Ready to build from 5K to 10K?")
+    st.caption(
+        "Performance Passport uses your recent running evidence to choose a "
+        "safe starting level. This pathway is for runners who can already complete 5K."
+    )
+
+    with st.expander("Start 5K → 10K", expanded=False):
+        sessions_per_week = st.radio(
+            "How many days per week do you want to run?",
+            (2, 3, 4), index=1, horizontal=True,
+            key=f"five_to_ten_days_{athlete_id}",
+        )
+        goal_mode_label = st.radio(
+            "What would success look like?",
+            ("Complete 10K", "Run 10K continuously"),
+            horizontal=True,
+            key=f"five_to_ten_goal_mode_{athlete_id}",
+        )
+        use_target_date = st.checkbox(
+            "Use a target date", key=f"five_to_ten_use_target_{athlete_id}"
+        )
+        target_date = st.date_input(
+            "Target date",
+            value=datetime.date.today() + datetime.timedelta(weeks=10),
+            key=f"five_to_ten_target_date_{athlete_id}",
+        )
+
+        assessment, evidence = build_five_to_ten_k_assessment(
+            athlete_id,
+            sessions_per_week=sessions_per_week,
+            goal_mode=("complete_10k" if goal_mode_label == "Complete 10K"
+                       else "continuous_10k"),
+            target_date=(target_date.isoformat() if use_target_date else None),
+        )
+
+        st.info(
+            f"Recent evidence: {evidence.recent_run_count} runs in "
+            f"{evidence.lookback_days} days · "
+            f"{evidence.recent_weekly_km:.1f} km/week · "
+            f"longest recent run {evidence.longest_recent_run_km:.1f} km."
+        )
+
+        if not assessment.can_complete_5k:
+            st.warning(
+                "I can't find a recent 5K completion for this athlete. "
+                "Couch → 5K is the safer pathway for now."
+            )
+            return
+
+        if st.button(
+            "Create my 5K → 10K journey",
+            type="primary",
+            use_container_width=True,
+            key=f"start_five_to_ten_{athlete_id}",
+        ):
+            goal_id = None
+            primary = hierarchy.primary
+            if (
+                primary is not None
+                and primary.distance_m is not None
+                and abs(float(primary.distance_m) - 10000.0) <= 250.0
+            ):
+                goal_id = primary.id
+            elif primary is None:
+                goal_id = save_goal(
+                    athlete_id=athlete_id,
+                    goal_name=("Complete my first 10K"
+                               if goal_mode_label == "Complete 10K"
+                               else "Run 10K continuously"),
+                    goal_type="10K",
+                    distance_m=10000.0,
+                    target_time_s=None,
+                    target_date=(target_date.isoformat() if use_target_date else None),
+                    race_name=None,
+                    priority="Primary",
+                    status="Active",
+                    motivation="Build from a comfortable 5K to a controlled 10K.",
+                )
+
+            start_five_to_ten_k_journey(
+                athlete_id, assessment, goal_id=goal_id
+            )
+            st.cache_data.clear()
+            st.success("5K → 10K journey created from your recent running evidence.")
+            st.rerun()
+
 def show_goals_page() -> None:
     st.markdown("""
         <style>
@@ -588,6 +827,8 @@ def show_goals_page() -> None:
         )
     hierarchy = detail.hierarchy
     st.html(build_goal_coach_html(detail))
+    _render_runner_journey(athlete_id, hierarchy)
+    _render_five_to_ten_k_onboarding(athlete_id, hierarchy)
     _goal_navigation(athlete_id)
     _new_goal_form(athlete_id)
     for warning in hierarchy.warnings:

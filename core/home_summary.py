@@ -12,6 +12,16 @@ import datetime
 
 from core.adaptive_weekly_plan import build_adaptive_weekly_plan
 from core.database import get_active_goal
+from core.beginner_training_plan import build_couch_to_5k_plan
+from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+from core.runner_journey import (
+    COUCH_TO_5K,
+    FIVE_TO_TEN_K,
+    RunnerJourney,
+    get_active_runner_journey,
+    get_journey_current_week,
+    get_five_to_ten_k_current_level,
+)
 from core.operational_block import OperationalWeek, build_operational_block_week
 from core.training_blocks import (
     block_progress,
@@ -153,6 +163,229 @@ def _operational_days(
     return tuple(result)
 
 
+
+def _beginner_home_days(
+    *,
+    journey: RunnerJourney,
+    today: datetime.date,
+) -> tuple[HomeDay, ...]:
+    """Build the seven-day Lead Coach strip from the active Runner Journey."""
+    current_week = get_journey_current_week(journey)
+    plan = build_couch_to_5k_plan(
+        athlete_id=journey.athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_week=current_week,
+        reference_date=today,
+    )
+    plan_week = plan.weeks[current_week - 1]
+    planned_by_day = {day.day: day for day in plan_week.sessions}
+    names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+    result = []
+    for index, day_name in enumerate(names):
+        planned = planned_by_day.get(day_name)
+        if planned is None:
+            result.append(
+                HomeDay(
+                    day_name=day_name,
+                    session_family="rest",
+                    title="Rest / recovery",
+                    detail="No planned Couch → 5K session.",
+                    target=None,
+                    is_today=index == today.weekday(),
+                )
+            )
+            continue
+
+        result.append(
+            HomeDay(
+                day_name=day_name,
+                session_family=(
+                    "recovery" if not planned.counts_for_progression else "easy"
+                ),
+                title=planned.title,
+                detail=planned.detail,
+                target=(
+                    "Counts for progression"
+                    if planned.counts_for_progression
+                    else "Support session"
+                ),
+                is_today=index == today.weekday(),
+            )
+        )
+    return tuple(result)
+
+
+def _beginner_next(
+    days: tuple[HomeDay, ...],
+    today: datetime.date,
+) -> tuple[str, str, str, str]:
+    """Choose the next journey session from the current seven-day strip."""
+    start = today.weekday()
+    ordered = list(days[start:]) + list(days[:start])
+    for offset, day in enumerate(ordered):
+        if day.session_family == "rest":
+            continue
+        timing = "Today" if offset == 0 else day.day_name
+        return (
+            day.title,
+            timing,
+            day.detail,
+            "Couch → 5K Runner Journey",
+        )
+    return (
+        "Recovery and reset",
+        "This week",
+        "No additional Couch → 5K session is planned in the current level.",
+        "Couch → 5K Runner Journey",
+    )
+
+
+def _build_beginner_home_summary(
+    athlete_id: int,
+    goal: dict | None,
+    journey: RunnerJourney,
+    *,
+    today: datetime.date,
+) -> HomeSummary:
+    current_week = get_journey_current_week(journey)
+    plan = build_couch_to_5k_plan(
+        athlete_id=athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_week=current_week,
+        reference_date=today,
+    )
+    current = plan.weeks[current_week - 1]
+    days = _beginner_home_days(journey=journey, today=today)
+    next_label, next_timing, next_detail, next_source = _beginner_next(days, today)
+
+    goal_name = (
+        str(goal.get("goal_name") or goal.get("race_name") or "Complete my first 5K")
+        if goal
+        else "Complete my first 5K"
+    )
+
+    return HomeSummary(
+        athlete_id=athlete_id,
+        goal_name=goal_name,
+        goal_context=_format_goal_context(goal),
+        target_time_s=(goal.get("target_time_s") if goal else None),
+        target_date=(goal.get("target_date") if goal else None),
+        block_name="Couch → 5K",
+        block_context=f"Level {current_week} of 12 · {current.title}",
+        block_is_saved=True,
+        week_days=days,
+        week_theme=f"Level {current_week}: {current.emphasis}",
+        next_label=next_label,
+        next_timing=next_timing,
+        next_detail=next_detail,
+        next_source=next_source,
+    )
+
+
+
+def _five_to_ten_home_days(
+    *,
+    journey: RunnerJourney,
+    today: datetime.date,
+) -> tuple[HomeDay, ...]:
+    current_level = get_five_to_ten_k_current_level(journey)
+    plan = build_five_to_ten_k_plan(
+        athlete_id=journey.athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_level=current_level,
+        reference_date=today,
+    )
+    current = plan.levels[current_level - 1]
+    by_day = {session.day: session for session in current.sessions}
+    names = ("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+    days = []
+    for index, name in enumerate(names):
+        session = by_day.get(name)
+        if session is None:
+            days.append(HomeDay(
+                day_name=name, session_family="rest", title="Rest / recovery",
+                detail="No planned 5K → 10K session.", target=None,
+                is_today=index == today.weekday(),
+            ))
+            continue
+        family = (
+            "endurance" if session.role == "Long easy"
+            else "recovery" if session.role == "Recovery"
+            else "easy" if "Easy" in session.role
+            else "threshold"
+        )
+        days.append(HomeDay(
+            day_name=name, session_family=family, title=session.title,
+            detail=session.detail,
+            target=("Counts for progression" if session.counts_for_progression
+                    else "Optional support"),
+            is_today=index == today.weekday(),
+        ))
+    return tuple(days)
+
+
+def _five_to_ten_next(
+    days: tuple[HomeDay, ...],
+    today: datetime.date,
+) -> tuple[str, str, str, str]:
+    ordered = list(days[today.weekday():]) + list(days[:today.weekday()])
+    for offset, day in enumerate(ordered):
+        if day.session_family == "rest":
+            continue
+        timing = "Today" if offset == 0 else ("Tomorrow" if offset == 1 else day.day_name)
+        return day.title, timing, day.detail, "5K → 10K Runner Journey"
+    return (
+        "Recovery and reset", "This week",
+        "No additional 5K → 10K session is planned in the current level.",
+        "5K → 10K Runner Journey",
+    )
+
+
+def _build_five_to_ten_home_summary(
+    athlete_id: int,
+    goal: dict | None,
+    journey: RunnerJourney,
+    *,
+    today: datetime.date,
+) -> HomeSummary:
+    current_level = get_five_to_ten_k_current_level(journey)
+    plan = build_five_to_ten_k_plan(
+        athlete_id=athlete_id,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_level=current_level,
+        reference_date=today,
+    )
+    current = plan.levels[current_level - 1]
+    days = _five_to_ten_home_days(journey=journey, today=today)
+    next_label, next_timing, next_detail, next_source = _five_to_ten_next(days, today)
+
+    goal_name = (
+        str(goal.get("goal_name") or goal.get("race_name") or "Complete 10K")
+        if goal else "Complete 10K"
+    )
+    return HomeSummary(
+        athlete_id=athlete_id,
+        goal_name=goal_name,
+        goal_context=_format_goal_context(goal),
+        target_time_s=(goal.get("target_time_s") if goal else None),
+        target_date=(goal.get("target_date") if goal else None),
+        block_name="5K → 10K",
+        block_context=f"Level {current_level} of 10 · {current.title}",
+        block_is_saved=True,
+        week_days=days,
+        week_theme=f"Level {current_level}: {current.emphasis}",
+        next_label=next_label,
+        next_timing=next_timing,
+        next_detail=next_detail,
+        next_source=next_source,
+    )
+
+
 def build_home_summary(
     athlete_id: int,
     *,
@@ -161,6 +394,22 @@ def build_home_summary(
     """Build the real-data summary used by the first Home preview."""
     today = today or datetime.date.today()
     goal = get_active_goal(athlete_id)
+    journey = get_active_runner_journey(athlete_id)
+    if journey is not None and journey.journey_type == COUCH_TO_5K:
+        return _build_beginner_home_summary(
+            athlete_id,
+            goal,
+            journey,
+            today=today,
+        )
+    if journey is not None and journey.journey_type == FIVE_TO_TEN_K:
+        return _build_five_to_ten_home_summary(
+            athlete_id,
+            goal,
+            journey,
+            today=today,
+        )
+
     weekly = build_adaptive_weekly_plan(athlete_id, today=today)
     saved_block = get_active_training_block(athlete_id)
     operational = build_operational_block_week(athlete_id, today=today)
