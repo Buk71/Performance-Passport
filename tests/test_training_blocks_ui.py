@@ -14,7 +14,10 @@ from ui.training_blocks import (
     build_operational_week_html,
     build_training_block_overview_html,
     build_week_timeline_html,
+    build_five_to_ten_k_overview_html,
 )
+from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+from core.runner_journey import get_active_runner_journey, get_five_to_ten_k_current_level
 from core.operational_block import compose_operational_week, OperationalActivity
 from core.block_review import BlockReviewProposal, SessionCommitment
 
@@ -54,13 +57,22 @@ def test_richard_surface_explains_history_goal_and_generated_direction():
     assert "SESSION DETAIL STAYS IN NEXT RUN" in timeline
 
 
-def test_jo_surface_remains_independent():
-    overview, _ = _surface(3)
+def test_jo_surface_remains_independent_on_active_5k_to_10k_journey():
+    journey = get_active_runner_journey(3)
+    assert journey is not None
+    level = get_five_to_ten_k_current_level(journey)
+    plan = build_five_to_ten_k_plan(
+        athlete_id=3,
+        sessions_per_week=journey.sessions_per_week,
+        entry_stage=journey.entry_stage,
+        current_level=level,
+        reference_date=REFERENCE_DATE,
+    )
+    overview = build_five_to_ten_k_overview_html(plan)
 
-    assert "Sub 45 Training Block" in overview
-    assert "27.5" in overview
-    assert "1<i> sessions/wk" in overview
-    assert "8 weeks" in overview
+    assert "5K → 10K TRAINING PLAN" in overview
+    assert f"{level} of 10" in overview
+    assert "27.5" not in overview
     assert "39.7" not in overview
 
 

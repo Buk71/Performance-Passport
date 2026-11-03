@@ -61,8 +61,26 @@ def test_richard_block_progresses_then_tapers_into_primary_goal():
     assert any(day.session_type == "Primary race" for day in design.weeks[-1].days)
 
 
-def test_jo_keeps_her_own_frequency_volume_and_goal():
-    history, hierarchy = _foundation(3)
+def test_jo_keeps_her_own_frequency_volume_and_history_led_goal():
+    history, _ = _foundation(3)
+    hierarchy = build_goal_hierarchy_from_records(
+        3,
+        [{
+            "id": 9001,
+            "athlete_id": 3,
+            "training_block_id": None,
+            "goal_name": "Jo dated 10K test",
+            "goal_type": "10K",
+            "distance_m": 10000.0,
+            "target_time_s": 2700,
+            "target_date": "2026-10-11",
+            "race_name": "Jo dated 10K test",
+            "priority": "Primary",
+            "status": "Active",
+            "motivation": None,
+        }],
+        reference_date=REFERENCE_DATE,
+    )
     design = design_training_block(
         history=history,
         hierarchy=hierarchy,
@@ -74,7 +92,7 @@ def test_jo_keeps_her_own_frequency_volume_and_goal():
     assert history.recent_days_per_week == 4.8
     assert history.recent_miles_per_week == 27.5
     assert history.supported_sessions_per_week == 1
-    assert design.primary_goal_name == "Sub 45"
+    assert design.primary_goal_name == "Jo dated 10K test"
     assert design.end_date == "2026-10-11"
     assert len(design.weeks) == 8
     assert design.peak_miles < 30

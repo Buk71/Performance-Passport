@@ -71,7 +71,7 @@ def test_jo_uses_her_own_responses_and_keeps_trail_generic():
     richard_factors = {factor.key: factor for factor in richard.factors}
     jo_factors = {factor.key: factor for factor in jo.factors}
 
-    assert jo.goal_name == "Sub 45"
+    assert jo.goal_name == "Complete my first 10K"
     assert jo.ideal_seconds != richard.ideal_seconds
     assert richard_factors["surface"].personalised is True
     assert jo_factors["surface"].personalised is False

@@ -42,7 +42,7 @@ def test_v7_keeps_jo_independent_and_does_not_invent_edge():
     hero_html = build_v7_hero_html(3, home, predictions, latest)
     lower_html = build_v7_lower_html(home, best)
 
-    assert "Sub 45" in goal_html
+    assert home.goal_name in goal_html
     assert "SLR 12 miles" not in hero_html
     assert "Trail Warrior" not in hero_html
     assert "Still emerging" in hero_html

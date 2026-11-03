@@ -135,7 +135,7 @@ def _find_pb(
             a.id,
             a.activity_date,
             a.title,
-            a.distance_m,
+            pp_distance_km(a.distance_m, a.raw_json) AS distance_km,
             a.moving_time_s,
             a.elapsed_time_s,
             a.avg_hr,
@@ -147,7 +147,8 @@ def _find_pb(
         JOIN athletes at ON at.id = a.athlete_id
         WHERE a.athlete_id = ?
           AND CAST(a.sport_id AS TEXT) IN ({placeholders})
-          AND a.distance_m BETWEEN ? AND ?
+          AND (pp_distance_km(a.distance_m, a.raw_json))
+              BETWEEN ? AND ?
           AND COALESCE(a.elapsed_time_s, a.moving_time_s) IS NOT NULL
         ORDER BY COALESCE(a.elapsed_time_s, a.moving_time_s) ASC
         """,

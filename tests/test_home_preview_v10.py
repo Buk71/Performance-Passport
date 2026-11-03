@@ -42,7 +42,7 @@ def test_v10_jo_goal_is_not_repeated_and_uses_preferred_display_name():
     home, _, _, _ = _data(3)
     goal_html = build_v10_goal_html(home)
 
-    assert "Sub 45" in goal_html
+    assert home.goal_name in goal_html
     assert '<span class="v8-goal-target">45:00</span>' not in goal_html
     assert _athlete_display_name((3, "Joanne", "Burke")) == "Jo Burke"
     assert _athlete_display_name((1, "Richard", "Burke")) == "Richard Burke"

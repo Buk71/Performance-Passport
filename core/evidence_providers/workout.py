@@ -1555,7 +1555,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 a.activity_date,
                 a.title,
                 a.sport_id,
-                a.distance_m,
+                pp_distance_km(a.distance_m, a.raw_json) AS distance_km,
                 a.moving_time_s,
                 a.elapsed_time_s,
                 a.avg_hr,

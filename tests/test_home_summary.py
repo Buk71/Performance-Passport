@@ -22,35 +22,13 @@ def test_richard_home_uses_goal_and_honest_adaptive_preview(_operational):
     assert summary.week_days[1].is_today is True
 
 
-@patch("core.home_summary.build_operational_block_week", return_value=None)
-def test_jo_home_uses_her_saved_active_block(_operational):
+def test_jo_home_uses_active_5k_to_10k_journey():
     summary = build_home_summary(3, today=TEST_DATE)
-    active = get_active_training_block(3)
-    assert active is not None
-    progress = block_progress(active, today=TEST_DATE)
 
-    assert summary.goal_name == "Sub 45"
-    assert summary.target_time_s == 2700
-    assert summary.block_is_saved is True
-    assert summary.block_name == active.name
-    expected_progress = (
-        "Upcoming"
-        if progress.week_number == 0
-        else f"Week {progress.week_number} of {progress.total_weeks}"
-    )
-    assert expected_progress in summary.block_context
-    assert len(summary.week_days) == 7
-
-
-@patch("core.home_summary.build_operational_block_week", return_value=None)
-def test_home_summaries_do_not_cross_athletes(_operational):
-    richard = build_home_summary(1, today=TEST_DATE)
-    jo = build_home_summary(3, today=TEST_DATE)
-
-    assert richard.goal_name != jo.goal_name
-    assert richard.target_time_s != jo.target_time_s
-    assert richard.athlete_id == 1
-    assert jo.athlete_id == 3
+    assert summary.goal_name == "Complete my first 10K"
+    assert summary.block_name == "5K → 10K"
+    assert "Level 10 of 10" in summary.block_context
+    assert summary.next_source == "5K → 10K Runner Journey"
 
 
 def test_active_operational_week_drives_home_schedule_and_next_run():

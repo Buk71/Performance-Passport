@@ -25,4 +25,4 @@ def test_existing_journey_renders_current_stage():
     assert "journey.current_stage" in SOURCE
 
 def test_goal_coach_cache_schema_bumped():
-    assert "GOAL_COACH_CACHE_SCHEMA = 2" in SOURCE
+    assert "GOAL_COACH_CACHE_SCHEMA = 3" in SOURCE

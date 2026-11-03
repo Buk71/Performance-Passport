@@ -2,6 +2,7 @@ import sqlite3
 import json
 from functools import lru_cache
 from pathlib import Path
+from core.distance_units import normalize_activity_distance_km
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
 CURRENT_SCHEMA_VERSION = 17
@@ -11,6 +12,11 @@ def get_connection():
     DATABASE_PATH.parent.mkdir(exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.create_function(
+        "pp_distance_km",
+        2,
+        lambda value, raw_json: normalize_activity_distance_km(value, raw_json),
+    )
     return conn
 
 

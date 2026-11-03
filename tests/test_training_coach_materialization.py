@@ -44,7 +44,7 @@ def test_training_coach_uses_persistent_typed_intelligence():
     assert "_build_training_coach_detail_uncached" in source
     assert "get_training_intelligence_version" in source
     assert "get_or_build_typed_intelligence" in source
-    assert 'training.coach_detail.v1.' in source
+    assert 'training.coach_detail.v3.' in source
 
 
 def test_training_coach_key_is_calendar_day_specific():

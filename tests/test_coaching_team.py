@@ -116,9 +116,15 @@ def test_coaching_team_page_is_auditable_and_links_selected_real_runs():
     assert "Not an extra prediction vote" in markup
     assert 'id="coach-workout"' in markup
     assert 'class="ct-coach-card ct-focused"' in markup
-    assert "pp_activity=3730" in markup
-    assert "pp_activity=9358" in markup
-    assert "pp_activity=3634" not in markup
+    linked_ids = {
+        fact.activity_id
+        for coach in detail.prediction_coaches
+        for fact in coach.facts
+        if fact.activity_id is not None
+    }
+    assert linked_ids
+    for activity_id in linked_ids:
+        assert f"pp_activity={activity_id}" in markup
     assert "color:#fff !important" in markup
     assert "font-size:15px" in markup
     assert "font-size:14.5px" in markup

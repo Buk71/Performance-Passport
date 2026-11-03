@@ -463,7 +463,7 @@ def build_goal_predictions(
     """
     source_version = tuple(get_race_intelligence_version(int(athlete_id)))
     goal_key = stable_key_fragment(goal or {})
-    key = f"race.goal_predictions.v1.{goal_key}"
+    key = f"race.goal_predictions.v2.{goal_key}"
     return get_or_build_typed_intelligence(
         int(athlete_id),
         key,

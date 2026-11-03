@@ -78,7 +78,9 @@ def test_specialist_coaches_select_evidence_for_their_actual_role():
     assert evidence["recent_race"].metadata["projection_distance_km"] in {
         5.0, 10.0,
     }
-    assert evidence["threshold"].metadata["selected_activity_id"] == 9945
+    threshold = evidence["threshold"].metadata
+    assert threshold["selected_activity_id"] == 9945
+    assert threshold["selected_date"] >= "2026-07-01"
 
 
 def test_threshold_coach_does_not_claim_five_k_race_pace_is_threshold():

@@ -372,8 +372,15 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             if item is not None and item.score >= MIN_SCORE:
                 scored.append(item)
 
+        # Evidence scores are intentionally approximate. When two sessions are
+        # effectively tied to one decimal place, prefer the newer evidence rather
+        # than letting a hundredth of a point keep a year-old session as the
+        # headline example.
         scored.sort(
-            key=lambda item: (item.score, item.candidate.activity_date),
+            key=lambda item: (
+                round(item.score, 1),
+                item.candidate.activity_date,
+            ),
             reverse=True,
         )
 
@@ -970,7 +977,7 @@ class ThresholdEvidenceProvider(EvidenceProvider):
                 CAST(a.sport_id AS TEXT),
                 a.activity_date,
                 a.title,
-                a.distance_m,
+                pp_distance_km(a.distance_m, a.raw_json) AS distance_km,
                 a.moving_time_s,
                 a.elapsed_time_s,
                 a.avg_hr,
@@ -987,7 +994,8 @@ class ThresholdEvidenceProvider(EvidenceProvider):
             WHERE a.athlete_id = ?
               AND CAST(a.sport_id AS TEXT) IN ({placeholders})
               AND a.activity_date IS NOT NULL
-              AND a.distance_m BETWEEN 3.0 AND 20.0
+              AND (pp_distance_km(a.distance_m, a.raw_json))
+                  BETWEEN 3.0 AND 20.0
               AND a.moving_time_s BETWEEN 900 AND 5400
               AND date(a.activity_date) >= date(?, '-730 days')
               AND (

@@ -92,7 +92,7 @@ def test_real_richard_and_jo_keep_independent_primary_goals():
     jo_block = get_active_training_block(3)
 
     assert richard.primary.name == "Sub 39:00"
-    assert jo.primary.name == "Sub 45"
+    assert jo.primary.name == "Complete my first 10K"
     assert richard.primary.athlete_id == 1
     assert jo.primary.athlete_id == 3
 

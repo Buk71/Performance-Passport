@@ -598,65 +598,167 @@ def _runner_journey_html(journey, session) -> str:
 
 def _render_runner_journey(athlete_id: int, hierarchy) -> None:
     journey = get_active_runner_journey(athlete_id)
-    if journey is None:
-        return
 
-    if journey.journey_type == "5k_to_10k":
-        from core.five_to_ten_k_plan import build_five_to_ten_k_plan
-        from core.runner_journey import get_five_to_ten_k_current_level
+    if journey is not None:
+        if journey.journey_type == "5k_to_10k":
+            from core.five_to_ten_k_plan import build_five_to_ten_k_plan
+            from core.runner_journey import get_five_to_ten_k_current_level
 
-        current_level = get_five_to_ten_k_current_level(journey)
-        plan = build_five_to_ten_k_plan(
-            athlete_id=athlete_id,
-            sessions_per_week=journey.sessions_per_week,
-            entry_stage=journey.entry_stage,
-            current_level=current_level,
-            reference_date=datetime.date.today(),
-        )
-        current = plan.levels[current_level - 1]
+            current_level = get_five_to_ten_k_current_level(journey)
+            plan = build_five_to_ten_k_plan(
+                athlete_id=athlete_id,
+                sessions_per_week=journey.sessions_per_week,
+                entry_stage=journey.entry_stage,
+                current_level=current_level,
+                reference_date=datetime.date.today(),
+            )
+            current = plan.levels[current_level - 1]
 
-        st.markdown("### Active 5K → 10K journey")
-        st.caption(
-            f"Level {current_level} of 10 · {current.title} · "
-            f"{journey.sessions_per_week} running days per week"
-        )
+            st.markdown("### Active 5K → 10K journey")
+            st.caption(
+                f"Level {current_level} of 10 · {current.title} · "
+                f"{journey.sessions_per_week} running days per week"
+            )
+            cols = st.columns(3)
+            cols[0].metric("Current long run", f"{current.long_run_km:g} km")
+            cols[1].metric("Current focus", current.emphasis)
+            cols[2].metric("Journey status", journey.status)
+            st.info(
+                "This journey is now driving your 5K → 10K plan. "
+                "Open Training Blocks to see the full 10-level progression."
+            )
+            return
 
-        cols = st.columns(3)
-        cols[0].metric("Current long run", f"{current.long_run_km:g} km")
-        cols[1].metric("Current focus", current.emphasis)
-        cols[2].metric("Journey status", journey.status)
+        if journey.journey_type == COUCH_TO_5K:
+            st.markdown("### Active Couch → 5K journey")
+            session = build_couch_to_5k_session(journey.current_stage)
+            st.html(_runner_journey_html(journey, session))
+            st.caption(
+                "After each session Performance Passport will use completion, "
+                "difficulty and any reported symptoms to decide whether to progress, "
+                "repeat or hold the stage."
+            )
+            return
 
-        st.info(
-            "This journey is now driving your 5K → 10K plan. "
-            "Open Training Blocks to see the full 10-level progression."
-        )
-        return
-
-    if journey.journey_type != COUCH_TO_5K:
         st.warning(
             f"Active runner journey type '{journey.journey_type}' is not yet "
             "supported in Goal Coach."
         )
         return
 
-    session = build_couch_to_5k_session(journey.current_stage)
-    current_week = get_journey_current_week(journey)
+    if hierarchy.primary is None:
+        st.html("""
+        <section style="margin-top:16px;padding:20px 22px;border:1px solid #f1d8c7;border-left:5px solid #f15a2a;border-radius:18px;background:#fff8f2;color:#10263d">
+            <div style="font-size:10px;font-weight:850;letter-spacing:.13em;color:#f15a2a">NEW TO RUNNING?</div>
+            <div style="font-size:24px;font-weight:850;letter-spacing:-.025em;margin-top:5px">Start your running journey</div>
+            <div style="font-size:13px;line-height:1.45;color:#667885;margin-top:6px">We will start from what you can comfortably do today, then progress from real completion evidence rather than forcing you into a generic week-by-week plan.</div>
+        </section>
+        """)
+        expanded = True
+    else:
+        expanded = False
 
-    st.markdown("### Active Couch → 5K journey")
-    st.caption(
-        f"Level {current_week} of 12 · {session.title} · "
-        f"{journey.sessions_per_week} training days per week"
-    )
+    with st.expander(
+        "Start Couch → 5K journey" if hierarchy.primary is None
+        else "New to running? Start Couch → 5K",
+        expanded=expanded,
+    ):
+        st.caption(
+            "This pathway is for runners who are new to running or rebuilding "
+            "from a very low running base. Established runners can keep using "
+            "the normal Goal Coach and Training Block path."
+        )
+        with st.form(f"runner_journey_start_{athlete_id}"):
+            can_walk = st.radio(
+                "Can you comfortably walk for 30 minutes?",
+                ("Yes", "Not yet"),
+                horizontal=True,
+            )
+            running_now = st.radio(
+                "Are you currently doing any running?",
+                ("No", "Yes"),
+                horizontal=True,
+            )
+            run_minutes = st.select_slider(
+                "Longest continuous run you could comfortably do today",
+                options=(0, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30),
+                value=0 if running_now == "No" else 5,
+                format_func=lambda value: "None" if value == 0 else f"{value} min",
+            )
+            sessions = st.radio(
+                "How many days per week can you train?",
+                (2, 3, 4),
+                index=1,
+                horizontal=True,
+            )
+            goal_mode_label = st.radio(
+                "What would success mean to you?",
+                ("Complete a 5K", "Run 5K continuously"),
+                horizontal=True,
+            )
+            has_date = st.checkbox("I have a target date or event")
+            target_date = None
+            if has_date:
+                target_date = st.date_input(
+                    "Target date",
+                    value=datetime.date.today() + datetime.timedelta(weeks=10),
+                )
+            submitted = st.form_submit_button(
+                "Start my running journey",
+                type="primary",
+                use_container_width=True,
+            )
 
-    cols = st.columns(3)
-    cols[0].metric("Current stage", journey.current_stage.replace("_", " ").title())
-    cols[1].metric("Next session", session.title)
-    cols[2].metric("Journey status", journey.status)
+        if submitted:
+            assessment = CouchTo5KAssessment(
+                can_walk_30_min=can_walk == "Yes",
+                current_running=running_now == "Yes",
+                comfortable_continuous_run_min=float(run_minutes),
+                sessions_per_week=int(sessions),
+                goal_mode=(
+                    "run_5k_continuously"
+                    if goal_mode_label == "Run 5K continuously"
+                    else "complete_5k"
+                ),
+                target_date=str(target_date) if target_date else None,
+            )
+            goal_id = None
+            if hierarchy.primary is None:
+                goal_id = save_goal(
+                    athlete_id=athlete_id,
+                    goal_name=(
+                        "Run my first 5K continuously"
+                        if goal_mode_label == "Run 5K continuously"
+                        else "Complete my first 5K"
+                    ),
+                    goal_type="5K",
+                    distance_m=5000.0,
+                    target_time_s=None,
+                    target_date=str(target_date) if target_date else None,
+                    race_name=None,
+                    priority="Primary",
+                    status="Active",
+                    motivation="Build running confidence and progress safely to 5K.",
+                )
+            elif (
+                hierarchy.primary.distance_m is not None
+                and abs(float(hierarchy.primary.distance_m) - 5000.0) <= 150.0
+            ):
+                goal_id = hierarchy.primary.id
 
-    st.info(
-        "This journey is driving your beginner training plan. "
-        "Open Training Blocks to see the full 12-level progression."
-    )
+            journey = start_couch_to_5k_journey(
+                athlete_id,
+                assessment,
+                goal_id=goal_id,
+            )
+            st.cache_data.clear()
+            st.session_state["goals_notice"] = (
+                "Your Couch → 5K journey is ready. "
+                f"Performance Passport has started you at "
+                f"{_STAGE_LABELS.get(journey.current_stage, journey.current_stage)}."
+            )
+            st.rerun()
+
 
 def _new_goal_form(athlete_id: int) -> None:
     with st.expander("Add a goal"):

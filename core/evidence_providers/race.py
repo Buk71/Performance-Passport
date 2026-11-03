@@ -110,6 +110,18 @@ class RaceCandidate:
 
 
 @dataclass(frozen=True)
+class RaceScoringHistoryRow:
+    activity_date: datetime.date
+    distance_km: float
+    elapsed_time_s: float
+    elevation_up_m: float
+    route_name: str
+    title: str
+    sport_id: str
+    raw_json_text: str
+
+
+@dataclass(frozen=True)
 class CandidateScore:
     candidate: RaceCandidate
     total: float
@@ -282,6 +294,7 @@ def _is_training_intent(candidate: RaceCandidate) -> bool:
 def _route_course_penalty_seconds(
     athlete_id: int,
     candidate: RaceCandidate,
+    scoring_history: tuple[RaceScoringHistoryRow, ...] | None = None,
 ) -> tuple[float, dict]:
     """
     Learn a repeated-course penalty from the athlete's own history.
@@ -299,30 +312,53 @@ def _route_course_penalty_seconds(
             "route_penalty_seconds": 0.0,
         }
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT distance_m, elapsed_time_s, elevation_up_m, route_name,
-               activity_date, title, sport_id, raw_json
-        FROM activities
-        WHERE athlete_id = ?
-          AND activity_date >= date(?, '-240 day')
-          AND activity_date <= date(?, '+60 day')
-          AND distance_m BETWEEN ? AND ?
-          AND elapsed_time_s IS NOT NULL
-        """,
-        (
-            athlete_id,
-            candidate.activity_date.isoformat(),
-            candidate.activity_date.isoformat(),
-            candidate.distance_km * 0.94,
-            candidate.distance_km * 1.06,
-        ),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    if scoring_history is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                   pp_distance_km(distance_m, raw_json),
+                   elapsed_time_s, elevation_up_m, route_name,
+                   activity_date, title, sport_id, raw_json
+            FROM activities
+            WHERE athlete_id = ?
+              AND activity_date >= date(?, '-240 day')
+              AND activity_date <= date(?, '+60 day')
+              AND (pp_distance_km(distance_m, raw_json))
+                  BETWEEN ? AND ?
+              AND elapsed_time_s IS NOT NULL
+            """,
+            (
+                athlete_id,
+                candidate.activity_date.isoformat(),
+                candidate.activity_date.isoformat(),
+                candidate.distance_km * 0.94,
+                candidate.distance_km * 1.06,
+            ),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+    else:
+        start_date = candidate.activity_date - datetime.timedelta(days=240)
+        end_date = candidate.activity_date + datetime.timedelta(days=60)
+        rows = [
+            (
+                item.distance_km,
+                item.elapsed_time_s,
+                item.elevation_up_m,
+                item.route_name,
+                item.activity_date.isoformat(),
+                item.title,
+                item.sport_id,
+                item.raw_json_text,
+            )
+            for item in scoring_history
+            if start_date <= item.activity_date <= end_date
+            and candidate.distance_km * 0.94
+                <= item.distance_km
+                <= candidate.distance_km * 1.06
+        ]
 
     route_paces = []
     route_elevations = []
@@ -439,6 +475,7 @@ def _performance_quality_signal(
     athlete_id: int,
     candidate: RaceCandidate,
     equivalent_time_s: float,
+    scoring_history: tuple[RaceScoringHistoryRow, ...] | None = None,
 ) -> float:
     """
     Athlete-relative quality at the same standard distance.
@@ -446,28 +483,46 @@ def _performance_quality_signal(
     A controlled threshold 5K can be valid fitness evidence, but it should not
     outrank a substantially faster genuine race merely because it is newer.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT distance_m, elapsed_time_s, title, sport_id, route_name,
-               raw_json
-        FROM activities
-        WHERE athlete_id = ?
-          AND activity_date <= ?
-          AND distance_m BETWEEN ? AND ?
-          AND elapsed_time_s IS NOT NULL
-        """,
-        (
-            athlete_id,
-            candidate.activity_date.isoformat(),
-            candidate.distance_km * 0.94,
-            candidate.distance_km * 1.06,
-        ),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    if scoring_history is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                   pp_distance_km(distance_m, raw_json),
+                   elapsed_time_s, title, sport_id, route_name, raw_json
+            FROM activities
+            WHERE athlete_id = ?
+              AND activity_date <= ?
+              AND (pp_distance_km(distance_m, raw_json))
+                  BETWEEN ? AND ?
+              AND elapsed_time_s IS NOT NULL
+            """,
+            (
+                athlete_id,
+                candidate.activity_date.isoformat(),
+                candidate.distance_km * 0.94,
+                candidate.distance_km * 1.06,
+            ),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+    else:
+        rows = [
+            (
+                item.distance_km,
+                item.elapsed_time_s,
+                item.title,
+                item.sport_id,
+                item.route_name,
+                item.raw_json_text,
+            )
+            for item in scoring_history
+            if item.activity_date <= candidate.activity_date
+            and candidate.distance_km * 0.94
+                <= item.distance_km
+                <= candidate.distance_km * 1.06
+        ]
 
     paces = []
 
@@ -509,6 +564,7 @@ def _score_candidate(
     candidate: RaceCandidate,
     reference_date: datetime.date,
     athlete_id: int,
+    scoring_history: tuple[RaceScoringHistoryRow, ...] | None = None,
 ) -> CandidateScore:
     age_days = (reference_date - candidate.activity_date).days
     recency = _recency_signal(age_days)
@@ -531,11 +587,13 @@ def _score_candidate(
     equivalent_time, _ = _equivalent_race_time(
         candidate,
         athlete_id=athlete_id,
+        scoring_history=scoring_history,
     )
     performance_quality = _performance_quality_signal(
         athlete_id,
         candidate,
         equivalent_time,
+        scoring_history=scoring_history,
     )
 
     # Current-race selection should favour actual performance quality over a
@@ -620,6 +678,7 @@ def _equivalent_race_time(
     candidate: RaceCandidate,
     *,
     athlete_id: int | None = None,
+    scoring_history: tuple[RaceScoringHistoryRow, ...] | None = None,
 ) -> tuple[float, dict]:
     observed = (
         candidate.official_time_s
@@ -640,6 +699,7 @@ def _equivalent_race_time(
         route_seconds, route_details = _route_course_penalty_seconds(
             athlete_id,
             candidate,
+            scoring_history=scoring_history,
         )
 
     elevation_seconds = 0.0
@@ -745,7 +805,7 @@ def _select_goal_representative_race(
     # distance is more representative than extrapolating a shorter race. The
     # quality floor prevents ordinary long runs from being promoted merely
     # because their distance happens to match the goal.
-    if goal_distance_km >= 15.0:
+    if goal_distance_km >= 8.0:
         direct_quality_floor = (
             55.0 if goal_distance_km >= 30.0 else 65.0
         )
@@ -888,8 +948,14 @@ class RaceEvidenceProvider(EvidenceProvider):
             )
 
         reference_date = latest_date or datetime.date.today()
+        scoring_history = self._load_scoring_history(context.athlete_id)
         scored = [
-            _score_candidate(candidate, reference_date, context.athlete_id)
+            _score_candidate(
+                candidate,
+                reference_date,
+                context.athlete_id,
+                scoring_history=scoring_history,
+            )
             for candidate in candidates
         ]
         scored = [
@@ -925,7 +991,15 @@ class RaceEvidenceProvider(EvidenceProvider):
                         "Candidate quality is currently too uncertain.",
                     ],
                     "candidate_debug": self._candidate_debug(
-                        [_score_candidate(c, reference_date, context.athlete_id) for c in candidates]
+                        [
+                            _score_candidate(
+                                c,
+                                reference_date,
+                                context.athlete_id,
+                                scoring_history=scoring_history,
+                            )
+                            for c in candidates
+                        ]
                     ),
                 },
             )
@@ -1136,6 +1210,91 @@ class RaceEvidenceProvider(EvidenceProvider):
             for item in ranked[:10]
         ]
 
+    def _load_scoring_history(
+        self,
+        athlete_id: int,
+    ) -> tuple[RaceScoringHistoryRow, ...]:
+        """Load reliable running history once for race-candidate scoring.
+
+        The old implementation queried SQLite twice for every candidate. With a
+        large athlete history that made a cold Home prediction take minutes.
+        """
+        conn = get_connection()
+        cursor = conn.cursor()
+        sport_roles = get_athlete_sport_roles(athlete_id)
+        running_sport_ids = [
+            sport_id for sport_id, role in sport_roles.items()
+            if role == "running"
+        ]
+        if not running_sport_ids:
+            conn.close()
+            return ()
+
+        placeholders = ",".join("?" for _ in running_sport_ids)
+        cursor.execute(
+            f"""
+            SELECT
+                activity_date,
+                pp_distance_km(distance_m, raw_json),
+                elapsed_time_s,
+                elevation_up_m,
+                route_name,
+                title,
+                CAST(sport_id AS TEXT),
+                raw_json
+            FROM activities
+            WHERE athlete_id = ?
+              AND CAST(sport_id AS TEXT) IN ({placeholders})
+              AND activity_date IS NOT NULL
+              AND distance_m IS NOT NULL
+              AND elapsed_time_s IS NOT NULL
+            ORDER BY activity_date
+            """,
+            (athlete_id, *running_sport_ids),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        result = []
+        for (
+            activity_date_text,
+            distance_km,
+            elapsed_time_s,
+            elevation_up_m,
+            route_name,
+            title,
+            sport_id,
+            raw_json_text,
+        ) in rows:
+            if not distance_km or not elapsed_time_s:
+                continue
+            if not has_reliable_distance_and_pace(
+                title=title,
+                sport_id=str(sport_id or ""),
+                route_name=route_name,
+                raw_json_text=raw_json_text,
+            ):
+                continue
+            try:
+                activity_date = datetime.date.fromisoformat(
+                    str(activity_date_text)[:10]
+                )
+            except (TypeError, ValueError):
+                continue
+            result.append(
+                RaceScoringHistoryRow(
+                    activity_date=activity_date,
+                    distance_km=float(distance_km),
+                    elapsed_time_s=float(elapsed_time_s),
+                    elevation_up_m=float(elevation_up_m or 0.0),
+                    route_name=str(route_name or ""),
+                    title=str(title or ""),
+                    sport_id=str(sport_id or ""),
+                    raw_json_text=str(raw_json_text or ""),
+                )
+            )
+        return tuple(result)
+
     def _load_candidates(
         self,
         athlete_id: int,
@@ -1206,7 +1365,7 @@ class RaceEvidenceProvider(EvidenceProvider):
                 a.id,
                 a.activity_date,
                 a.title,
-                a.distance_m,
+                pp_distance_km(a.distance_m, a.raw_json) AS distance_km,
                 a.elapsed_time_s,
                 a.moving_time_s,
                 a.avg_hr,

@@ -64,7 +64,7 @@ def test_intelligence_store_round_trip_and_version_guard(tmp_path, monkeypatch):
     assert load_intelligence(1, "race.capability.v1") is None
 
 
-def test_schema_v16_creates_intelligence_table(tmp_path, monkeypatch):
+def test_current_schema_creates_intelligence_table(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DATABASE_PATH", tmp_path / "performance_passport.db")
     database.initialise_database()
     conn = database.get_connection()
@@ -80,5 +80,5 @@ def test_schema_v16_creates_intelligence_table(tmp_path, monkeypatch):
         }
     finally:
         conn.close()
-    assert version == 16
+    assert version == 17
     assert "athlete_intelligence" in tables

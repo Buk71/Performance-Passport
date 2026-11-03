@@ -19,6 +19,7 @@ import math
 from typing import Iterable
 
 from core.activity_reliability import has_reliable_distance_and_pace
+from core.distance_units import normalize_activity_distance_km
 from core.database import get_athlete_sport_roles, get_connection
 
 
@@ -49,15 +50,10 @@ class EnduranceAssessment:
     summary: str
 
 
-def _distance_km(value) -> float | None:
-    try:
-        distance = float(value)
-    except (TypeError, ValueError):
-        return None
-    if distance <= 0:
-        return None
-    return distance / 1000.0 if distance > 250.0 else distance
 
+def _distance_km(value, raw_json_text: str | None = None) -> float | None:
+    """Backward-compatible delegate to the shared distance normaliser."""
+    return normalize_activity_distance_km(value, raw_json_text)
 
 def _date(value) -> datetime.date | None:
     if isinstance(value, datetime.datetime):
@@ -98,7 +94,7 @@ def load_endurance_profile(athlete_id: int) -> EnduranceProfile:
         if str(sport_id or "") not in running_ids:
             continue
         run_date = _date(activity_date)
-        distance_km = _distance_km(distance_m)
+        distance_km = _distance_km(distance_m, raw_json)
         if run_date is None or distance_km is None:
             continue
         if not has_reliable_distance_and_pace(
