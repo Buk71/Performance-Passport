@@ -9,7 +9,7 @@ def test_journal_uses_persistent_training_intelligence():
     assert "_build_latest_journal_entry_uncached" in source
     assert "get_training_intelligence_version" in source
     assert "get_or_build_typed_intelligence" in source
-    assert '"journal.latest_entry.v2"' in source
+    assert '"journal.latest_entry.v3"' in source
     assert '"journal.latest_entry.v1"' not in source
 
 
@@ -24,6 +24,6 @@ def test_journal_and_coaching_team_keep_separate_materialised_keys():
     journal = (ROOT / "core" / "journal.py").read_text(encoding="utf-8")
     coaching = (ROOT / "core" / "coaching_team.py").read_text(encoding="utf-8")
 
-    assert "journal.latest_entry.v2" in journal
-    assert "journal.latest_entry.v2" not in coaching
+    assert "journal.latest_entry.v3" in journal
+    assert "journal.latest_entry.v3" not in coaching
     assert "get_or_build_typed_intelligence" in coaching

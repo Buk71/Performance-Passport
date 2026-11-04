@@ -8,7 +8,7 @@ def test_journal_materialisation_is_preserved():
 
     assert "_build_latest_journal_entry_uncached" in source
     assert "get_or_build_typed_intelligence" in source
-    assert '"journal.latest_entry.v2"' in source
+    assert '"journal.latest_entry.v3"' in source
     assert '"journal.latest_entry.v1"' not in source
 
 

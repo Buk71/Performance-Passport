@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_journal_uses_only_v2_after_environment_ranking_change():
     source = (ROOT / "core" / "journal.py").read_text(encoding="utf-8")
-    assert 'CURRENT_JOURNAL_KEY = "journal.latest_entry.v2"' in source
+    assert 'CURRENT_JOURNAL_KEY = "journal.latest_entry.v3"' in source
     assert '"journal.latest_entry.v1"' not in source
     assert "CURRENT_JOURNAL_KEY," in source
 

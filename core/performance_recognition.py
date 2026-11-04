@@ -355,6 +355,7 @@ def _activity_context_lookup_cached(
             id,
             activity_date,
             title,
+            source,
             sport_id,
             distance_m,
             moving_time_s,
@@ -381,6 +382,7 @@ def _activity_context_lookup_cached(
         activity_id,
         activity_date,
         title,
+        source,
         sport_id,
         distance_value,
         moving_time_s,
@@ -462,7 +464,10 @@ def _activity_context_lookup_cached(
                 route_name=route_name,
                 raw_json_text=raw_json,
             ),
-            ambient_environment_trusted=_ambient_environment_trusted(raw_json),
+            ambient_environment_trusted=_ambient_environment_trusted(
+                raw_json,
+                source=source,
+            ),
         )
 
     return lookup
@@ -470,19 +475,23 @@ def _activity_context_lookup_cached(
 
 
 
-def _ambient_environment_trusted(raw_json_text: str | None) -> bool:
+def _ambient_environment_trusted(
+    raw_json_text: str | None,
+    *,
+    source: str | None = None,
+) -> bool:
     """Return whether stored temperature/humidity is safe for performance adjustment.
 
-    Garmin FIT activity temperature is commonly device/watch temperature and can
-    be strongly influenced by body heat, clothing and sun. It remains valid raw
-    telemetry, but must not be treated as ambient weather unless an importer
-    explicitly marks it as ambient/weather-derived.
+    Trust must be explicit or come from a known source whose imported weather has
+    historically been treated as ambient. Garmin FIT activity temperature is
+    device/watch telemetry and is therefore not trusted as ambient unless an
+    importer explicitly marks the value as ambient/weather-derived.
 
-    Existing non-Garmin imports retain their historical behaviour for backwards
-    compatibility. New importers should add an explicit provenance marker when
-    they supply ambient weather.
+    Completely unknown provenance is conservative: it cannot change performance
+    rankings.
     """
     text = str(raw_json_text or "").lower()
+    source_text = str(source or "").strip().lower()
 
     ambient_markers = (
         '"temperature_source": "ambient"',
@@ -491,6 +500,8 @@ def _ambient_environment_trusted(raw_json_text: str | None) -> bool:
         '"environment_source": "weather"',
         '"environment_provenance": "ambient"',
         '"environment_provenance": "weather"',
+        '"weather_provenance": "ambient"',
+        '"weather_provenance": "weather"',
         '"ambient_temperature_c"',
         '"weather_temperature_c"',
     )
@@ -498,14 +509,23 @@ def _ambient_environment_trusted(raw_json_text: str | None) -> bool:
         return True
 
     garmin_fit = (
-        '"garmin_fit"' in text
+        source_text == "garmin_fit"
+        or '"garmin_fit"' in text
         or '"source_activity_id": "garmin_' in text
         or '"source": "garmin_fit"' in text
     )
     if garmin_fit:
         return False
 
-    return True
+    runalyze = (
+        source_text.startswith("runalyze")
+        or '"source": "runalyze"' in text
+        or '"source": "runalyze_csv"' in text
+    )
+    if runalyze:
+        return True
+
+    return False
 
 def _activity_context_lookup(
     athlete_id: int,
@@ -846,18 +866,114 @@ def _continuity_achievement(
     return None
 
 
+
+AEROBIC_RECOGNITION_CATEGORIES = {
+    "recovery",
+    "easy",
+    "long_easy",
+    "steady",
+}
+
+
+def _similar_aerobic_run(
+    candidate: _Candidate,
+    other: _Candidate,
+) -> bool:
+    """Keep aerobic recognition comparisons broadly like-for-like."""
+    if candidate.category_key not in AEROBIC_RECOGNITION_CATEGORIES:
+        return True
+    if other.category_key != candidate.category_key:
+        return False
+
+    candidate_distance = _safe_float(candidate.run.distance_km)
+    other_distance = _safe_float(other.run.distance_km)
+    candidate_duration = _safe_float(candidate.run.moving_time_seconds)
+    other_duration = _safe_float(other.run.moving_time_seconds)
+
+    if (
+        candidate_distance is None
+        or other_distance is None
+        or candidate_distance <= 0
+        or other_distance <= 0
+    ):
+        return False
+
+    distance_ratio = other_distance / candidate_distance
+    if not 0.75 <= distance_ratio <= 1.25:
+        return False
+
+    if (
+        candidate_duration is not None
+        and other_duration is not None
+        and candidate_duration > 0
+        and other_duration > 0
+    ):
+        duration_ratio = other_duration / candidate_duration
+        if not 0.70 <= duration_ratio <= 1.30:
+            return False
+
+    return True
+
+
+def _recent_comparable_group(
+    candidate: _Candidate,
+    group: list[_Candidate],
+    *,
+    reference_date: datetime.date,
+    days: int = 365,
+) -> list[_Candidate]:
+    """Recent comparison set used for athlete-facing aerobic celebration."""
+    comparable = []
+
+    for item in group:
+        item_date = _date(item.run.activity_date)
+        if item_date is None:
+            continue
+
+        age_days = (reference_date - item_date).days
+        if not 0 <= age_days <= days:
+            continue
+
+        if not _similar_aerobic_run(candidate, item):
+            continue
+
+        comparable.append(item)
+
+    return comparable
+
+
 def _achievement_candidates(
     *,
     candidate: _Candidate,
     rank: int,
     total: int,
+    recent_rank: int | None = None,
+    recent_total: int = 0,
 ) -> list[RecognitionAchievement]:
     achievements = []
     run = candidate.run
 
-    top_percent = (rank / total) * 100 if total else 100.0
+    # Lifetime rank remains factual context. For aerobic sessions, however,
+    # athlete-facing celebration should be driven by recent like-for-like runs,
+    # not a very broad lifetime bucket spanning different fitness eras.
+    use_recent = (
+        candidate.category_key in AEROBIC_RECOGNITION_CATEGORIES
+        and recent_rank is not None
+        and recent_total >= 12
+    )
+    achievement_rank = recent_rank if use_recent else rank
+    achievement_total = recent_total if use_recent else total
+    top_percent = (
+        (achievement_rank / achievement_total) * 100
+        if achievement_rank is not None and achievement_total
+        else 100.0
+    )
 
-    if rank == 1 and total >= 3:
+    if (
+        not use_recent
+        and rank == 1
+        and total >= 3
+    ):
         achievements.append(
             RecognitionAchievement(
                 key="best_ever",
@@ -875,7 +991,11 @@ def _achievement_candidates(
             RecognitionAchievement(
                 key="top_5",
                 label=f"Top 5% {candidate.category_label}",
-                detail="One of your standout sessions in this category.",
+                detail=(
+                    "One of your standout recent comparable sessions."
+                    if use_recent
+                    else "One of your standout sessions in this category."
+                ),
                 strength=0.97,
                 icon="⭐",
             )
@@ -886,8 +1006,10 @@ def _achievement_candidates(
                 key="top_10",
                 label=f"Top 10% {candidate.category_label}",
                 detail=(
-                    "A genuinely strong session compared with your own "
-                    "history."
+                    "A genuinely strong session compared with recent "
+                    "like-for-like runs."
+                    if use_recent
+                    else "A genuinely strong session compared with your own history."
                 ),
                 strength=0.93,
                 icon="⭐",
@@ -898,7 +1020,11 @@ def _achievement_candidates(
             RecognitionAchievement(
                 key="top_25",
                 label=f"Top 25% {candidate.category_label}",
-                detail="Another high-quality session banked.",
+                detail=(
+                    "A strong recent like-for-like session banked."
+                    if use_recent
+                    else "Another high-quality session banked."
+                ),
                 strength=0.84,
                 icon="⭐",
             )
@@ -1112,7 +1238,7 @@ def build_recognition_index(
                 session_purpose=None,
                 session_confidence=None,
                 pace_reliable=True,
-                ambient_environment_trusted=True,
+                ambient_environment_trusted=False,
             ),
         )
 
@@ -1202,22 +1328,36 @@ def build_recognition_index(
         group = by_category[candidate.category_key]
         rank, total = _rank(candidate, group)
 
-        group_12m = []
-        group_90d = []
+        if candidate.category_key in AEROBIC_RECOGNITION_CATEGORIES:
+            group_12m = _recent_comparable_group(
+                candidate,
+                group,
+                reference_date=reference_date,
+                days=365,
+            )
+            group_90d = _recent_comparable_group(
+                candidate,
+                group,
+                reference_date=reference_date,
+                days=90,
+            )
+        else:
+            group_12m = []
+            group_90d = []
 
-        for item in group:
-            item_date = _date(item.run.activity_date)
+            for item in group:
+                item_date = _date(item.run.activity_date)
 
-            if item_date is None:
-                continue
+                if item_date is None:
+                    continue
 
-            age_days = (reference_date - item_date).days
+                age_days = (reference_date - item_date).days
 
-            if 0 <= age_days <= 365:
-                group_12m.append(item)
+                if 0 <= age_days <= 365:
+                    group_12m.append(item)
 
-            if 0 <= age_days <= 90:
-                group_90d.append(item)
+                if 0 <= age_days <= 90:
+                    group_90d.append(item)
 
         rank_12m = None
         rank_90d = None
@@ -1239,6 +1379,8 @@ def build_recognition_index(
             candidate=candidate,
             rank=rank,
             total=total,
+            recent_rank=rank_12m,
+            recent_total=len(group_12m),
         )
         primary = achievements[0]
 

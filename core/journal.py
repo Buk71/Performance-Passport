@@ -47,7 +47,7 @@ from core.training_blocks import (
 )
 
 
-CURRENT_JOURNAL_KEY = "journal.latest_entry.v2"
+CURRENT_JOURNAL_KEY = "journal.latest_entry.v3"
 
 
 @dataclass(frozen=True)
@@ -234,6 +234,35 @@ def _build_decision_context(
     )
 
 
+
+def _parse_activity_date(value: str | None) -> datetime.date | None:
+    if not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _block_applies_to_activity(
+    block: TrainingBlock | None,
+    *,
+    activity_date: str | None,
+) -> bool:
+    """Return True only when the activity genuinely falls inside block dates."""
+    if block is None:
+        return False
+
+    activity = _parse_activity_date(activity_date)
+    start = _parse_activity_date(block.start_date)
+    end = _parse_activity_date(block.end_date)
+
+    if activity is None or start is None or end is None or end < start:
+        return False
+
+    return start <= activity <= end
+
+
 def _block_message(
     block: TrainingBlock | None,
     *,
@@ -241,25 +270,48 @@ def _block_message(
 ) -> tuple[str, str]:
     if block is None:
         return (
-            "Training context still open",
+            "Training context open",
             (
-                "This run still adds useful evidence. Once a Training Block "
-                "is active, the Journal will connect each run to its purpose."
+                "This run still adds useful evidence, but it is not currently "
+                "assigned to an active Training Block."
             ),
         )
 
-    today = None
-    if activity_date:
-        try:
-            today = datetime.date.fromisoformat(
-                str(activity_date)[:10]
+    activity = _parse_activity_date(activity_date)
+    start = _parse_activity_date(block.start_date)
+    end = _parse_activity_date(block.end_date)
+
+    if not _block_applies_to_activity(
+        block,
+        activity_date=activity_date,
+    ):
+        if activity is not None and end is not None and activity > end:
+            return (
+                "Previous training block complete",
+                (
+                    f"{block.name} ended before this run. The run remains useful "
+                    "coaching evidence, but it does not belong to that block or phase."
+                ),
             )
-        except (TypeError, ValueError):
-            today = None
+        if activity is not None and start is not None and activity < start:
+            return (
+                "Training block not started",
+                (
+                    f"{block.name} starts after this run, so this evidence does not "
+                    "belong to that block or phase."
+                ),
+            )
+        return (
+            "Training context open",
+            (
+                "The current block dates are not complete enough to assign this "
+                "run to a training phase confidently."
+            ),
+        )
 
     progress = block_progress(
         block,
-        today=today or datetime.date.today(),
+        today=activity,
     )
 
     if (
@@ -283,7 +335,6 @@ def _block_message(
     )
 
     return headline, detail
-
 
 def _coach_note(
     recognition: Recognition,
@@ -456,6 +507,14 @@ def _build_latest_journal_entry_uncached(
         block,
         activity_date=latest_run.activity_date,
     )
+    context_block = (
+        block
+        if _block_applies_to_activity(
+            block,
+            activity_date=latest_run.activity_date,
+        )
+        else None
+    )
 
     opportunity_label = (
         decision.primary_opportunity_label
@@ -487,12 +546,12 @@ def _build_latest_journal_entry_uncached(
     journal_title = _journal_title(
         recognition,
         decision_direction=decision.direction,
-        block=block,
+        block=context_block,
     )
     what_changed = _what_changed(
         recognition,
         decision=decision,
-        block=block,
+        block=context_block,
     )
 
     return JournalEntry(
@@ -513,7 +572,7 @@ def _build_latest_journal_entry_uncached(
         coach_note=_coach_note(
             recognition,
             opportunity_label=decision.primary_opportunity_label,
-            block=block,
+            block=context_block,
         ),
         evidence_confidence=round(
             (
