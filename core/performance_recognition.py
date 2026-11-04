@@ -41,7 +41,7 @@ pace and heart rate less precise than rep-level Workout DNA.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import datetime
 from functools import lru_cache
 import math
@@ -185,6 +185,7 @@ class _ActivityContext:
     session_purpose: SessionPurpose | None
     session_confidence: float | None
     pace_reliable: bool
+    ambient_environment_trusted: bool
 
 
 @dataclass(frozen=True)
@@ -340,37 +341,11 @@ def _category(
     return "steady", "Steady Run", "🏃"
 
 
-def _activity_context_lookup(
-    athlete_id: int,
-) -> dict[str, _ActivityContext]:
-    """Return activity/session context, reusing it while source data is unchanged.
-
-    Recognition can be requested multiple times inside one Live Coach build
-    (Journal plus Operational Block). Session classification and raw activity
-    reliability are independent of recognition reference_date, so this context
-    is safe to share.
-
-    The cache key includes the training intelligence source version, so a new
-    activity, threshold/override change or other relevant source update causes
-    a fresh lookup automatically.
-    """
-    source_version = tuple(
-        get_training_intelligence_version(int(athlete_id))
-    )
-    return _activity_context_lookup_cached(
-        int(athlete_id),
-        source_version,
-    )
-
-
 @lru_cache(maxsize=64)
 def _activity_context_lookup_cached(
     athlete_id: int,
     source_version: tuple,
 ) -> dict[str, _ActivityContext]:
-    # source_version is intentionally part of the cache key.
-    # The lookup itself only needs athlete_id.
-    _ = source_version
     thresholds = get_effective_athlete_thresholds(athlete_id)
     conn = get_connection()
     cursor = conn.cursor()
@@ -487,9 +462,60 @@ def _activity_context_lookup_cached(
                 route_name=route_name,
                 raw_json_text=raw_json,
             ),
+            ambient_environment_trusted=_ambient_environment_trusted(raw_json),
         )
 
     return lookup
+
+
+
+
+def _ambient_environment_trusted(raw_json_text: str | None) -> bool:
+    """Return whether stored temperature/humidity is safe for performance adjustment.
+
+    Garmin FIT activity temperature is commonly device/watch temperature and can
+    be strongly influenced by body heat, clothing and sun. It remains valid raw
+    telemetry, but must not be treated as ambient weather unless an importer
+    explicitly marks it as ambient/weather-derived.
+
+    Existing non-Garmin imports retain their historical behaviour for backwards
+    compatibility. New importers should add an explicit provenance marker when
+    they supply ambient weather.
+    """
+    text = str(raw_json_text or "").lower()
+
+    ambient_markers = (
+        '"temperature_source": "ambient"',
+        '"temperature_source": "weather"',
+        '"environment_source": "ambient"',
+        '"environment_source": "weather"',
+        '"environment_provenance": "ambient"',
+        '"environment_provenance": "weather"',
+        '"ambient_temperature_c"',
+        '"weather_temperature_c"',
+    )
+    if any(marker in text for marker in ambient_markers):
+        return True
+
+    garmin_fit = (
+        '"garmin_fit"' in text
+        or '"source_activity_id": "garmin_' in text
+        or '"source": "garmin_fit"' in text
+    )
+    if garmin_fit:
+        return False
+
+    return True
+
+def _activity_context_lookup(
+    athlete_id: int,
+) -> dict[str, _ActivityContext]:
+    """Return source-version-aware cached activity context for recognition."""
+    source_version = tuple(get_training_intelligence_version(int(athlete_id)))
+    return _activity_context_lookup_cached(
+        int(athlete_id),
+        source_version,
+    )
 
 
 def _trail_surface_penalty(run: RunProfile) -> tuple[float, str | None]:
@@ -541,6 +567,7 @@ def environment_adjusted_pace(
     *,
     wind_speed: float | None,
     personal_profile: PersonalEnvironmentProfile | None = None,
+    ambient_environment_trusted: bool = True,
 ) -> EnvironmentAdjustedPace:
     """Return conservative, optionally personalised equivalent pace.
 
@@ -557,7 +584,12 @@ def environment_adjusted_pace(
     factors = []
 
     try:
-        performance = equivalent_performance(run)
+        environment_run = (
+            run
+            if ambient_environment_trusted
+            else replace(run, temperature_c=None, humidity=None)
+        )
+        performance = equivalent_performance(environment_run)
 
         if performance is not None:
             existing_penalty = max(
@@ -644,8 +676,13 @@ def _environment_adjusted_pace(
     run: RunProfile,
     *,
     wind_speed: float | None,
+    ambient_environment_trusted: bool = True,
 ) -> tuple[float, float, tuple[str, ...]]:
-    result = environment_adjusted_pace(run, wind_speed=wind_speed)
+    result = environment_adjusted_pace(
+        run,
+        wind_speed=wind_speed,
+        ambient_environment_trusted=ambient_environment_trusted,
+    )
     return (
         result.adjusted_pace_s_per_km,
         result.total_penalty_s_per_km,
@@ -1075,6 +1112,7 @@ def build_recognition_index(
                 session_purpose=None,
                 session_confidence=None,
                 pace_reliable=True,
+                ambient_environment_trusted=True,
             ),
         )
 
@@ -1114,6 +1152,9 @@ def build_recognition_index(
             _environment_adjusted_pace(
                 run,
                 wind_speed=context.wind_speed,
+                ambient_environment_trusted=(
+                    context.ambient_environment_trusted
+                ),
             )
         )
 

@@ -47,6 +47,9 @@ from core.training_blocks import (
 )
 
 
+CURRENT_JOURNAL_KEY = "journal.latest_entry.v2"
+
+
 @dataclass(frozen=True)
 class JournalEntry:
     athlete_id: int
@@ -532,7 +535,7 @@ def build_latest_journal_entry(
     source_version = tuple(get_training_intelligence_version(int(athlete_id)))
     return get_or_build_typed_intelligence(
         int(athlete_id),
-        "journal.latest_entry.v1",
+        CURRENT_JOURNAL_KEY,
         source_version=source_version,
         horizon="recent",
         builder=lambda: _build_latest_journal_entry_uncached(int(athlete_id)),
