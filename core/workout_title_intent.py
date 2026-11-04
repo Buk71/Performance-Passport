@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
-from statistics import mean
+from statistics import mean, median
 from typing import Any
 
 from core.splits import is_boundary_fragment, parse_splits
@@ -41,6 +41,8 @@ class WorkoutTitleIntent:
     recovery_s: float | None
     confidence: float
     summary: str
+    structure_shape: str | None = None
+    distance_sequence_km: tuple[float, ...] = ()
 
     @property
     def total_reps(self) -> int:
@@ -88,6 +90,116 @@ def _block_label(reps: int, distance_km: float | None, duration_s: float | None)
         return f"{reps} × {duration_s:.0f} sec"
 
     return f"{reps} reps"
+
+
+
+def _sequence_shape(distances_km: list[float]) -> str | None:
+    """Recognise ordered ladder/pyramid shapes before distance-family grouping."""
+    if len(distances_km) < 4:
+        return None
+
+    # Ignore tiny rounding noise while preserving genuine changes in rep length.
+    tolerance = 0.08
+
+    def rising(a: float, b: float) -> bool:
+        return b > a + tolerance
+
+    def falling(a: float, b: float) -> bool:
+        return b < a - tolerance
+
+    if all(rising(a, b) for a, b in zip(distances_km, distances_km[1:])):
+        return "ascending_ladder"
+
+    if all(falling(a, b) for a, b in zip(distances_km, distances_km[1:])):
+        return "descending_ladder"
+
+    peak = max(range(len(distances_km)), key=distances_km.__getitem__)
+    if peak == 0 or peak == len(distances_km) - 1:
+        return None
+
+    left = distances_km[: peak + 1]
+    right = distances_km[peak:]
+
+    if not all(rising(a, b) for a, b in zip(left, left[1:])):
+        return None
+    if not all(falling(a, b) for a, b in zip(right, right[1:])):
+        return None
+
+    # A pyramid should broadly mirror around its peak. This keeps unrelated
+    # mixed-distance titles from being over-labelled.
+    left_without_peak = left[:-1]
+    right_without_peak = right[1:]
+    mirrored_pairs = min(len(left_without_peak), len(right_without_peak))
+    if mirrored_pairs < 2:
+        return None
+
+    matches = 0
+    for a, b in zip(
+        reversed(left_without_peak[-mirrored_pairs:]),
+        right_without_peak[:mirrored_pairs],
+    ):
+        if abs(a - b) <= max(a * 0.15, 0.08):
+            matches += 1
+
+    if matches / mirrored_pairs < 0.75:
+        return None
+
+    return "pyramid"
+
+
+def _extract_ordered_distance_sequence(body: str) -> tuple[list[IntentBlock], str | None]:
+    """Parse titles such as '400 800 1200 1600 2000 1600 1200 800 400 off 60'."""
+    # Recovery numbers must never become work distances.
+    work_text = re.split(r"\boff\b|\brecovery\b|\brecoveries\b", body, maxsplit=1)[0]
+
+    values = []
+    for match in re.finditer(
+        r"(?<![\dx])\b(?P<value>\d{3,4}(?:\.\d+)?)\s*(?P<unit>m|metres?|meters?|km|k)?\b",
+        work_text,
+    ):
+        value = float(match.group("value"))
+        unit = match.group("unit")
+        distance = _distance_km(value, unit or ("m" if value >= 100 else None))
+        if distance is None:
+            continue
+        if 0.20 <= distance <= 5.0:
+            values.append(distance)
+
+    shape = _sequence_shape(values)
+    if shape is None:
+        return [], None
+
+    blocks = [
+        IntentBlock(
+            reps=1,
+            distance_km=distance,
+            duration_s=None,
+            label=_block_label(1, distance, None),
+        )
+        for distance in values
+    ]
+    return blocks, shape
+
+
+def _sequence_summary(
+    distances_km: tuple[float, ...],
+    shape: str | None,
+    recovery_s: float | None,
+) -> str | None:
+    if not distances_km or shape is None:
+        return None
+
+    values_m = [int(round(distance * 1000 / 25) * 25) for distance in distances_km]
+    prefix = {
+        "pyramid": "Pyramid",
+        "ascending_ladder": "Ascending ladder",
+        "descending_ladder": "Descending ladder",
+    }.get(shape, "Mixed intervals")
+
+    summary = f"{prefix}: " + " → ".join(str(value) for value in values_m) + "m"
+    if recovery_s is not None:
+        summary += f" · {int(round(recovery_s))} sec recovery"
+    return summary
 
 
 def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
@@ -231,6 +343,13 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
                     )
                 )
 
+    structure_shape = None
+
+    if not blocks:
+        sequence_blocks, structure_shape = _extract_ordered_distance_sequence(body)
+        if sequence_blocks:
+            blocks.extend(sequence_blocks)
+
     if not blocks:
         return None
 
@@ -250,15 +369,30 @@ def parse_workout_title(title: str) -> WorkoutTitleIntent | None:
 
     confidence = min(confidence, 0.97)
 
-    summary = " + ".join(block.label for block in blocks)
-    if recovery_s is not None:
-        summary += f" · {int(round(recovery_s))} sec recovery"
+    distance_sequence_km = tuple(
+        block.distance_km
+        for block in blocks
+        for _ in range(block.reps)
+        if block.distance_km is not None
+    )
+
+    summary = _sequence_summary(
+        distance_sequence_km,
+        structure_shape,
+        recovery_s,
+    )
+    if summary is None:
+        summary = " + ".join(block.label for block in blocks)
+        if recovery_s is not None:
+            summary += f" · {int(round(recovery_s))} sec recovery"
 
     return WorkoutTitleIntent(
         blocks=tuple(blocks),
         recovery_s=recovery_s,
         confidence=confidence,
         summary=summary,
+        structure_shape=structure_shape,
+        distance_sequence_km=distance_sequence_km,
     )
 
 
@@ -419,6 +553,46 @@ def build_title_intent_evidence(
                 }
             )
 
+    if intent.structure_shape in {"pyramid", "ascending_ladder", "descending_ladder"}:
+        # Preserve each ordered phase above for audit/display, but roll the
+        # performed work into physiological families for prediction. This lets
+        # total quality volume contribute without pretending a pyramid is
+        # merely "2 x 400".
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for phase in phases:
+            if (
+                phase["phase_type"] in {"threshold", "long_intervals", "short_intervals"}
+                and phase.get("pace_s_per_km") is not None
+                and phase.get("distance_km", 0) > 0
+            ):
+                grouped.setdefault(phase["phase_type"], []).append(phase)
+
+        rolled_components = []
+        labels = {
+            "threshold": "Long aerobic / threshold reps",
+            "long_intervals": "Long intervals",
+            "short_intervals": "Short intervals",
+        }
+        for phase_type, group in grouped.items():
+            distance = sum(float(item["distance_km"]) for item in group)
+            duration = sum(float(item["duration_s"]) for item in group)
+            reps = sum(int(item.get("rep_count") or 1) for item in group)
+            rolled_components.append(
+                {
+                    "component_type": phase_type,
+                    "label": labels[phase_type],
+                    "rep_count": reps,
+                    "average_rep_distance_km": round(distance / reps, 4),
+                    "total_work_distance_km": round(distance, 4),
+                    "average_pace_s_per_km": round(duration / distance, 1),
+                    "recovery_duration_s": intent.recovery_s,
+                    "source": "activity_title+ordered_splits",
+                    "confidence": min(intent.confidence, 0.97),
+                }
+            )
+        if rolled_components:
+            components = rolled_components
+
     confidence = intent.confidence
 
     if match_ratio >= 0.95:
@@ -448,5 +622,303 @@ def build_title_intent_evidence(
             "title_intent": True,
             "match_ratio": round(match_ratio, 4),
             "recovery_s": intent.recovery_s,
+            "structure_shape": intent.structure_shape,
+            "distance_sequence_m": [
+                int(round(distance * 1000 / 25) * 25)
+                for distance in intent.distance_sequence_km
+            ],
+            "total_reps": intent.total_reps,
+            "total_work_distance_km": round(
+                sum(intent.distance_sequence_km),
+                4,
+            ),
         },
     }
+
+
+def _safe_fit_splits(raw_json_text: str | None) -> list[dict[str, Any]]:
+    """Return ordered Garmin/FIT lap evidence from one stored activity payload."""
+    try:
+        raw = json.loads(raw_json_text or "{}")
+    except Exception:
+        return []
+
+    values = raw.get("fit_splits")
+    if not isinstance(values, list):
+        return []
+
+    result = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        try:
+            distance_km = float(value.get("distance_km") or 0.0)
+            duration_s = float(value.get("duration_s") or 0.0)
+            elapsed_s = float(value.get("elapsed_time_s") or duration_s or 0.0)
+        except (TypeError, ValueError):
+            continue
+        result.append({
+            "index": int(value.get("index") or len(result) + 1),
+            "distance_km": distance_km,
+            "duration_s": duration_s,
+            "elapsed_time_s": elapsed_s,
+            "lap_trigger": str(value.get("lap_trigger") or ""),
+        })
+    return result
+
+
+def _is_stopped_recovery_lap(lap: dict[str, Any]) -> bool:
+    """Identify tiny lap-button fragments whose elapsed time is mostly stopped recovery."""
+    distance_km = float(lap.get("distance_km") or 0.0)
+    duration_s = float(lap.get("duration_s") or 0.0)
+    elapsed_s = float(lap.get("elapsed_time_s") or duration_s or 0.0)
+    stopped_s = max(elapsed_s - duration_s, 0.0)
+    return (
+        distance_km <= 0.035
+        and elapsed_s >= 35.0
+        and stopped_s >= 25.0
+        and stopped_s >= elapsed_s * 0.55
+    )
+
+
+def _quantise_rep_distance(distance_km: float) -> float:
+    """Snap GPS/FIT rep distance to a plausible nominal 100 m boundary."""
+    if not 0.20 <= distance_km <= 3.20:
+        return distance_km
+    nominal = round(distance_km * 10.0) / 10.0
+    tolerance = max(0.045, nominal * 0.055)
+    return nominal if abs(distance_km - nominal) <= tolerance else distance_km
+
+
+def _fit_work_groups(raw_json_text: str | None) -> list[dict[str, Any]]:
+    """
+    Build substantial work blocks separated by stopped-recovery lap fragments.
+
+    Garmin can auto-lap inside a manually controlled rep. Summing every
+    contiguous substantial segment until the next stopped-recovery boundary
+    naturally repairs cases such as 1609 m + 379 m = one intended 2000 m rep.
+    """
+    laps = _safe_fit_splits(raw_json_text)
+    if not laps:
+        return []
+
+    groups: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    pending_recovery_s: float | None = None
+
+    def flush() -> None:
+        nonlocal current
+        substantial = [
+            lap for lap in current
+            if float(lap.get("distance_km") or 0.0) >= 0.20
+        ]
+        if substantial:
+            distance = sum(float(lap["distance_km"]) for lap in substantial)
+            duration = sum(float(lap["duration_s"]) for lap in substantial)
+            groups.append({
+                "distance_km": distance,
+                "duration_s": duration,
+                "pace_s_per_km": duration / distance if distance > 0 else None,
+                "split_indexes": [int(lap["index"]) for lap in substantial],
+                "segment_count": len(substantial),
+                "recovery_before_s": pending_recovery_s,
+            })
+        current = []
+
+    for lap in laps:
+        if _is_stopped_recovery_lap(lap):
+            flush()
+            pending_recovery_s = float(lap.get("elapsed_time_s") or 0.0)
+            continue
+        current.append(lap)
+    flush()
+
+    return groups
+
+
+def infer_fit_workout_structure(raw_json_text: str | None) -> WorkoutTitleIntent | None:
+    """
+    Infer a ladder/pyramid from ordered FIT laps without using the activity title.
+
+    This is deliberately conservative: a candidate needs at least four
+    substantial work blocks, a recognised ordered shape, and stopped-recovery
+    evidence between most neighbouring work blocks. Ordinary auto-lapped
+    continuous runs therefore do not qualify.
+    """
+    groups = _fit_work_groups(raw_json_text)
+    if len(groups) < 4:
+        return None
+
+    best = None
+    # Search contiguous windows so warm-up/cool-down blocks cannot poison an
+    # otherwise convincing structured sequence.
+    for start in range(len(groups)):
+        for end in range(start + 4, len(groups) + 1):
+            window = groups[start:end]
+            distances = [
+                _quantise_rep_distance(float(item["distance_km"]))
+                for item in window
+            ]
+            shape = _sequence_shape(distances)
+            if shape is None:
+                continue
+
+            recoveries = [
+                float(item["recovery_before_s"])
+                for item in window[1:]
+                if item.get("recovery_before_s") is not None
+            ]
+            expected = max(len(window) - 1, 1)
+            coverage = len(recoveries) / expected
+            if coverage < 0.70:
+                continue
+
+            mirror_bonus = 2.0 if shape == "pyramid" else 1.0
+            score = len(window) * 10.0 + coverage * 5.0 + mirror_bonus
+            if best is None or score > best["score"]:
+                best = {
+                    "window": window,
+                    "distances": distances,
+                    "shape": shape,
+                    "recoveries": recoveries,
+                    "coverage": coverage,
+                    "score": score,
+                }
+
+    if best is None:
+        return None
+
+    distances = best["distances"]
+    recovery_s = median(best["recoveries"]) if best["recoveries"] else None
+    blocks = tuple(
+        IntentBlock(
+            reps=1,
+            distance_km=distance,
+            duration_s=None,
+            label=_block_label(1, distance, None),
+            recovery_s=recovery_s,
+        )
+        for distance in distances
+    )
+    confidence = min(0.90 + min(len(distances), 9) * 0.006 + best["coverage"] * 0.03, 0.98)
+    sequence = tuple(distances)
+    summary = _sequence_summary(sequence, best["shape"], recovery_s)
+
+    return WorkoutTitleIntent(
+        blocks=blocks,
+        recovery_s=recovery_s,
+        confidence=confidence,
+        summary=summary or "Structured workout from ordered FIT laps",
+        structure_shape=best["shape"],
+        distance_sequence_km=sequence,
+    )
+
+
+def build_fit_structure_evidence(raw_json_text: str | None) -> dict[str, Any] | None:
+    """Build provider-ready evidence from title-free ordered FIT structure."""
+    intent = infer_fit_workout_structure(raw_json_text)
+    if intent is None:
+        return None
+
+    groups = _fit_work_groups(raw_json_text)
+    target = list(intent.distance_sequence_km)
+    selected = None
+    for start in range(len(groups)):
+        window = groups[start:start + len(target)]
+        if len(window) != len(target):
+            continue
+        quantised = [_quantise_rep_distance(float(item["distance_km"])) for item in window]
+        if all(abs(a - b) <= max(b * 0.08, 0.06) for a, b in zip(quantised, target)):
+            selected = window
+            break
+    if selected is None:
+        return None
+
+    phases = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for distance, group in zip(target, selected):
+        phase_type, label = _phase_type(distance, None, intent.recovery_s)
+        actual_distance = float(group["distance_km"])
+        duration = float(group["duration_s"])
+        pace = duration / actual_distance if actual_distance > 0 else None
+        phase = {
+            "phase_type": phase_type,
+            "label": _block_label(1, distance, None),
+            "source": "garmin_fit_ordered_laps",
+            "confidence": intent.confidence,
+            "distance_km": round(actual_distance, 4),
+            "duration_s": int(round(duration)),
+            "pace_s_per_km": pace,
+            "rep_count": 1,
+            "average_rep_distance_km": distance,
+            "recovery_duration_s": intent.recovery_s,
+            "split_indexes": list(group["split_indexes"]),
+            "metadata": {
+                "fit_ordered_structure": True,
+                "segment_count": int(group["segment_count"]),
+                "nominal_distance_km": distance,
+            },
+        }
+        phases.append(phase)
+        if phase_type in {"threshold", "long_intervals", "short_intervals"} and pace is not None:
+            grouped.setdefault(phase_type, []).append(phase)
+
+    labels = {
+        "threshold": "Long aerobic / threshold reps",
+        "long_intervals": "Long intervals",
+        "short_intervals": "Short intervals",
+    }
+    components = []
+    for phase_type, values in grouped.items():
+        distance = sum(float(item["distance_km"]) for item in values)
+        duration = sum(float(item["duration_s"]) for item in values)
+        reps = len(values)
+        components.append({
+            "component_type": phase_type,
+            "label": labels[phase_type],
+            "rep_count": reps,
+            "average_rep_distance_km": round(distance / reps, 4),
+            "total_work_distance_km": round(distance, 4),
+            "average_pace_s_per_km": round(duration / distance, 1),
+            "recovery_duration_s": intent.recovery_s,
+            "source": "garmin_fit_ordered_laps",
+            "confidence": intent.confidence,
+        })
+
+    return {
+        "intent": intent,
+        "display_description": intent.summary,
+        "components": components,
+        "metadata": {
+            "source": "garmin_fit_ordered_laps",
+            "confidence": round(intent.confidence, 4),
+            "summary": intent.summary,
+            "reasons": [
+                "Ordered FIT laps form a recognised ladder/pyramid shape.",
+                "Stopped-recovery lap fragments separate most neighbouring work reps.",
+                "Contiguous auto-lap segments are merged until the next recovery boundary.",
+            ],
+            "limitations": [],
+            "phases": phases,
+            "title_intent": False,
+            "fit_ordered_structure": True,
+            "match_ratio": 1.0,
+            "recovery_s": intent.recovery_s,
+            "structure_shape": intent.structure_shape,
+            "distance_sequence_m": [int(round(distance * 1000)) for distance in intent.distance_sequence_km],
+            "total_reps": intent.total_reps,
+            "total_work_distance_km": round(sum(float(item["distance_km"]) for item in selected), 4),
+            "nominal_work_distance_km": round(sum(intent.distance_sequence_km), 4),
+        },
+    }
+
+
+def build_workout_structure_evidence(
+    title: str,
+    raw_json_text: str | None,
+) -> dict[str, Any] | None:
+    """Prefer explicit title intent, then fall back to conservative FIT structure."""
+    title_evidence = build_title_intent_evidence(title, raw_json_text)
+    if title_evidence is not None:
+        return title_evidence
+    return build_fit_structure_evidence(raw_json_text)

@@ -176,3 +176,22 @@ def test_activities_navigation_contract_is_preserved_while_page_becomes_workout_
     assert "read_activity_review_request(st.query_params)" in sidebar_source
     assert '<div class="pp-page-title">Workout Coach</div>' in page_source
     assert "_cached_workout_coach" in page_source
+
+
+def test_activity_review_ui_prefers_canonical_ordered_workout_structure():
+    source = (ROOT / "ui" / "activities.py").read_text(encoding="utf-8")
+
+    assert "canonical_work_count" in source
+    assert "canonical_structure_description" in source
+    assert "Pyramid" in source
+    assert "structure confidence" in source
+
+
+def test_activity_review_model_retains_raw_decoder_but_can_override_headline_structure():
+    source = (ROOT / "core" / "activity_review.py").read_text(encoding="utf-8")
+
+    assert "parse_workout_title" in source
+    assert "canonical_title_structure" in source
+    assert "Raw lap decoder:" in source
+    assert "canonical_work_distance_km" in source
+    assert "canonical_recovery_s" in source

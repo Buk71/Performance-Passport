@@ -491,24 +491,57 @@ def _condition_items(review: ActivityReview) -> str:
 
 
 def build_activity_detail_html(review: ActivityReview) -> str:
+    canonical = (
+        review.session_type == "structured_workout"
+        and review.canonical_work_count is not None
+        and review.canonical_structure_description
+    )
+
     if review.split_count:
-        if review.session_type == "structured_workout":
+        if canonical:
+            shape_label = {
+                "pyramid": "Pyramid",
+                "ascending_ladder": "Ascending ladder",
+                "descending_ladder": "Descending ladder",
+            }.get(review.canonical_structure_shape, "Structured workout")
+            structure_value = (
+                f"{shape_label} · {review.canonical_work_count} work reps"
+            )
+            recovery_text = (
+                f" · {int(round(review.canonical_recovery_s))}s recoveries"
+                if review.canonical_recovery_s is not None else ""
+            )
+            distance_text = (
+                f"{review.canonical_work_distance_km:.1f} km quality work"
+                if review.canonical_work_distance_km is not None else ""
+            )
+            structure_detail = (
+                f"{review.canonical_structure_description}"
+                + (f" · {distance_text}" if distance_text else "")
+                + recovery_text
+            )
+        elif review.session_type == "structured_workout":
             structure_value = (
                 f"{sum(1 for split in review.splits if split.role == 'Work')} work · "
                 f"{review.recovery_count} recovery"
             )
+            structure_detail = " ".join(review.structure_notes)
         else:
             structure_value = f"{review.split_count} recorded laps"
-        structure_detail = " ".join(review.structure_notes)
+            structure_detail = " ".join(review.structure_notes)
     else:
         structure_value = "No split structure"
         structure_detail = review.structure_notes[0]
 
     confidence = (
-        f" · decoder confidence {review.workout_confidence:.0%}"
-        if review.workout_confidence is not None
-        and review.session_type == "structured_workout"
-        else ""
+        f" · structure confidence {review.workout_confidence:.0%}"
+        if canonical and review.workout_confidence is not None
+        else (
+            f" · decoder confidence {review.workout_confidence:.0%}"
+            if review.workout_confidence is not None
+            and review.session_type == "structured_workout"
+            else ""
+        )
     )
 
     return f"""
@@ -519,7 +552,7 @@ def build_activity_detail_html(review: ActivityReview) -> str:
                 <p>{_safe(structure_detail)}</p>
                 <div class="ar-structure-strip">
                     <div><span>Boundaries</span><strong>{review.boundary_count}</strong></div>
-                    <div><span>Likely stopped recoveries</span><strong>{review.unknown_recovery_count}</strong></div>
+                    <div><span>{'Recovery' if canonical and review.canonical_recovery_s is not None else 'Likely stopped recoveries'}</span><strong>{f'{int(round(review.canonical_recovery_s))}s' if canonical and review.canonical_recovery_s is not None else review.unknown_recovery_count}</strong></div>
                     <div><span>Moving share</span><strong>{f'{review.moving_percent:.1f}%' if review.moving_percent is not None else '—'}</strong></div>
                 </div>
                 <div class="ar-footnote">Source laps: {review.split_count}{_safe(confidence)}</div>

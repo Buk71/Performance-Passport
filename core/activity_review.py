@@ -20,9 +20,9 @@ import datetime
 import json
 import math
 
+from core.activity_reliability import has_reliable_distance_and_pace
 from core.cache_version import get_training_intelligence_version
 from core.materialized_intelligence import get_or_build_typed_intelligence
-from core.activity_reliability import has_reliable_distance_and_pace
 from core.coaching import RunProfile
 from core.database import (
     get_athlete_sport_roles,
@@ -43,6 +43,10 @@ from core.splits import (
     is_boundary_fragment,
     parse_splits,
     recognise_workout,
+)
+from core.workout_title_intent import (
+    build_workout_structure_evidence,
+    parse_workout_title,
 )
 
 
@@ -182,6 +186,16 @@ class ActivityReview:
     coaching_detail: str
     coaching_benefit: str
     limitations: tuple[str, ...]
+
+    # Canonical workout structure. These fields deliberately sit beside the
+    # raw split-decoder evidence rather than replacing it. Strong title intent
+    # plus ordered structure may be more faithful than low-level lap-role
+    # inference for pyramids and ladders.
+    canonical_work_count: int | None = None
+    canonical_work_distance_km: float | None = None
+    canonical_recovery_s: float | None = None
+    canonical_structure_shape: str | None = None
+    canonical_structure_description: str | None = None
 
 
 def _safe_float(value) -> float | None:
@@ -555,6 +569,30 @@ def _build_activity_review_uncached(
     structured = session.session_type == SessionType.STRUCTURED_WORKOUT
     split_details = session.metadata.get("split_classification", {})
 
+    title_intent = parse_workout_title(selected[5] or "")
+    structure_evidence = build_workout_structure_evidence(
+        selected[5] or "",
+        selected[17],
+    )
+    inferred_structure = (
+        structure_evidence.get("intent")
+        if structure_evidence is not None
+        else None
+    )
+    canonical_title_structure = (
+        inferred_structure
+        if (
+            structured
+            and inferred_structure is not None
+            and inferred_structure.structure_shape
+            in {"pyramid", "ascending_ladder", "descending_ladder"}
+            and inferred_structure.total_reps >= 4
+            and inferred_structure.confidence >= 0.90
+            and inferred_structure.distance_sequence_km
+        )
+        else None
+    )
+
     if not pace_reliable:
         reliability_label = "Pace excluded"
         reliability_detail = (
@@ -591,7 +629,15 @@ def _build_activity_review_uncached(
     structure_notes = []
     if parsed_splits:
         if structured:
-            structure_notes.append(workout.description)
+            if canonical_title_structure is not None:
+                structure_notes.append(canonical_title_structure.summary)
+                if workout.description:
+                    structure_notes.append(
+                        "Raw lap decoder: " + workout.description
+                    )
+            else:
+                structure_notes.append(workout.description)
+
             if workout.unknown_recovery_count:
                 structure_notes.append(
                     f"{workout.unknown_recovery_count} likely stopped-watch "
@@ -685,8 +731,16 @@ def _build_activity_review_uncached(
         boundary_count=len(workout.boundary_splits),
         recovery_count=len(workout.recovery_splits),
         unknown_recovery_count=workout.unknown_recovery_count,
-        workout_description=workout.description if parsed_splits else None,
-        workout_confidence=workout.confidence if parsed_splits else None,
+        workout_description=(
+            canonical_title_structure.summary
+            if canonical_title_structure is not None
+            else workout.description if parsed_splits else None
+        ),
+        workout_confidence=(
+            max(workout.confidence, canonical_title_structure.confidence)
+            if canonical_title_structure is not None
+            else workout.confidence if parsed_splits else None
+        ),
         splits=_split_reviews(parsed_splits, workout, structured=structured),
         structure_notes=tuple(structure_notes),
         comparison=_comparison(
@@ -698,22 +752,47 @@ def _build_activity_review_uncached(
         coaching_detail=coaching_detail,
         coaching_benefit=coaching_benefit,
         limitations=tuple(dict.fromkeys(limitations)),
+        canonical_work_count=(
+            canonical_title_structure.total_reps
+            if canonical_title_structure is not None else None
+        ),
+        canonical_work_distance_km=(
+            round(sum(canonical_title_structure.distance_sequence_km), 3)
+            if canonical_title_structure is not None else None
+        ),
+        canonical_recovery_s=(
+            canonical_title_structure.recovery_s
+            if canonical_title_structure is not None else None
+        ),
+        canonical_structure_shape=(
+            canonical_title_structure.structure_shape
+            if canonical_title_structure is not None else None
+        ),
+        canonical_structure_description=(
+            canonical_title_structure.summary
+            if canonical_title_structure is not None else None
+        ),
     )
+
+ACTIVITY_REVIEW_RECOGNITION_SCHEMA = 3
 
 
 def build_activity_review(
     athlete_id: int,
     activity_id: int,
-):
-    """Build or reuse the coaching review for one activity.
-
-    Activity reviews are stored independently by activity id. Relevant athlete
-    evidence changes invalidate them via the training-specific dependency
-    version; repeat navigation to the same run reuses the typed intelligence.
-    """
+) -> ActivityReview | None:
+    """Build or reuse one activity-specific Workout Coach review."""
     athlete_id = int(athlete_id)
     activity_id = int(activity_id)
-    source_version = tuple(get_training_intelligence_version(athlete_id))
+
+    # Keep the established materialisation key contract while extending the
+    # source version with a code/schema token. This invalidates pre-v0.68.6
+    # cached reviews once without discarding the activity-specific cache design.
+    source_version = (
+        *tuple(get_training_intelligence_version(athlete_id)),
+        ACTIVITY_REVIEW_RECOGNITION_SCHEMA,
+    )
+
     return get_or_build_typed_intelligence(
         athlete_id,
         f"workout.activity_review.v1.{activity_id}",
@@ -723,7 +802,9 @@ def build_activity_review(
             athlete_id,
             activity_id,
         ),
-        source_version_provider=lambda: tuple(
-            get_training_intelligence_version(athlete_id)
+        source_version_provider=lambda: (
+            *tuple(get_training_intelligence_version(athlete_id)),
+            ACTIVITY_REVIEW_RECOGNITION_SCHEMA,
         ),
     )
+

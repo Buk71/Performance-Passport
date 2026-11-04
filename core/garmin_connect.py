@@ -254,13 +254,30 @@ def _hrv_by_date(payload: Any) -> dict[str, Mapping[str, Any]]:
     return result
 
 
+def _rhr_value(row: Mapping[str, Any]) -> float | None:
+    """Return resting HR from supported Garmin Connect response shapes."""
+    for key in (
+        "value",
+        "restingHeartRate",
+        "restingHeartRateValue",
+        "restingHr",
+        "restingHR",
+    ):
+        value = _number(row.get(key))
+        if value is not None:
+            return value
+    return None
+
+
 def _rhr_by_date(payload: Any) -> dict[str, Mapping[str, Any]]:
     result = {}
     for row in _walk_dicts(payload):
-        health_date = _iso_date(row.get("calendarDate"))
-        value = row.get("value")
+        health_date = _iso_date(row.get("calendarDate") or row.get("date"))
+        value = _rhr_value(row)
         if health_date and value is not None:
-            result[health_date] = row
+            normalised = dict(row)
+            normalised["value"] = value
+            result[health_date] = normalised
     return result
 
 

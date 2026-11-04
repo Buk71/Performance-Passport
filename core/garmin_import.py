@@ -14,7 +14,7 @@ once commercial API access is available.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import datetime as dt
 from hashlib import sha256
 from io import BytesIO
@@ -23,7 +23,7 @@ import math
 from pathlib import Path, PurePosixPath
 import re
 import sqlite3
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from zipfile import BadZipFile, ZipFile
 
 from core.database import (
@@ -470,6 +470,90 @@ def parse_fit_payload(payload: FitPayload) -> GarminFitActivity:
         raw_fit=raw_fit,
     )
 
+
+
+def apply_garmin_activity_titles(
+    activities: Sequence[GarminFitActivity],
+    titles_by_activity_id: Mapping[str, str],
+) -> tuple[GarminFitActivity, ...]:
+    """Overlay Garmin Connect activity names onto parsed FIT activities.
+
+    Original FIT files do not reliably contain the user-facing Garmin Connect
+    ``activityName``.  The preview endpoint does, so preserve that richer
+    metadata before persistence instead of falling back to generic labels such
+    as ``Running`` or ``Trail Running``.
+    """
+    titled = []
+    for activity in activities:
+        garmin_id = str(activity.garmin_activity_id or "").strip()
+        title = str(titles_by_activity_id.get(garmin_id) or "").strip()
+        titled.append(replace(activity, title=title) if title else activity)
+    return tuple(titled)
+
+
+def refresh_garmin_activity_titles(
+    *,
+    athlete_id: int,
+    titles_by_activity_id: Mapping[str, str],
+) -> int:
+    """Repair generic titles on already-imported direct Garmin FIT rows.
+
+    Only direct ``garmin_fit`` rows with generic FIT-derived titles are
+    eligible.  This deliberately leaves Runalyze-enriched rows and any custom
+    Performance Passport titles untouched.
+    """
+    generic_titles = {
+        "Running",
+        "Trail Running",
+        "Treadmill Running",
+        "Track Running",
+        "Road Running",
+        "Virtual Running",
+        "Garmin Activity",
+    }
+    clean_titles = {
+        str(activity_id): str(title).strip()
+        for activity_id, title in titles_by_activity_id.items()
+        if str(activity_id).strip() and str(title or "").strip()
+    }
+    if not clean_titles:
+        return 0
+
+    connection = get_connection()
+    updated = 0
+    try:
+        cursor = connection.cursor()
+        rows = cursor.execute(
+            """
+            SELECT id, source_activity_id, title, raw_json
+            FROM activities
+            WHERE athlete_id = ? AND source = 'garmin_fit'
+            """,
+            (int(athlete_id),),
+        ).fetchall()
+        for row_id, source_activity_id, current_title, raw_json in rows:
+            garmin_id = None
+            source_text = str(source_activity_id or "")
+            if source_text.startswith("garmin_") and source_text[7:]:
+                garmin_id = source_text[7:]
+            if garmin_id is None:
+                _, _, stored_garmin_id, _ = _raw_identity(raw_json)
+                garmin_id = stored_garmin_id
+            new_title = clean_titles.get(str(garmin_id or ""))
+            if (
+                new_title
+                and str(current_title or "") in generic_titles
+                and new_title != current_title
+            ):
+                cursor.execute(
+                    "UPDATE activities SET title = ? WHERE id = ? AND athlete_id = ?",
+                    (new_title, int(row_id), int(athlete_id)),
+                )
+                updated += cursor.rowcount
+        connection.commit()
+    finally:
+        connection.close()
+    return updated
 
 def parse_fit_payloads(payloads: Sequence[FitPayload]) -> GarminParseResult:
     activities = []

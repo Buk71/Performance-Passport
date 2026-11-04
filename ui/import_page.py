@@ -11,9 +11,11 @@ from core.database import (
     refresh_athlete_sport_mappings,
 )
 from core.garmin_import import (
+    apply_garmin_activity_titles,
     discover_fit_payloads,
     import_garmin_activities,
     parse_fit_payloads,
+    refresh_garmin_activity_titles,
 )
 from core.garmin_connect import (
     GarminConnectPrototypeError,
@@ -552,14 +554,24 @@ def _show_garmin_connect(athlete_id, athlete_name):
         use_container_width=True,
     ):
         with st.spinner(f"Importing confirmed Garmin data into {athlete_name}…"):
+            activity_titles = {
+                item.activity_id: item.title for item in preview.activities
+            }
+            refreshed_titles = refresh_garmin_activity_titles(
+                athlete_id=athlete_id,
+                titles_by_activity_id=activity_titles,
+            )
             downloaded = download_original_activities(
                 client, preview.new_activities
             )
             if downloaded.uploads:
                 discovery = discover_fit_payloads(downloaded.uploads)
                 parsed = parse_fit_payloads(discovery.payloads)
+                titled_activities = apply_garmin_activity_titles(
+                    parsed.activities, activity_titles
+                )
                 activity_result = import_garmin_activities(
-                    parsed.activities,
+                    titled_activities,
                     athlete_id=athlete_id,
                     athlete_name=athlete_name,
                     running_only=True,
@@ -578,7 +590,10 @@ def _show_garmin_connect(athlete_id, athlete_name):
                 athlete_id=athlete_id,
                 source=GARMIN_CONNECT_HEALTH_SOURCE,
             )
-        changed = _garmin_import_changed(activity_result, health_result)
+        changed = (
+            bool(refreshed_titles)
+            or _garmin_import_changed(activity_result, health_result)
+        )
         if changed:
             st.cache_data.clear()
             st.success(f"Confirmed Garmin data imported only into {athlete_name}.")

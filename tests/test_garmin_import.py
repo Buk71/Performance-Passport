@@ -13,9 +13,11 @@ import core.garmin_import as garmin_import
 from core.garmin_import import (
     FitPayload,
     GarminFitActivity,
+    apply_garmin_activity_titles,
     discover_fit_payloads,
     import_garmin_activities,
     parse_fit_payload,
+    refresh_garmin_activity_titles,
 )
 from core.database import get_athlete_sport_roles
 
@@ -407,5 +409,75 @@ def test_import_page_exposes_real_garmin_fit_and_zip_flow():
     source = (ROOT / "ui" / "import_page.py").read_text(encoding="utf-8")
     assert '"Garmin FIT / ZIP"' in source
     assert "accept_multiple_files=True" in source
+    assert "apply_garmin_activity_titles(" in source
+    assert "refresh_garmin_activity_titles(" in source
     assert "import_garmin_activities(" in source
     assert "FIT import will be added later" not in source
+
+
+def test_garmin_connect_title_overlays_generic_fit_title_before_import(
+    tmp_path, monkeypatch
+):
+    path, athlete_id = _database(tmp_path, monkeypatch)
+    activity = _activity()
+
+    titled = apply_garmin_activity_titles(
+        (activity,),
+        {"23865797605": "Blizard - 400, 800, 1200, 1600, 2000"},
+    )
+    assert titled[0].title == "Blizard - 400, 800, 1200, 1600, 2000"
+
+    result = import_garmin_activities(
+        titled, athlete_id=athlete_id, athlete_name="Paul Tester"
+    )
+    assert result.imported == 1
+    with sqlite3.connect(path) as connection:
+        title = connection.execute(
+            "SELECT title FROM activities WHERE athlete_id = ?",
+            (athlete_id,),
+        ).fetchone()[0]
+    assert title == "Blizard - 400, 800, 1200, 1600, 2000"
+
+
+def test_garmin_preview_repairs_existing_generic_title_without_overwriting_custom(
+    tmp_path, monkeypatch
+):
+    path, athlete_id = _database(tmp_path, monkeypatch)
+    with sqlite3.connect(path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO activities (
+                athlete_name, athlete_id, source, source_activity_id,
+                activity_date, title, sport_id, raw_json
+            ) VALUES (?, ?, 'garmin_fit', ?, '2026-10-24', ?, 'running', ?)
+            """,
+            (
+                (
+                    "Paul Tester", athlete_id, "garmin_24833070821", "Running",
+                    json.dumps({"garmin_fit": {"garmin_activity_id": "24833070821"}}),
+                ),
+                (
+                    "Paul Tester", athlete_id, "garmin_24833069104",
+                    "My PP custom title",
+                    json.dumps({"garmin_fit": {"garmin_activity_id": "24833069104"}}),
+                ),
+            ),
+        )
+
+    updated = refresh_garmin_activity_titles(
+        athlete_id=athlete_id,
+        titles_by_activity_id={
+            "24833070821": "Blizard - 400, 800, 1200, 1600, 2000",
+            "24833069104": "Garmin replacement title",
+        },
+    )
+
+    assert updated == 1
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "SELECT source_activity_id, title FROM activities ORDER BY source_activity_id"
+        ).fetchall()
+    assert rows == [
+        ("garmin_24833069104", "My PP custom title"),
+        ("garmin_24833070821", "Blizard - 400, 800, 1200, 1600, 2000"),
+    ]

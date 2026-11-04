@@ -48,7 +48,11 @@ from core.workout_phases import (
     reconstruct_workout_phases,
 )
 from core.workouts import get_or_decode_workout
-from core.workout_title_intent import build_title_intent_evidence, parse_workout_title
+from core.workout_title_intent import (
+    build_title_intent_evidence,
+    build_workout_structure_evidence,
+    parse_workout_title,
+)
 
 
 RECENT_WINDOW_DAYS = 365
@@ -362,6 +366,14 @@ def _reason_for_trust(item) -> list[str]:
     if workout.execution_score is not None:
         reasons.append(f"Execution {workout.execution_score:.0f}/100")
 
+    phase_metadata = item.get("phase_metadata") or {}
+    if phase_metadata.get("structure_shape"):
+        reasons.append(
+            "Ordered "
+            + str(phase_metadata["structure_shape"]).replace("_", " ")
+            + " structure"
+        )
+
     data = workout.recognition_json
 
     if data.get("recovery_splits"):
@@ -551,7 +563,7 @@ def _group_work_components(
     easy_pace_s_per_km: float | None = None,
     title: str | None = None,
 ) -> tuple[list[dict], dict]:
-    title_evidence = build_title_intent_evidence(
+    title_evidence = build_workout_structure_evidence(
         title or "",
         raw_json_text,
     )
@@ -612,10 +624,9 @@ def _group_work_components(
         }
 
     # Conservative fallback to the legacy component grouping.
-    splits = sorted(
-        _work_splits(workout),
-        key=lambda split: float(split.get("distance_km") or 0.0),
-    )
+    # Preserve recorded order: ordered distance is valuable evidence for
+    # pyramids/ladders even when we ultimately fall back to family grouping.
+    splits = list(_work_splits(workout))
     families: list[list[dict]] = []
 
     for split in splits:
@@ -1421,7 +1432,7 @@ def _cross_distance_pb_shape_prediction(
     )
 
 
-WORKOUT_LIBRARY_DECODER_VERSION = 3
+WORKOUT_LIBRARY_DECODER_VERSION = 5
 
 
 def _workout_signature(
@@ -1435,6 +1446,16 @@ def _workout_signature(
         threshold_1-short_intervals_10
         long_intervals_5
     """
+    shape = phase_metadata.get("structure_shape")
+    sequence = phase_metadata.get("distance_sequence_m") or []
+    if (
+        shape in {"pyramid", "ascending_ladder", "descending_ladder"}
+        and sequence
+    ):
+        return f"{shape}_" + "-".join(
+            f"{int(value)}m" for value in sequence
+        )
+
     parts = []
 
     for phase in phase_metadata.get("phases", []):
@@ -1684,7 +1705,7 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 session_counts["continuous_autolap_excluded"] += 1
                 continue
 
-            title_intent_evidence = build_title_intent_evidence(
+            title_intent_evidence = build_workout_structure_evidence(
                 facts.title,
                 row[15],
             )
@@ -2219,9 +2240,30 @@ class WorkoutEvidenceProvider(EvidenceProvider):
                 "workout_type": latest_workout.workout_type,
                 "description": latest_description,
                 "execution_score": latest_workout.execution_score,
-                "rep_count": latest_workout.rep_count,
-                "average_rep_distance_km":
-                    latest_workout.average_rep_distance_km,
+                "rep_count": (
+                    int(latest.get("phase_metadata", {}).get("total_reps"))
+                    if latest.get("phase_metadata", {}).get("total_reps")
+                    else latest_workout.rep_count
+                ),
+                "average_rep_distance_km": (
+                    (
+                        float(
+                            latest.get("phase_metadata", {}).get(
+                                "total_work_distance_km"
+                            )
+                        )
+                        / int(
+                            latest.get("phase_metadata", {}).get("total_reps")
+                        )
+                    )
+                    if (
+                        latest.get("phase_metadata", {}).get(
+                            "total_work_distance_km"
+                        )
+                        and latest.get("phase_metadata", {}).get("total_reps")
+                    )
+                    else latest_workout.average_rep_distance_km
+                ),
                 "average_rep_pace_s_per_km":
                     latest_workout.average_rep_pace_s_per_km,
                 "rep_pace_variation_percent":

@@ -122,6 +122,58 @@ def test_health_transport_maps_nightly_hrv_resting_hr_and_sleep():
     assert record.sleep_quality_100 == 84
 
 
+
+def test_health_transport_accepts_named_resting_hr_response_shape():
+    class Client:
+        def get_hrv_data_range(self, _start, _end):
+            return {}
+
+        def get_rhr_daily(self, _start, _end):
+            return {
+                "daily": [
+                    {
+                        "calendarDate": "2026-08-27",
+                        "restingHeartRate": 49,
+                    }
+                ]
+            }
+
+        def get_sleep_data(self, _day):
+            return {}
+
+    fetched = fetch_garmin_health_records(
+        Client(), start_date=TODAY, end_date=TODAY
+    )
+
+    assert fetched.issues == ()
+    assert len(fetched.records) == 1
+    assert fetched.records[0].resting_hr == 49
+
+
+def test_health_transport_accepts_date_and_resting_hr_value_shape():
+    class Client:
+        def get_hrv_data_range(self, _start, _end):
+            return {}
+
+        def get_rhr_daily(self, _start, _end):
+            return {
+                "results": [
+                    {
+                        "date": "2026-08-27",
+                        "restingHeartRateValue": 50,
+                    }
+                ]
+            }
+
+        def get_sleep_data(self, _day):
+            return {}
+
+    fetched = fetch_garmin_health_records(
+        Client(), start_date=TODAY, end_date=TODAY
+    )
+
+    assert fetched.records[0].resting_hr == 50
+
 def test_health_transport_stops_repeating_a_rejected_sleep_request():
     calls = []
 
