@@ -3,9 +3,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_database_schema_is_v17():
+def test_database_schema_is_v18_and_preserves_v17():
     source = (ROOT / "core" / "database.py").read_text(encoding="utf-8")
-    assert "CURRENT_SCHEMA_VERSION = 17" in source
+    assert "CURRENT_SCHEMA_VERSION = 18" in source
     assert "def migrate_to_schema_v17(" in source
     assert "create_runner_journey_tables(cursor)" in source
 

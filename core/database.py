@@ -5,7 +5,7 @@ from pathlib import Path
 from core.distance_units import normalize_activity_distance_km
 
 DATABASE_PATH = Path("database") / "performance_passport.db"
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 
 
 def get_connection():
@@ -1663,6 +1663,32 @@ def migrate_to_schema_v16(cursor):
     set_schema_version(cursor, 16)
 
 
+def create_runner_profiles_table(cursor):
+    """Optional, user-editable context; not a source of calculated capability."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS athlete_runner_profiles (
+            athlete_id INTEGER PRIMARY KEY,
+            experience TEXT CHECK (experience IN (
+                'getting_started', 'developing', 'established', 'experienced'
+            )),
+            training_status TEXT CHECK (training_status IN (
+                'training', 'returning', 'rebuilding', 'paused'
+            )),
+            sessions_per_week INTEGER CHECK (sessions_per_week BETWEEN 1 AND 7),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
+def migrate_to_schema_v18(cursor):
+    """Add runner profile without altering journeys, goals or athlete evidence."""
+    create_runner_profiles_table(cursor)
+    set_schema_version(cursor, 18)
+
+
 def create_runner_journey_tables(cursor):
     """Persist athlete journeys separately from race goals and block designs."""
     cursor.execute(
@@ -1941,6 +1967,11 @@ def initialise_database():
         migrate_to_schema_v17(cursor)
         schema_version = 17
 
+    if schema_version < 18:
+        migrate_to_schema_v18(cursor)
+        schema_version = 18
+
+    create_runner_profiles_table(cursor)
     create_athlete_identities_table(cursor)
     create_goals_table(cursor)
     create_training_blocks_table(cursor)

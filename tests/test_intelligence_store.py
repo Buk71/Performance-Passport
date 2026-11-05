@@ -80,5 +80,5 @@ def test_current_schema_creates_intelligence_table(tmp_path, monkeypatch):
         }
     finally:
         conn.close()
-    assert version == 17
+    assert version == database.CURRENT_SCHEMA_VERSION
     assert "athlete_intelligence" in tables
