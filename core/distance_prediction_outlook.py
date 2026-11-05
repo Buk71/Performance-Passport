@@ -42,6 +42,7 @@ class DistancePredictionAnchor:
     source: str
     explanation: str
     raw_central_seconds: float | None = None
+    potential_seconds: float | None = None
     speed_equivalent_seconds: float | None = None
     readiness_score: float | None = None
     readiness_label: str = ""
@@ -100,7 +101,7 @@ def _build_distance_anchor(
     source_version = tuple(get_race_intelligence_version(int(athlete_id)))
     return get_or_build_typed_intelligence(
         int(athlete_id),
-        f"race.distance_anchor.v2.{key}",
+        f"race.distance_anchor.v3.{key}",
         source_version=source_version,
         horizon="current",
         builder=lambda: _build_distance_anchor_uncached(
@@ -130,7 +131,7 @@ def build_distance_prediction_outlook(
             f"{active_predictions.evidence_source_count}"
         )
     )
-    final_key = f"race.distance_outlook.v2.{active_signature}"
+    final_key = f"race.distance_outlook.v3.{active_signature}"
 
     cached = get_or_build_typed_intelligence(
         int(athlete_id),

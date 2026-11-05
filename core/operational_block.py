@@ -37,6 +37,7 @@ from core.splits import parse_splits, recognise_workout
 from core.home_latest_run import load_activity_runs
 from core.performance_recognition import build_recognition_index, recognition_key
 from core.training_blocks import (
+    effective_block_status,
     get_active_training_block,
     get_training_block_design,
 )
@@ -755,9 +756,16 @@ def build_operational_block_week(
 ) -> OperationalWeek | None:
     """Load the active saved design and compose its operational week."""
     today = today or datetime.date.today()
+    # Keep the long-standing module-level get_active_training_block seam used
+    # by operational review tests/integrations, while applying the canonical
+    # date-aware expiry rule here. Upcoming designated blocks are valid for
+    # preview; expired blocks are not current.
     block = get_active_training_block(athlete_id)
     if block is None:
         return None
+    if getattr(block, "status", "Active") == "Active" and hasattr(block, "end_date"):
+        if effective_block_status(block, today=today) == "Complete":
+            return None
     saved = get_training_block_design(block.id, athlete_id=athlete_id)
     if saved is None:
         return None

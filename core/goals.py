@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import datetime
 
 from core.database import get_connection, get_goals_for_athlete
-from core.training_blocks import TrainingBlock, get_active_training_block
+from core.training_blocks import TrainingBlock, get_current_training_block
 
 
 GOAL_ROLES = ("Primary", "Secondary", "Future")
@@ -318,7 +318,7 @@ def build_goal_hierarchy(
     return build_goal_hierarchy_from_records(
         athlete_id,
         get_goals_for_athlete(athlete_id),
-        active_block=get_active_training_block(athlete_id),
+        active_block=get_current_training_block(athlete_id, today=reference_date),
         reference_date=reference_date,
     )
 

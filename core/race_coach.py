@@ -22,9 +22,10 @@ from core.evidence import EvidenceBundle, EvidenceItem
 from core.home_predictions import HomePredictions, build_goal_predictions
 from core.cache_version import get_race_intelligence_version
 from core.materialized_intelligence import get_or_build_typed_intelligence, stable_key_fragment
+from core.database import get_active_goal
 
 
-MODEL_VERSION = 1
+MODEL_VERSION = 3
 STANDARD_LABELS = {"5K", "10K", "Half marathon", "Marathon"}
 
 
@@ -230,16 +231,36 @@ def _evidence_views(
     return tuple(views)
 
 
+
+def _canonical_goal_for_team_capability(athlete_id: int, goal: dict[str, Any]) -> dict[str, Any]:
+    """Reuse the Lead Coach's exact active-goal contract when selected.
+
+    Race Coach receives a presentation-friendly subset of the saved goal from
+    Streamlit. Materialised prediction keys include the whole goal mapping, so
+    rebuilding that subset can accidentally create a second cache namespace
+    for the same saved goal. When the selected goal is the athlete's active
+    Primary goal, use the database-backed canonical mapping that Lead Coach
+    uses. Exploratory and non-active saved goals keep their read-only mapping.
+    """
+    selected_id = goal.get("id")
+    if selected_id is None:
+        return dict(goal)
+    active = get_active_goal(int(athlete_id))
+    if active is not None and int(active.get("id") or 0) == int(selected_id):
+        return dict(active)
+    return dict(goal)
+
 def _build_race_coach_detail_uncached(
     athlete_id: int,
     goal: dict[str, Any],
 ) -> RaceCoachDetail:
     """Build one selected-distance view without mutating the athlete's goal."""
+    team_goal = _canonical_goal_for_team_capability(int(athlete_id), goal)
     brain = CoachBrain(int(athlete_id))
-    bundle = brain.build_evidence(goal)
+    bundle = brain.build_evidence(team_goal)
     raw_predictions = build_goal_predictions(
         int(athlete_id),
-        goal,
+        team_goal,
         evidence=bundle,
     )
     distance_outlook = build_distance_prediction_outlook(
@@ -247,7 +268,9 @@ def _build_race_coach_detail_uncached(
         active_predictions=raw_predictions,
     )
     anchor = _selected_anchor(raw_predictions, distance_outlook)
-    predictions = _align_predictions(raw_predictions, anchor)
+    # Capability remains the same specialist consensus used everywhere else.
+    # Endurance transfer is exposed on the distance anchor as Potential only.
+    predictions = raw_predictions
     history = next(
         (item for item in bundle.items if item.key == "activity_history"),
         None,
@@ -257,11 +280,11 @@ def _build_race_coach_detail_uncached(
         if history is not None
         else None
     )
-    if anchor is not None and anchor.transfer_fraction > 0:
+    if anchor is not None and anchor.potential_seconds is not None:
         alignment_note = (
-            f"The selected-distance headline matches Home. Recent endurance "
-            f"evidence supports {anchor.transfer_fraction:.0%} of the gap from "
-            "current shorter-distance fitness to its standard equivalent."
+            "Current capability matches the specialist consensus used across "
+            "Performance Passport. A faster endurance-transfer estimate is shown "
+            "separately as Potential, not substituted for capability."
         )
     elif anchor is not None and anchor.readiness_label:
         alignment_note = (
@@ -276,7 +299,7 @@ def _build_race_coach_detail_uncached(
     return RaceCoachDetail(
         athlete_id=int(athlete_id),
         athlete_name=_athlete_name(int(athlete_id)),
-        goal=dict(goal),
+        goal=dict(team_goal),
         predictions=predictions,
         raw_predictions=raw_predictions,
         distance_outlook=distance_outlook,
@@ -293,15 +316,17 @@ def build_race_coach_detail(
 ) -> RaceCoachDetail:
     """Build or reuse the selected-distance Race Coach intelligence."""
     source_version = tuple(get_race_intelligence_version(int(athlete_id)))
+    team_goal = _canonical_goal_for_team_capability(int(athlete_id), goal)
     goal_key = stable_key_fragment(goal or {})
+    team_goal_key = stable_key_fragment(team_goal or {})
     return get_or_build_typed_intelligence(
         int(athlete_id),
-        f"race.coach_detail.v1.{goal_key}",
+        f"race.coach_detail.v5.{goal_key}.{team_goal_key}",
         source_version=source_version,
         horizon="current",
         builder=lambda: _build_race_coach_detail_uncached(
             int(athlete_id),
-            goal,
+            team_goal,
         ),
         source_version_provider=lambda: tuple(
             get_race_intelligence_version(int(athlete_id))

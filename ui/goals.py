@@ -34,7 +34,7 @@ from core.goals import (
 )
 from core.training_blocks import (
     assign_goal_to_block,
-    get_active_training_block,
+    get_current_training_block,
 )
 from ui.athlete_selection import render_athlete_id_selector
 
@@ -497,7 +497,7 @@ def _render_goal(goal: GoalHierarchyItem, athlete_id: int, active_block_id: int 
 
 
 def _render_primary_block(primary: GoalHierarchyItem, athlete_id: int) -> None:
-    active_block = get_active_training_block(athlete_id)
+    active_block = get_current_training_block(athlete_id)
     if active_block is not None:
         if primary.training_block_id == active_block.id:
             st.success(f"Primary goal is connected to {active_block.name}.")

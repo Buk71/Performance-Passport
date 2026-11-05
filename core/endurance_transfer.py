@@ -284,33 +284,26 @@ def calibrate_endurance_anchors(
         )
         maximum_transfer = 0.42 if anchor.key == "half_marathon" else 0.55
         transfer_fraction = evidence_fraction * maximum_transfer
-        capability_seconds = raw_seconds - transferable_gap * transfer_fraction
+        potential_seconds = raw_seconds - transferable_gap * transfer_fraction
 
-        confidence = (
-            0.75 * float(anchor.confidence)
-            + 0.25 * assessment.confidence
-            - (0.05 if anchor.key == "marathon" else 0.0)
-        )
-        confidence = min(max(confidence, 0.35), 0.90)
-        changed = capability_seconds < raw_seconds - 0.5
+        changed = potential_seconds < raw_seconds - 0.5
         explanation = anchor.explanation
         if changed:
             explanation = (
-                f"{explanation} Current shorter-distance fitness contributes "
-                f"{transfer_fraction:.0%} of the gap to its standard equivalent "
-                f"because the endurance record shows {assessment.summary}."
+                f"{explanation} Potential under fuller endurance conversion is "
+                f"estimated by transferring {transfer_fraction:.0%} of the gap "
+                f"toward the shorter-distance speed equivalent because the "
+                f"endurance record shows {assessment.summary}."
             )
 
         updated = replace(
             anchor,
-            central_seconds=capability_seconds,
-            confidence=confidence,
-            source=(
-                "distance_specific_coaches_plus_endurance_transfer"
-                if changed else anchor.source
-            ),
-            explanation=explanation,
+            central_seconds=raw_seconds,
+            confidence=float(anchor.confidence),
+            source=anchor.source,
+            explanation=anchor.explanation,
             raw_central_seconds=raw_seconds,
+            potential_seconds=(potential_seconds if changed else None),
             speed_equivalent_seconds=speed_equivalent,
             readiness_score=assessment.score,
             readiness_label=assessment.label,

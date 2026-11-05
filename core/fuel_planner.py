@@ -18,7 +18,7 @@ from typing import Any, Iterable
 from core.block_review import apply_accepted_block_reviews
 from core.database import create_nutrition_tables, get_connection
 from core.training_blocks import (
-    get_active_training_block,
+    get_current_training_block,
     get_training_block_design,
 )
 
@@ -558,7 +558,7 @@ def load_next_fuel_week(
     *,
     reference_date: datetime.date | None = None,
 ) -> FuelWeek | None:
-    block = get_active_training_block(athlete_id)
+    block = get_current_training_block(athlete_id, today=reference_date or datetime.date.today())
     if block is None:
         return None
     saved = get_training_block_design(block.id, athlete_id=athlete_id)

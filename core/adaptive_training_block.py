@@ -74,7 +74,9 @@ def _weeks(goal: dict, today: datetime.date) -> tuple[int,str|None]:
         target=datetime.date.fromisoformat(str(raw)[:10])
     except (TypeError,ValueError):
         return 12,None
-    days=max((target-today).days,0)
+    days=(target-today).days
+    if days < 0:
+        return 0,target.isoformat()
     return max(1,(days+6)//7),target.isoformat()
 
 
@@ -187,6 +189,23 @@ def build_adaptive_block_preview(
 
     distance=_distance_label(goal)
     weeks,target=_weeks(goal,today)
+    if weeks <= 0:
+        return AdaptiveBlockPreview(
+            athlete_id=athlete_id,available=False,
+            goal_name=str(goal.get("goal_name") or goal.get("race_name") or distance),
+            distance_label=distance,target_date=target,weeks_remaining=0,
+            current_phase=None,phases=(),learned_signals=(),
+            headline="The active goal date has passed",
+            summary=(
+                "Performance Passport will not keep generating a live training "
+                "plan for a goal whose target date has passed. Review the result "
+                "and choose the next Primary goal before planning continues."
+            ),
+            limitations=(
+                "The completed goal and its evidence remain in history.",
+                "No future week is generated until a current Primary goal exists.",
+            ),
+        )
     profile=build_performance_backtracking_profile(athlete_id)
     phases=_phase_plan(distance,weeks,profile)
     current=phases[0].name if phases else None

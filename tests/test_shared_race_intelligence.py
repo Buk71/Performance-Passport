@@ -9,15 +9,15 @@ def test_race_intelligence_uses_persistent_store():
     race = (ROOT / "core" / "race_coach.py").read_text(encoding="utf-8")
 
     assert "race.goal_predictions.v2." in home
-    assert "race.distance_anchor.v2." in outlook
-    assert "race.distance_outlook.v2." in outlook
-    assert "race.coach_detail.v1." in race
+    assert "race.distance_anchor.v3." in outlook
+    assert "race.distance_outlook.v3." in outlook
+    assert "race.coach_detail.v5." in race
 
 
 def test_distance_anchors_are_materialised_individually():
     outlook = (ROOT / "core" / "distance_prediction_outlook.py").read_text(encoding="utf-8")
     assert "_build_distance_anchor_uncached" in outlook
-    assert 'f"race.distance_anchor.v2.{key}"' in outlook
+    assert 'f"race.distance_anchor.v3.{key}"' in outlook
 
 
 def test_materialised_intelligence_is_version_guarded():

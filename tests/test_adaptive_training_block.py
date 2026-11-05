@@ -29,6 +29,22 @@ class AdaptiveBlockTests(unittest.TestCase):
         self.assertEqual(preview.phases[-1].name,"Taper / Race")
         self.assertGreaterEqual(len(preview.phases),3)
 
+
+    @patch("core.adaptive_training_block.build_performance_backtracking_profile")
+    @patch("core.adaptive_training_block.get_active_goal")
+    def test_past_goal_date_does_not_generate_fake_live_week(self, goal, history):
+        goal.return_value={
+            "goal_name":"Autumn Half","goal_type":"Half marathon","distance_m":21097.5,
+            "target_date":"2026-09-13",
+        }
+        history.return_value=EMPTY_PROFILE
+        preview=build_adaptive_block_preview(
+            1,today=datetime.date(2026,11,5)
+        )
+        self.assertFalse(preview.available)
+        self.assertEqual(preview.weeks_remaining,0)
+        self.assertIn("date has passed",preview.headline)
+
     @patch("core.adaptive_training_block.get_active_goal")
     def test_no_goal_does_not_generate_plan(self, goal):
         goal.return_value=None

@@ -43,7 +43,7 @@ from core.performance_recognition import (
 from core.training_blocks import (
     TrainingBlock,
     block_progress,
-    get_active_training_block,
+    get_current_training_block,
 )
 
 
@@ -502,7 +502,11 @@ def _build_latest_journal_entry_uncached(
         recognition_index,
     )
 
-    block = get_active_training_block(athlete_id)
+    try:
+        activity_day = datetime.date.fromisoformat(str(latest_run.activity_date)[:10])
+    except (TypeError, ValueError):
+        activity_day = datetime.date.today()
+    block = get_current_training_block(athlete_id, today=activity_day)
     block_title, block_detail = _block_message(
         block,
         activity_date=latest_run.activity_date,

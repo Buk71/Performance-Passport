@@ -1,7 +1,7 @@
 import datetime
 import unittest
 
-from core.training_blocks import TrainingBlock, block_progress
+from core.training_blocks import TrainingBlock, block_progress, effective_block_status
 
 
 class TrainingBlockTests(unittest.TestCase):
@@ -37,6 +37,13 @@ class TrainingBlockTests(unittest.TestCase):
         )
         self.assertEqual(result.week_number, 0)
         self.assertEqual(result.date_status, "Upcoming")
+
+
+    def test_expired_stored_active_block_is_effectively_complete(self):
+        self.assertEqual(
+            effective_block_status(self._block(), today=datetime.date(2026, 11, 5)),
+            "Complete",
+        )
 
     def test_completed_dates_cap_progress(self):
         result = block_progress(

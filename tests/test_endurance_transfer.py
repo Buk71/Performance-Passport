@@ -54,14 +54,16 @@ def test_paul_like_endurance_supports_bounded_half_and_marathon_transfer():
     half = calibrated[2]
     marathon = calibrated[3]
 
-    assert 5420 <= half.central_seconds <= 5430
+    assert half.central_seconds == 5510.4
+    assert 5420 <= half.potential_seconds <= 5430
     assert half.raw_central_seconds == 5510.4
     assert half.transfer_fraction == 0.42
     assert half.readiness_label == "Strong endurance"
-    assert 11980 <= marathon.central_seconds <= 12010
+    assert marathon.central_seconds == 12330.0
+    assert 12040 <= marathon.potential_seconds <= 12070
     assert 0.31 <= marathon.transfer_fraction <= 0.35
     assert marathon.readiness_label == "Supported endurance"
-    assert marathon.confidence < half.confidence
+    assert marathon.confidence == 0.77
     assert "51 km/week" in marathon.endurance_summary
 
 
@@ -85,6 +87,7 @@ def test_shorter_distance_speed_does_not_transfer_without_endurance_support():
     half = calibrated[1]
 
     assert half.central_seconds == 5700.0
+    assert half.potential_seconds is None
     assert half.transfer_fraction == 0.0
     assert half.readiness_label == "Limited endurance"
 

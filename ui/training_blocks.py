@@ -43,7 +43,7 @@ from core.block_review import (
 from core.operational_block import OperationalWeek, build_operational_block_week
 from core.training_blocks import (
     assign_goal_to_block,
-    get_active_training_block,
+    get_current_training_block,
     get_training_block_design,
     list_training_blocks,
     save_training_block,
@@ -897,7 +897,7 @@ def _render_block_review_controls(review: BlockReviewProposal) -> None:
 
 def _initial_preferences(athlete_id, history, hierarchy):
     defaults = recommend_preferences(history)
-    active = get_active_training_block(athlete_id)
+    active = get_current_training_block(athlete_id)
     saved = get_training_block_design(active.id, athlete_id=athlete_id) if active else None
     if saved is not None and saved.primary_goal_id == hierarchy.primary.id:
         return preferences_from_dict(saved.preferences), active, saved

@@ -54,7 +54,7 @@ from core.next_run import (
     NextRunRecommendation,
     build_next_run_recommendation,
 )
-from core.training_blocks import get_active_training_block
+from core.training_blocks import get_current_training_block
 from core.workout_library import (
     WorkoutLibraryRecord,
     get_athlete_workouts,
@@ -1175,7 +1175,7 @@ def build_designed_session(
         if family_override is not None
         else _session_family_from_label(prescribed_family)
     )
-    block = get_active_training_block(athlete_id)
+    block = get_current_training_block(athlete_id)
     goal_name, goal_pace = _goal_context(athlete_id)
 
     evidence = _historical_candidates(

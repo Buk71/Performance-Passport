@@ -8,7 +8,7 @@ from core.goals import (
     remove_goal,
     set_primary_goal,
 )
-from core.training_blocks import get_active_training_block
+from core.training_blocks import get_current_training_block
 
 
 REFERENCE_DATE = datetime.date(2026, 8, 14)
@@ -88,8 +88,8 @@ def test_hierarchy_keeps_primary_secondary_future_and_past_distinct():
 def test_real_richard_and_jo_keep_independent_primary_goals():
     richard = build_goal_hierarchy(1, reference_date=REFERENCE_DATE)
     jo = build_goal_hierarchy(3, reference_date=REFERENCE_DATE)
-    richard_block = get_active_training_block(1)
-    jo_block = get_active_training_block(3)
+    richard_block = get_current_training_block(1, today=REFERENCE_DATE)
+    jo_block = get_current_training_block(3, today=REFERENCE_DATE)
 
     assert richard.primary.name == "Sub 39:00"
     assert jo.primary.name == "Complete my first 10K"

@@ -27,7 +27,7 @@ import datetime
 from core.journal import JournalEntry, build_latest_journal_entry
 from core.training_blocks import (
     TrainingBlock,
-    get_active_training_block,
+    get_current_training_block,
 )
 
 
@@ -495,7 +495,7 @@ def build_next_run_recommendation(
     if entry is None:
         return None
 
-    block = get_active_training_block(athlete_id)
+    block = get_current_training_block(athlete_id, today=today)
 
     return _recommend_from_context(
         entry,

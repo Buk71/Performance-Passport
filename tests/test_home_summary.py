@@ -63,7 +63,7 @@ def test_active_operational_week_drives_home_schedule_and_next_run():
     with (
         patch("core.home_summary.get_active_goal", return_value=goal),
         patch("core.home_summary.build_adaptive_weekly_plan", return_value=SimpleNamespace(available=False, summary="Fallback")),
-        patch("core.home_summary.get_active_training_block", return_value=SimpleNamespace(name="Sub 39 block", current_phase="Build")),
+        patch("core.home_summary.get_current_training_block", return_value=SimpleNamespace(name="Sub 39 block", current_phase="Build")),
         patch("core.home_summary.block_progress", return_value=SimpleNamespace(week_number=2, total_weeks=3)),
         patch("core.home_summary.build_operational_block_week", return_value=operational),
     ):

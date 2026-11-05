@@ -249,6 +249,43 @@ def get_active_training_block(
     return _block_from_row(row) if row else None
 
 
+def effective_block_status(
+    block: TrainingBlock,
+    *,
+    today: datetime.date | None = None,
+) -> str:
+    """Return the block status that should drive current coaching.
+
+    Stored status remains an audit/history field. A block saved as Active no
+    longer counts as current once its configured end date has passed.
+    """
+    today = today or datetime.date.today()
+    if block.status != "Active":
+        return block.status
+    start = _date(block.start_date)
+    end = _date(block.end_date)
+    if end is not None and end < today:
+        return "Complete"
+    if start is not None and start > today:
+        return "Planned"
+    return "Active"
+
+
+def get_current_training_block(
+    athlete_id: int,
+    *,
+    today: datetime.date | None = None,
+) -> TrainingBlock | None:
+    """Return only the date-valid Active block for live coaching surfaces."""
+    block = get_active_training_block(athlete_id)
+    if block is None:
+        return None
+    # A future-start block is still the athlete's designated plan and must
+    # remain available to planning/preview surfaces. Only a block whose end
+    # date has passed stops driving current coaching.
+    return block if effective_block_status(block, today=today) != "Complete" else None
+
+
 def save_training_block(
     *,
     athlete_id: int,

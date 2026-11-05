@@ -26,7 +26,7 @@ from core.race_outlook import (
 from ui.athlete_selection import render_athlete_id_selector
 
 
-RACE_OUTLOOK_CACHE_SCHEMA = 3
+RACE_OUTLOOK_CACHE_SCHEMA = 5
 
 DISTANCE_OPTIONS = {
     "5K": 5000.0,
@@ -104,8 +104,9 @@ def _distance_cards(detail: RaceCoachDetail) -> str:
         <article class="race-distance-card {'is-selected' if anchor.label == selected else ''}">
             <div class="race-card-label">{_escape(anchor.label.upper())}</div>
             <strong>{_clock(anchor.central_seconds) if anchor.available else '—'}</strong>
-            <span>{anchor.confidence:.0%} confidence</span>
+            <span>{anchor.confidence:.0%} confidence · Capability</span>
             <p>{_escape(anchor.readiness_label or 'Distance-specific capability')}</p>
+            {f'<small>Potential with fuller endurance conversion <b>{_clock(anchor.potential_seconds)}</b></small>' if anchor.potential_seconds is not None else ''}
         </article>
         """
         for anchor in detail.distance_outlook.anchors
@@ -158,6 +159,25 @@ def build_race_coach_intro_html(detail: RaceCoachDetail) -> str:
         else "—"
     )
     range_text = f"{_clock(predictions.low_seconds)}–{_clock(predictions.high_seconds)}"
+    race_view = next(
+        (coach for coach in detail.evidence if coach.key == "recent_race"),
+        None,
+    )
+    race_view_seconds = (
+        race_view.predicted_seconds
+        if race_view is not None and race_view.predicted_seconds is not None
+        else predictions.central_seconds
+    )
+    race_view_confidence = (
+        race_view.confidence
+        if race_view is not None
+        else predictions.confidence
+    )
+    potential_seconds = (
+        detail.selected_anchor.potential_seconds
+        if detail.selected_anchor is not None
+        else None
+    )
     readiness = (
         detail.selected_anchor.readiness_label
         if detail.selected_anchor is not None
@@ -180,21 +200,23 @@ def build_race_coach_intro_html(detail: RaceCoachDetail) -> str:
                 <div class="race-updated">Latest activity evidence · {_escape(detail.latest_evidence_date or 'Building')}</div>
             </div>
             <div class="race-capability-panel">
-                <div class="race-card-label">IDEAL CAPABILITY</div>
-                <strong>{_clock(predictions.central_seconds)}</strong>
-                <span>{range_text} · {predictions.confidence:.0%} confidence</span>
-                <div class="race-capability-line"><i style="width:{predictions.confidence:.0%}"></i></div>
+                <div class="race-card-label">RACE COACH VIEW</div>
+                <strong>{_clock(race_view_seconds)}</strong>
+                <span>{race_view_confidence:.0%} confidence · specialist opinion</span>
+                <div class="race-capability-line"><i style="width:{race_view_confidence:.0%}"></i></div>
+                <small>Team capability <b>{_clock(predictions.central_seconds)}</b>{f' · Potential <b>{_clock(potential_seconds)}</b>' if potential_seconds is not None else ''}</small>
             </div>
             <div class="race-target-panel">
-                <div class="race-card-label">COMPARISON · {_escape(predictions.goal_name.upper())}</div>
-                <strong>{target}</strong>
-                <div><span>Estimated likelihood</span><b>{probability}</b></div>
-                <div><span>Evidence sources</span><b>{predictions.evidence_source_count}</b></div>
+                <div class="race-card-label">TEAM CAPABILITY · LEAD COACH</div>
+                <strong>{_clock(predictions.central_seconds)}</strong>
+                <div><span>Combined range</span><b>{range_text}</b></div>
+                <div><span>Confidence</span><b>{predictions.confidence:.0%}</b></div>
+                <div><span>{_escape(predictions.goal_name)}</span><b>{target} · {probability}</b></div>
             </div>
         </section>
 
         <section class="race-distance-section">
-            <div class="race-section-heading"><div><div class="race-coach-eyebrow light"><span></span>FOUR DISTANCES · ONE ATHLETE</div><h2>Current capability by distance.</h2></div><p>Each distance asks the specialists its own question.</p></div>
+            <div class="race-section-heading"><div><div class="race-coach-eyebrow light"><span></span>FOUR DISTANCES · ONE ATHLETE</div><h2>Team capability by distance.</h2></div><p>The Lead Coach combines the specialist views independently for each distance.</p></div>
             <div class="race-distance-grid">{_distance_cards(detail)}</div>
             <p class="race-alignment-note">{_escape(detail.alignment_note)}</p>
         </section>
@@ -219,7 +241,7 @@ def build_race_coach_intro_html(detail: RaceCoachDetail) -> str:
         .race-updated {{ color:#a9becd; font-size:12px; margin-top:20px; }}
         .race-capability-panel,.race-target-panel {{ padding:20px; border-radius:17px; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16); }}
         .race-capability-panel .race-card-label,.race-target-panel .race-card-label {{ color:#b8ceda!important; }} .race-capability-panel > strong,.race-target-panel > strong {{ color:#fff!important; display:block; font-size:clamp(34px,3.5vw,48px); line-height:1; letter-spacing:-.045em; margin:14px 0 7px; font-weight:700; }}
-        .race-capability-panel > span {{ color:#d4e1e9!important; font-size:13px; }} .race-capability-line {{ height:5px; background:rgba(255,255,255,.14); border-radius:5px; margin-top:19px; overflow:hidden; }} .race-capability-line i {{ display:block; height:100%; background:#55c894; border-radius:5px; }}
+        .race-capability-panel > span {{ color:#d4e1e9!important; font-size:13px; }} .race-capability-panel > small {{ display:block; color:#d4e1e9!important; font-size:11px; line-height:1.45; margin-top:11px; }} .race-capability-panel > small b {{ color:#fff!important; font-weight:700; }} .race-capability-line {{ height:5px; background:rgba(255,255,255,.14); border-radius:5px; margin-top:19px; overflow:hidden; }} .race-capability-line i {{ display:block; height:100%; background:#55c894; border-radius:5px; }}
         .race-target-panel > div:not(.race-card-label) {{ display:flex; justify-content:space-between; gap:8px; color:#c4d6e1!important; font-size:12px; margin-top:10px; }} .race-target-panel b {{ color:#fff!important; font-weight:650; }}
         .race-distance-section,.race-evidence-section {{ background:#fff; padding:25px; }}
         .race-section-heading {{ display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:18px; }} .race-section-heading h2 {{ color:#10263d!important; font-size:28px; line-height:1.08; letter-spacing:-.025em; margin:7px 0 0; font-weight:680; }} .race-section-heading > p {{ color:#74818d!important; font-size:13px; line-height:1.4; margin:0; max-width:390px; text-align:right; }}

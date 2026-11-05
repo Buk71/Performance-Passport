@@ -155,7 +155,7 @@ def build_home_prediction_matrix(
     }
     personal_rows = 0
     distance_specific_rows = 0
-    endurance_calibrated_rows = 0
+    potential_rows = 0
     ideal_by_key = {}
     confidence_by_key = {}
     readiness_by_key = {}
@@ -167,7 +167,7 @@ def build_home_prediction_matrix(
             readiness_by_key[key] = anchor.readiness_label
             distance_specific_rows += 1
             if anchor.transfer_fraction > 0:
-                endurance_calibrated_rows += 1
+                potential_rows += 1
             continue
         target_pb_seconds = personal_bests.get(key)
         if (
@@ -252,11 +252,10 @@ def build_home_prediction_matrix(
                 "Race, Workout and Threshold Coach evidence. Condition columns "
                 "then apply the athlete's current environmental response. "
                 + (
-                    f"For {endurance_calibrated_rows} longer distance(s), "
-                    "current shorter-distance fitness contributes only the "
-                    "share supported by recent volume, long-run coverage and "
-                    "prior distance completion. "
-                    if endurance_calibrated_rows
+                    f"For {potential_rows} longer distance(s), a faster "
+                    "endurance-transfer Potential is retained separately and "
+                    "does not overwrite the displayed capability. "
+                    if potential_rows
                     else ""
                 )
                 if distance_specific_rows

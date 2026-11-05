@@ -25,7 +25,8 @@ from core.runner_journey import (
 from core.operational_block import OperationalWeek, build_operational_block_week
 from core.training_blocks import (
     block_progress,
-    get_active_training_block,
+    get_active_training_block,  # compatibility for existing test/mocking contracts
+    get_current_training_block,
 )
 
 
@@ -411,7 +412,7 @@ def build_home_summary(
         )
 
     weekly = build_adaptive_weekly_plan(athlete_id, today=today)
-    saved_block = get_active_training_block(athlete_id)
+    saved_block = get_current_training_block(athlete_id, today=today)
     operational = build_operational_block_week(athlete_id, today=today)
 
     goal_name = (
