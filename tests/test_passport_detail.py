@@ -14,7 +14,7 @@ def test_richard_passport_composes_real_current_evidence():
     assert detail.confidence == "Strong"
     assert detail.available_training_profiles == 6
     assert detail.trusted_workout_count == 103
-    assert detail.threshold_source == "Athlete profile values"
+    assert detail.threshold_source == "Laboratory test"
     assert [(item.key, item.value) for item in detail.anchors] == [
         ("lt1", "152 bpm"),
         ("lt2", "161 bpm"),
